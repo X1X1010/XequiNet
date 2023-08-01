@@ -1,0 +1,8 @@
+.vscode
+dataset
+docs
+debug
+experiment
+xpainn/deprecated
+*/__pycache__
+**/__pycache__
