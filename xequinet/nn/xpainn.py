@@ -68,7 +68,7 @@ class XEmbedding(nn.Module):
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             `x`: Atomic features.
@@ -363,27 +363,47 @@ class NegGradOut(nn.Module):
 class VectorOut(nn.Module):
     def __init__(
         self,
+        node_dim: int = 128,
         edge_irreps: str | o3.Irreps | Iterable = "128x0e + 64x1e + 32x2e",
+        hidden_dim: int = 64,
         hidden_irreps: str | o3.Irreps | Iterable = "32x1e",
+        output_dim: int = 3,
+        actfn: str = "silu",
         gatefn: str = "sigmoid",
         reduce_op: str = "sum",
     ):
         """
         Args:
+            `node_dim`: Node dimension.
             `edge_irreps`: Edge irreps.
+            `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
+            `output_dim`: Output dimension. (3 for vector and 1 for norm of the vector)
+            `actfn`: Activation function type.
             `gatefn`: Gate function type.
             `reduce_op`: Reduce operation.
         """
         super().__init__()
+        self.node_dim = node_dim
         self.edge_irreps = o3.Irreps(edge_irreps)
+        self.hidden_dim = hidden_dim
         self.hidden_irreps = o3.Irreps(hidden_irreps)
         self.reduce_op = reduce_op
+        self.scalar_out_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, 1),
+        )
+        nn.init.zeros_(self.scalar_out_mlp[0].bias)
+        nn.init.zeros_(self.scalar_out_mlp[2].bias)
         self.spherical_out_mlp = nn.Sequential(
             o3.Linear(self.edge_irreps, self.hidden_irreps),
             Gate(self.hidden_irreps, actfn=gatefn),
             o3.Linear(self.hidden_irreps, "1x1e"),
         )
+        if output_dim != 3 and output_dim != 1:
+            raise ValueError(f"output dimension must be either 1 or 3, but got {output_dim}")
+        self.output_dim = output_dim
 
     def forward(
         self,
@@ -401,30 +421,51 @@ class VectorOut(nn.Module):
         Returns:
             `res`: Vector output.
         """
-        atom_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
+        spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
+        scalar_out = self.scalar_out_mlp(x_scalar)
+        atom_out = spherical_out + spherical_out * scalar_out
         res = scatter(atom_out, batch_idx, dim=0, reduce=self.reduce_op)
+        if self.output_dim == 1:
+            res = torch.linalg.norm(res, dim=-1, keepdim=True)
         return res
 
 
 class PolarOut(nn.Module):
     def __init__(
         self,
+        node_dim: int = 128,
         edge_irreps: str | o3.Irreps | Iterable = "128x0e + 64x1e + 32x2e",
-        hidden_irreps: str | o3.Irreps | Iterable = "64x0e + 32x1e + 16x2e",
+        hidden_dim: int = 64,
+        hidden_irreps: str | o3.Irreps | Iterable = "32x1e",
+        output_dim: int = 9,
+        actfn: str = "silu",
         gatefn: str = "sigmoid",
         reduce_op: str = "sum",
     ):
         """
         Args:
+            `node_dim`: Node dimension.
             `edge_irreps`: Edge irreps.
+            `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
+            `output_dim`: Output dimension. (9 for 3x3 matrix and 1 for trace of the matrix)
+            `actfn`: Activation function type.
             `gatefn`: Gate function type.
             `reduce_op`: Reduce operation.
         """
         super().__init__()
+        self.node_dim = node_dim
         self.edge_irreps = o3.Irreps(edge_irreps)
+        self.hidden_dim = hidden_dim
         self.hidden_irreps = o3.Irreps(hidden_irreps)
         self.reduce_op = reduce_op
+        self.scalar_out_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, 2),
+        )
+        nn.init.zeros_(self.scalar_out_mlp[0].bias)
+        nn.init.zeros_(self.scalar_out_mlp[2].bias)
         self.spherical_out_mlp = nn.Sequential(
             o3.Linear(self.edge_irreps, self.hidden_irreps, biases=True),
             Gate(self.hidden_irreps, actfn=gatefn),
@@ -432,6 +473,10 @@ class PolarOut(nn.Module):
         )
         nn.init.zeros_(self.spherical_out_mlp[0].bias)
         nn.init.zeros_(self.spherical_out_mlp[2].bias)
+        self.rsh_conv = o3.ElementwiseTensorProduct("1x0e + 1x2e", "2x0e")
+        if output_dim != 9 and output_dim != 1:
+            raise ValueError(f"output dimension must be either 1 or 9, but got {output_dim}")
+        self.output_dim = output_dim
 
     def forward(
         self,
@@ -450,8 +495,10 @@ class PolarOut(nn.Module):
             `res`: Polarizability.
         """
         spherical_out = self.spherical_out_mlp(x_spherical)
-        zero_order = spherical_out[:, [0]]
-        second_order = spherical_out[:, 1:6]
+        scalar_out = self.scalar_out_mlp(x_scalar)
+        atom_out = self.rsh_conv(spherical_out, scalar_out)
+        zero_order = atom_out[:, [0]]
+        second_order = atom_out[:, 1:6]
         # build zero order output
         zero_out = torch.diag_embed(torch.repeat_interleave(zero_order, 3, dim=-1))
         # build second order output
@@ -467,6 +514,7 @@ class PolarOut(nn.Module):
         second_out[:, 1, 2] = second_out[:, 2, 1] = dyz
         second_out[:, 0, 2] = second_out[:, 2, 0] = dzx
         # add together
-        atom_out = zero_out + second_out
-        res = scatter(atom_out, batch_idx, dim=0, reduce=self.reduce_op)
+        res = scatter(zero_out + second_out, batch_idx, dim=0, reduce=self.reduce_op)
+        if self.output_dim == 1:
+            res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True)
         return res

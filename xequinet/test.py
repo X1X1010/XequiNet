@@ -5,11 +5,10 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 
-from xpainn.data import H5Dataset, H5MemDataset, H5DiskDataset, data_unit_transform, atom_ref_transform
-# from xphormer.nn.painn_ori import PaiNN
-from xpainn.nn import XPaiNN
-from xpainn.utils import NetConfig, unit_conversion, set_default_unit
-from xpainn.utils.qc import ELEMENTS_LIST
+from xequinet.data import H5Dataset, H5MemDataset, H5DiskDataset, data_unit_transform, atom_ref_transform
+from xequinet.nn import xPaiNN
+from xequinet.utils import NetConfig, unit_conversion, set_default_unit
+from xequinet.utils.qc import ELEMENTS_LIST
 
 
 def test_scalar(model, test_loader, device, outfile):
@@ -130,7 +129,7 @@ def main():
     )
     
     # build model
-    model = XPaiNN(config).to(device)
+    model = xPaiNN(config).to(device)
     model.load_state_dict(ckpt["model"])
 
     # test

@@ -4,11 +4,11 @@ import argparse
 import torch
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
-from xpainn.nn import xPaiNN
-from xpainn.utils import NetConfig, set_default_unit, get_atomic_energy
-from xpainn.utils.qc import ELEMENTS_LIST
-from xpainn.data import XYZDataset
-from xpainn.interface import mopac_calculation, xtb_calculation
+from xequinet.nn import xPaiNN
+from xequinet.utils import NetConfig, set_default_unit, get_atomic_energy
+from xequinet.utils.qc import ELEMENTS_LIST
+from xequinet.data import XYZDataset
+from xequinet.interface import mopac_calculation, xtb_calculation
 
 
 def calc_atom_ref(at_no, atom_ref, batom_ref):

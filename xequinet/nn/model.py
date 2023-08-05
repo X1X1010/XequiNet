@@ -1,5 +1,9 @@
+from typing import Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
+from torch_cluster import radius_graph
+
 from .xpainn import (
     XEmbedding,
     PainnMessage, PainnUpdate,
@@ -32,6 +36,7 @@ def resolve_output(config: NetConfig):
         return VectorOut(
             edge_irreps=config.edge_irreps,
             hidden_irreps=config.hidden_irreps,
+            output_dim=config.output_dim,
             gatefn=config.gate_actfn,
             reduce_op=config.reduce_op,
         )
@@ -39,6 +44,7 @@ def resolve_output(config: NetConfig):
         return PolarOut(
             edge_irreps=config.edge_irreps,
             hidden_irreps=config.hidden_irreps,
+            output_dim=config.output_dim,
             gatefn=config.gate_actfn,
             reduce_op=config.reduce_op,
         )
@@ -49,6 +55,7 @@ def resolve_output(config: NetConfig):
 class xPaiNN(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
+        self.cutoff = config.cutoff
         self.embed = XEmbedding(
             node_dim=config.node_dim,
             edge_irreps=config.edge_irreps,
@@ -81,9 +88,9 @@ class xPaiNN(nn.Module):
         self,
         at_no: torch.LongTensor,
         pos: torch.Tensor,
-        edge_index: torch.LongTensor,
+        edge_index: Optional[torch.LongTensor],
         batch_idx: torch.LongTensor,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Args:
             `at_no`: Atomic numbers.
@@ -93,6 +100,8 @@ class xPaiNN(nn.Module):
         Returns:
             `result`: Output.
         """
+        if edge_index is None:
+            edge_index = radius_graph(pos, r=self.cutoff, batch=batch_idx)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for msg, upd in zip(self.message, self.update):

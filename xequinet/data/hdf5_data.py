@@ -14,7 +14,7 @@ from ..utils import unit_conversion, get_atomic_energy, get_default_unit
 
 class H5Dataset(Dataset):
     """
-    Classical torch Dataset for Xphormer.
+    Classical torch Dataset for XequiNet.
     """
     def __init__(
         self,
@@ -107,7 +107,7 @@ class H5Dataset(Dataset):
 
 class H5MemDataset(InMemoryDataset):
     """
-    Dataset for Xphormer in-memory processing.
+    Dataset for XequiNet in-memory processing.
     """
     def __init__(
         self,
@@ -136,7 +136,6 @@ class H5MemDataset(InMemoryDataset):
         self._cutoff = cutoff
         self._max_size = max_size if max_size is not None else 1e9
         self._mem_process = mem_process
-        self.pre_transform = pre_transform
         self._prop_dict = prop_dict
         _, self.len_unit = get_default_unit()
         super().__init__(root, transform=transform, pre_transform=pre_transform)
@@ -173,10 +172,10 @@ class H5MemDataset(InMemoryDataset):
                 at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
                 try:
                     coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
-                    coords *= unit_conversion("angstrom", self.len_unit)
+                    coords *= unit_conversion("Angstrom", self.len_unit)
                 except:
                     coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
-                    coords *= unit_conversion("bohr", self.len_unit)
+                    coords *= unit_conversion("Bohr", self.len_unit)
                 for icfm, coord in enumerate(coords):
                     edge_index = radius_graph(coord, self._cutoff)
                     data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
@@ -204,7 +203,7 @@ class H5MemDataset(InMemoryDataset):
 
 class H5DiskDataset(DiskDataset):
     """
-    Dataset for Xphormer disk processing.
+    Dataset for XequiNet disk processing.
     """
     def __init__(
         self,
@@ -232,7 +231,6 @@ class H5DiskDataset(DiskDataset):
         self._cutoff = cutoff
         self._max_size = max_size if max_size is not None else 1e9
         self._mem_process = mem_process
-        self.pre_transform = pre_transform
         self._prop_dict = prop_dict
         self._num_data = None
         _, self.len_unit = get_default_unit()

@@ -8,15 +8,14 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
-from xpainn.nn import xPaiNN
-# from xphormer.nn.painn_ori import PaiNN
-from xpainn.utils import (
+from xequinet.nn import xPaiNN
+from xequinet.utils import (
     NetConfig, ZeroLogger,
-    set_default_unit, get_default_unit,
+    set_default_unit,
     distributed_zero_first, calculate_stats,
     Trainer, GradTrainer,
 )
-from xpainn.data import(
+from xequinet.data import(
     H5Dataset, H5MemDataset, H5DiskDataset,
     data_unit_transform, atom_ref_transform,
 )
@@ -133,9 +132,8 @@ def main():
             config.graph_mean = config.add_mean
     elif config.add_mean == True:
         mean, std = calculate_stats(train_loader, config.divided_by_atoms)
-        prop_unit, _ = get_default_unit()
-        log.s.info(f"Mean : {mean:.4f} {prop_unit}")
-        log.s.info(f"Std. : {std:.4f} {prop_unit}")
+        log.s.info(f"Mean : {mean:.4f} {config.default_property_unit}")
+        log.s.info(f"Std. : {std:.4f} {config.default_property_unit}")
         if config.divided_by_atoms:
             config.node_mean = mean
         else:

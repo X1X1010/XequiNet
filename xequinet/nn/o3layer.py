@@ -165,12 +165,13 @@ class EquivariantDot(nn.Module):
 
         self.irreps_in = irreps_in
         self.irreps_out = irreps_out.simplify()
+        self.input_dim = self.irreps_in.dim
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.irreps_in})"
     
-    def forward(self, features1, features2):
-        assert features1.shape[-1] == self.irreps_in.dim, "Input tensor must have the same last dimension as the irreps"
-        assert features2.shape[-1] == self.irreps_in.dim, "Input tensor must have the same last dimension as the irreps"
+    def forward(self, features1: torch.Tensor, features2: torch.Tensor) -> torch.Tensor:
+        assert features1.shape[-1] == features2.shape[-1] == self.input_dim, \
+            "Input tensor must have the same last dimension as the irreps"
         out = self.tp(features1, features2)
         return out

@@ -3,8 +3,8 @@ import argparse
 
 import torch
 
-from xpainn.nn import xPaiNN
-from xpainn.utils import NetConfig
+from xequinet.nn import xPaiNN
+from xequinet.utils import NetConfig
 
 
 def main():
@@ -21,9 +21,9 @@ def main():
 
     # load config
     config = NetConfig.parse_obj(ckpt["config"])
+    config.node_mean = 0.0; config.graph_mean = 0.0
     if args.force:
         config.output_mode = "grad"
-
 
     # build model
     model = xPaiNN(config).to(device)

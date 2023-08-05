@@ -1,12 +1,10 @@
-from typing import Iterable, Tuple, Optional
+from typing import Tuple
 
 import torch
 import torch.nn as nn
 from torch_scatter import scatter
-from e3nn import o3
 
-from .o3layer import Invariant, ElementShifts, EquivariantDot
-from .rbf import GaussianSmearing, SphericalBesselj0, CosineCutoff, PolynomialCutoff
+from .rbf import GaussianSmearing, SphericalBesselj0, CosineCutoff
 from ..utils import resolve_actfn, NetConfig
 
 

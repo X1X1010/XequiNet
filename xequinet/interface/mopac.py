@@ -4,7 +4,7 @@ import subprocess
 import numpy as np
 
 # from ..utils import unit_conversion
-from xpainn.utils import unit_conversion
+from xequinet.utils import unit_conversion
 
 
 class MOPAC:
