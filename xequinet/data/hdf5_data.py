@@ -9,7 +9,10 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.data import Dataset as DiskDataset
 from torch_cluster import radius_graph
 
-from ..utils import unit_conversion, get_atomic_energy, get_default_unit
+from ..utils import (
+    unit_conversion,
+    get_atomic_energy, get_default_unit, get_centroid,
+)
 
 
 class H5Dataset(Dataset):
@@ -374,4 +377,16 @@ def atom_ref_transform(
         if hasattr(new_data, "base_force"):
             new_data.base_force = new_data.base_force.to(torch.get_default_dtype())
 
+    return new_data
+
+
+def centroid_transform(
+    data: Data,
+):
+    """
+    Create a deep copy of the data and subtract the centroid.
+    """
+    new_data = data.clone()
+    centroid = get_centroid(new_data.at_no, new_data.pos)
+    new_data.pos -= centroid
     return new_data

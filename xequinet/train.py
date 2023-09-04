@@ -17,7 +17,7 @@ from xequinet.utils import (
 )
 from xequinet.data import(
     H5Dataset, H5MemDataset, H5DiskDataset,
-    data_unit_transform, atom_ref_transform,
+    data_unit_transform, atom_ref_transform, centroid_transform,
 )
 
 
@@ -88,7 +88,8 @@ def main():
 
     # set transform function
     pre_transform = lambda data: data_unit_transform(
-        data, config.label_unit, config.blabel_unit, config.force_unit, config.bforce_unit,
+        centroid_transform(data), config.label_unit, config.blabel_unit,
+        config.force_unit, config.bforce_unit,
     )
     transform = lambda data: atom_ref_transform(data, config.atom_ref, config.batom_ref)
     # set dataset

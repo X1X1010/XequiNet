@@ -4,6 +4,7 @@ from .hdf5_data import (
     H5DiskDataset,
     data_unit_transform,
     atom_ref_transform,
+    centroid_transform,
 )
 from .xyz_data import XYZDataset
 
@@ -13,5 +14,6 @@ __all__ = [
     "H5DiskDataset",
     "data_unit_transform",
     "atom_ref_transform",
+    "centroid_transform",
     "XYZDataset",
 ]

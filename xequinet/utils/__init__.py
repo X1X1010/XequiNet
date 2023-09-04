@@ -7,7 +7,7 @@ from .qc import (
     get_default_unit,
     get_embedding_tensor,
     get_atomic_energy,
-    centrization,
+    get_centroid,
 )
 from .functional import (
     distributed_zero_first,
@@ -30,7 +30,7 @@ __all__ = [
     "get_default_unit",
     "get_embedding_tensor",
     "get_atomic_energy",
-    "centrization",
+    "get_centroid",
     "distributed_zero_first",
     "calculate_stats",
     "resolve_lossfn",

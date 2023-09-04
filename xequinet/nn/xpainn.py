@@ -98,7 +98,6 @@ class XEmbedding(nn.Module):
         return x_scalar, rbf, fcut, rsh
 
 
-
 class PainnMessage(nn.Module):
     """Message function for PaiNN"""
     def __init__(
@@ -168,13 +167,12 @@ class PainnMessage(nn.Module):
         edge_spherical = self.rsh_conv(rsh, gate_edge_spherical)
         message_spherical = message_spherical + edge_spherical
 
-        new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
-        new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
-        # new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
-        # new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
+        # new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
+        # new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
+        new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
+        new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
 
         return new_scalar, new_spherical
-
 
 
 class PainnUpdate(nn.Module):
@@ -441,8 +439,8 @@ class VectorOut(nn.Module):
         """
         spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
         scalar_out = self.scalar_out_mlp(x_scalar)
-        # atom_out = spherical_out + spherical_out * scalar_out
-        atom_out = spherical_out * scalar_out
+        # atom_out = scalar_out * coord + spherical_out
+        atom_out = spherical_out + spherical_out * scalar_out
         res = scatter(atom_out, batch_idx, dim=0, reduce=self.reduce_op)
         # num_mol = int(batch_idx.max().item() + 1)
         # zero_res = torch.zeros(
