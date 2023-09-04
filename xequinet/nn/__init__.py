@@ -18,6 +18,9 @@ from .xpainn import (
     PainnUpdate,
     ScalarOut,
     NegGradOut,
+    VectorOut,
+    PolarOut,
+    ForceOut,
 )
 from .model import xPaiNN
 
@@ -37,5 +40,8 @@ __all__ = [
     "PainnUpdate",
     "ScalarOut",
     "NegGradOut",
+    "VectorOut",
+    "PolarOut",
+    "ForceOut",
     "xPaiNN",
 ]

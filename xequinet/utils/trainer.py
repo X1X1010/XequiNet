@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.optim.swa_utils import AveragedModel
-from torch.utils.data import DataLoader
+from torch_geometric.loader import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 from .functional import (

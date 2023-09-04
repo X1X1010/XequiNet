@@ -41,6 +41,7 @@ def test_grad(model, test_loader, device, outfile):
     sum_lossE, sum_lossF, num_mol, num_atm = 0.0, 0.0, 0, 0
     for data in test_loader:
         data = data.to(device)
+        data.pos.requires_grad = True
         predE, predF = model(data.at_no, data.pos, data.edge_index, data.batch)
         with torch.no_grad():
             if hasattr(data, "base_y"):
@@ -74,19 +75,21 @@ def main():
     # parse config
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="config.json", help="configuration file")
+    parser.add_argument("--ckpt-file", type=str, default="checkpoint.pt", help="checkpoint file")
     parser.add_argument("--output-file", "-o", default=None, help="output file name")
+    parser.add_argument("--force", "-f", action="store_true", help="test force")
     args = parser.parse_args()
     config = NetConfig.parse_file(args.config)
     
     # set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     torch.cuda.set_device(device)
     
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
     # update configuration with config saved in checkpoint
-    ckpt = torch.load(config.ckpt_file, map_location=device)
+    ckpt = torch.load(args.ckpt_file, map_location=device)
     config.parse_obj(ckpt["config"])
 
     # choose dataset type
@@ -111,16 +114,14 @@ def main():
         prop_dict["base_force"] = config.bforce_name
 
     # set unit transform function
-    pre_transform = lambda data: atom_ref_transform(
-        data, config.atom_ref, config.batom_ref, config.label_unit, config.blabel_unit,
-    )
-    transform = lambda data: data_unit_transform(
+    pre_transform = lambda data: data_unit_transform(
         data, config.label_unit, config.blabel_unit, config.force_unit, config.bforce_unit,
     )
+    transform = lambda data: atom_ref_transform(data, config.atom_ref, config.batom_ref)
     # load dataset
     test_dataset = Dataset(
-        config.data_root, config.data_files, "test", config.embed_basis,
-        config.cutoff, config.vmax_mol, config.mem_process, transform, pre_transform,
+        config.data_root, config.data_files, "test", config.cutoff,
+        config.vmax_mol, config.mem_process, transform, pre_transform,
         **prop_dict,
     )
     test_loader = DataLoader(
@@ -129,15 +130,19 @@ def main():
     )
     
     # build model
+    config.node_mean = 0.0
+    config.graph_mean = 0.0
+    if args.force == True and config.output_mode == "scalar":
+        config.output_mode = "grad"
     model = xPaiNN(config).to(device)
     model.load_state_dict(ckpt["model"])
 
     # test
     if args.output_file is None:
-        args.output_file = f"{config.run_name}.out"
+        args.output_file = f"{config.run_name}_test.log"
         
     with open(args.output_file, 'w') as wf:
-        wf.write("Xphormer testing\n")
+        wf.write("XequiNet testing\n")
 
     if config.output_mode == "scalar":
         test_scalar(model, test_loader, device, args.output_file)

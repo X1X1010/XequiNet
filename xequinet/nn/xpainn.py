@@ -1,9 +1,10 @@
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Union
 
 import math
 
 import torch
 import torch.nn as nn
+import torch_geometric.utils
 from torch_scatter import scatter
 from e3nn import o3
 
@@ -34,7 +35,7 @@ class XEmbedding(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: str | o3.Irreps | Iterable = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         embed_basis: str = "gfn2-xtb",
         num_basis: int = 20,
         rbf_kernel: str = "bessel",
@@ -54,6 +55,8 @@ class XEmbedding(nn.Module):
         super().__init__()
         self.node_dim = node_dim
         self.edge_irreps = o3.Irreps(edge_irreps)
+        # self.embedding = nn.Embedding(119, 28)
+        # self.embed_dim = self.embedding.embedding_dim
         self.int2c1e = Int2c1eEmbedding(embed_basis)
         self.embed_dim = self.int2c1e.embed_dim
         self.edge_num_irreps = self.edge_irreps.num_irreps
@@ -84,6 +87,7 @@ class XEmbedding(nn.Module):
         vec = pos[edge_index[0]] - pos[edge_index[1]]
         dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
         # node linear
+        # x = self.embedding(at_no)
         x = self.int2c1e(at_no)
         x_scalar = self.node_lin(x)
         # calculate radial basis function
@@ -100,7 +104,7 @@ class PainnMessage(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: str | o3.Irreps | Iterable = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         num_basis: int = 20,
         actfn: str = "silu",
     ):
@@ -164,8 +168,10 @@ class PainnMessage(nn.Module):
         edge_spherical = self.rsh_conv(rsh, gate_edge_spherical)
         message_spherical = message_spherical + edge_spherical
 
-        new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
-        new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
+        new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
+        new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
+        # new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
+        # new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
 
         return new_scalar, new_spherical
 
@@ -176,7 +182,7 @@ class PainnUpdate(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: str | o3.Irreps | Iterable = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         actfn: str = "silu",
     ):
         """
@@ -293,6 +299,12 @@ class ScalarOut(nn.Module):
         """
         atom_out = self.out_mlp(x_scalar) + self.node_bias
         res = scatter(atom_out, batch_idx, dim=0, reduce=self.reduce_op)
+        # num_mol = int(batch_idx.max().item() + 1)
+        # zero_res = torch.zeros(
+        #     (num_mol, self.out_dim),
+        #     dtype=atom_out.dtype, device=atom_out.device,
+        # )
+        # res = zero_res.index_add(0, batch_idx, atom_out)
         return res + self.graph_bias
 
 
@@ -347,7 +359,13 @@ class NegGradOut(nn.Module):
             `neg_grad`: Negative gradient.
         """
         atom_out = self.out_mlp(x_scalar) + self.node_bias
-        res =  scatter(atom_out, batch_idx, dim=0, reduce=self.reduce_op)
+        # res =  scatter(atom_out, batch_idx, dim=0, reduce=self.reduce_op)
+        num_mol = int(batch_idx.max().item() + 1)
+        zero_res = torch.zeros(
+            (num_mol, 1),
+            dtype=atom_out.dtype, device=atom_out.device,
+        )
+        res = zero_res.index_add(0, batch_idx, atom_out)
         grad = torch.autograd.grad(
             [res.sum(),],
             [coord,],
@@ -364,9 +382,9 @@ class VectorOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: str | o3.Irreps | Iterable = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         hidden_dim: int = 64,
-        hidden_irreps: str | o3.Irreps | Iterable = "32x1e",
+        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
         output_dim: int = 3,
         actfn: str = "silu",
         gatefn: str = "sigmoid",
@@ -423,8 +441,15 @@ class VectorOut(nn.Module):
         """
         spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
         scalar_out = self.scalar_out_mlp(x_scalar)
-        atom_out = spherical_out + spherical_out * scalar_out
+        # atom_out = spherical_out + spherical_out * scalar_out
+        atom_out = spherical_out * scalar_out
         res = scatter(atom_out, batch_idx, dim=0, reduce=self.reduce_op)
+        # num_mol = int(batch_idx.max().item() + 1)
+        # zero_res = torch.zeros(
+        #     (num_mol + 1, 3),
+        #     dtype=atom_out.dtype, device=atom_out.device,
+        # )
+        # res = zero_res.index_add(0, batch_idx, atom_out)
         if self.output_dim == 1:
             res = torch.linalg.norm(res, dim=-1, keepdim=True)
         return res
@@ -434,9 +459,9 @@ class PolarOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: str | o3.Irreps | Iterable = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         hidden_dim: int = 64,
-        hidden_irreps: str | o3.Irreps | Iterable = "32x1e",
+        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
         output_dim: int = 9,
         actfn: str = "silu",
         gatefn: str = "sigmoid",
@@ -515,6 +540,143 @@ class PolarOut(nn.Module):
         second_out[:, 0, 2] = second_out[:, 2, 0] = dzx
         # add together
         res = scatter(zero_out + second_out, batch_idx, dim=0, reduce=self.reduce_op)
+        # num_mol = int(batch_idx.max().item() + 1)
+        # zero_res = torch.zeros(
+        #     (num_mol + 1, 3, 3),
+        #     dtype=atom_out.dtype, device=atom_out.device,
+        # )
+        # res = zero_res.index_add(0, batch_idx, atom_out)
         if self.output_dim == 1:
             res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True)
         return res
+
+
+class ForceOut(nn.Module):
+    def __init__(
+        self,
+        node_dim: int = 128,
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        hidden_dim: int = 64,
+        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
+        actfn: str = "silu",
+        gatefn: str = "sigmoid",
+        reduce_op: str = "sum",
+    ):
+        """
+        Args:
+            `node_dim`: Node dimension.
+            `edge_irreps`: Edge irreps.
+            `hidden_dim`: Hidden dimension.
+            `hidden_irreps`: Hidden irreps.
+            `actfn`: Activation function type.
+            `gatefn`: Gate function type.
+            `reduce_op`: Reduce operation.
+        """
+        super().__init__()
+        self.node_dim = node_dim
+        self.edge_irreps = o3.Irreps(edge_irreps)
+        self.hidden_dim = hidden_dim
+        self.hidden_irreps = o3.Irreps(hidden_irreps)
+        self.reduce_op = reduce_op
+        self.scalar_out_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, 1),
+        )
+        nn.init.zeros_(self.scalar_out_mlp[0].bias)
+        nn.init.zeros_(self.scalar_out_mlp[2].bias)
+        self.spherical_out_mlp = nn.Sequential(
+            o3.Linear(self.edge_irreps, self.hidden_irreps),
+            Gate(self.hidden_irreps, actfn=gatefn),
+            o3.Linear(self.hidden_irreps, "1x1e"),
+        )
+
+    def forward(
+        self,
+        x_scalar: torch.Tensor,
+        x_spherical: torch.Tensor,
+        coord: torch.Tensor,
+        batch_idx: torch.LongTensor,
+    ) -> torch.Tensor:
+        """
+        Args:
+            `x_scalar`: Scalar features.
+            `x_spherical`: Spherical features.
+            `coord`: Atomic coordinates.
+            `batch_idx`: Batch index.
+        Returns:
+            `res`: Vector output.
+        """
+        spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
+        scalar_out = self.scalar_out_mlp(x_scalar)
+        # res = spherical_out + spherical_out * scalar_out
+        res = spherical_out * scalar_out
+        return res        
+
+
+class CoulombOut(nn.Module):
+    def __init__(
+        self,
+        node_dim: int = 128,
+        hidden_dim: int = 64,
+        actfn: str = "silu",
+        reduce_op: str = "sum",
+        node_bias: float = 0.0,
+        graph_bias: float = 0.0,
+    ):
+        """
+        Args:
+            `node_dim`: Node dimension.
+            `actfn`: Activation function type.
+            `reduce_op`: Reduce operation.
+            `node_bias`: Bias for atomic wise output.
+            `graph_bias`: Bias for graphic output.
+        """
+        super().__init__()
+        self.node_dim = node_dim
+        self.hidden_dim = hidden_dim
+        self.reduce_op = reduce_op
+        self.energy_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, 1),
+        )
+        nn.init.zeros_(self.energy_mlp[0].bias)
+        nn.init.zeros_(self.energy_mlp[2].bias)
+        self.charge_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, 1),
+        )
+        nn.init.zeros_(self.charge_mlp[0].bias)
+        nn.init.zeros_(self.charge_mlp[2].bias)
+        self.register_buffer("node_bias", torch.tensor(node_bias))
+        self.register_buffer("graph_bias", torch.tensor(graph_bias))
+
+    def forward(
+        self,
+        x_scalar: torch.Tensor,
+        edge_index: torch.Tensor,
+        dist: torch.Tensor,
+        mol_charge: torch.Tensor,
+        batch_idx: torch.LongTensor,
+    ) -> torch.Tensor:
+        """
+        Args:
+            `x_scalar`: Scalar features.
+            `x_spherical`: Spherical features. (Unused in this module)
+            `at_no`: Atomic numbers.
+            `coord`: Atomic coordinates.
+            `batch_idx`: Batch index.
+        Returns:
+            `res`: Energy output with Coulomb interaction.
+        """
+        atom_energy_out = self.energy_mlp(x_scalar) + self.node_bias
+        atom_charge_out = torch_geometric.utils.softmax(
+            src=self.charge_mlp(x_scalar),
+            index=batch_idx,
+        ) * mol_charge.index_select(0, batch_idx)
+        coulomb = atom_charge_out[edge_index[0]] * atom_charge_out[edge_index[1]] / dist
+        coulomb_out = scatter(0.5 * coulomb, edge_index[0], dim=0, reduce=self.reduce_op)
+        res = scatter(coulomb_out + atom_energy_out, batch_idx, dim=0, reduce=self.reduce_op)
+        return res + self.graph_bias

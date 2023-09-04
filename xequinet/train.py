@@ -98,18 +98,11 @@ def main():
             config.max_mol, config.mem_process, transform, pre_transform,
             **prop_dict,
         )
-        try:
-            valid_dataset = Dataset(
-                config.data_root, config.data_files, "valid", config.cutoff,
-                config.vmax_mol, config.mem_process, transform, pre_transform,
-                **prop_dict,
-            )
-        except:
-            valid_dataset = Dataset(
-                config.data_root, config.data_files, "test", config.cutoff,
-                config.vmax_mol, config.mem_process, transform, pre_transform,
-                **prop_dict,
-            )
+        valid_dataset = Dataset(
+            config.data_root, config.data_files, "valid", config.cutoff,
+            config.vmax_mol, config.mem_process, transform, pre_transform,
+            **prop_dict,
+        )
     # set dataloader
     train_sampler = DistributedSampler(train_dataset, world_size, local_rank, shuffle=True)
     valid_sampler = DistributedSampler(valid_dataset, world_size, local_rank, shuffle=False)
@@ -146,12 +139,14 @@ def main():
     model.to(device)
 
     # distributed training
-    ddp_model = DDP(model, device_ids=[local_rank], output_device=device)
+    find_unused_parameters = True if config.finetune else False
+    ddp_model = DDP(model, device_ids=[local_rank], output_device=device,
+                    find_unused_parameters=find_unused_parameters)
 
     # record the number of parameters and frozen some when finetuning
     n_params = 0
     for name, param in ddp_model.named_parameters():
-        if config.finetune and ("embedding" in name or "encoding" in name):
+        if config.finetune and (not "out" in name):
             param.requires_grad = False
             log.s.info(f"{name}: {param.numel()} (frozen)")
         else:

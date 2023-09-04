@@ -60,7 +60,7 @@ class NetConfig(BaseModel):
     resumption: bool = False                       # whether to resume the training
     finetune: bool = False                         # whether to finetune the model
     warmup_scheduler: str = "linear"               # warmup scheduler type
-    warmup_epochs: int = 100                       # number of the warmup epochs
+    warmup_epochs: int = 10                        # number of the warmup epochs
     max_epochs: int = 300                          # maximum number of the training epochs
     max_lr: float = 5e-4                           # maximum learning rate
     min_lr: float = 0.0                            # minimum learning rate

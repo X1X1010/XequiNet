@@ -77,10 +77,13 @@ class H5Dataset(Dataset):
                 for icfm, coord in enumerate(coords):
                     edge_index = radius_graph(coord, self._cutoff)
                     data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+                    num_atoms = at_no.size(0)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        len_p = p_val.size(0) if p_val.dim() > 0 else 1
-                        p_val = p_val.view(len_p, -1)
+                        if p_val.dim() == 0:
+                            p_val = p_val.view(-1)
+                        if p_val.size(0) != num_atoms:
+                            p_val = p_val.unsqueeze(0)
                         setattr(data, p_attr, p_val)
                     if self.pre_transform is not None:
                         data = self.pre_transform(data)
@@ -179,10 +182,13 @@ class H5MemDataset(InMemoryDataset):
                 for icfm, coord in enumerate(coords):
                     edge_index = radius_graph(coord, self._cutoff)
                     data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+                    num_atoms = at_no.size(0)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        len_p = p_val.size(0) if p_val.dim() > 0 else 1
-                        p_val = p_val.view(len_p, -1)
+                        if p_val.dim() == 0:
+                            p_val = p_val.view(-1)
+                        if p_val.size(0) != num_atoms:
+                            p_val = p_val.unsqueeze(0)
                         setattr(data, p_attr, p_val)
                     data_list.append(data)
                     ct += 1
@@ -274,10 +280,13 @@ class H5DiskDataset(DiskDataset):
                 for icfm, coord in enumerate(coords):
                     edge_index = radius_graph(coord, self._cutoff)
                     data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+                    num_atoms = at_no.size(0)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        len_p = p_val.size(0) if p_val.dim() > 0 else 1
-                        p_val = p_val.view(len_p, -1)
+                        if p_val.dim() == 0:
+                            p_val = p_val.view(-1)
+                        if p_val.size(0) != num_atoms:
+                            p_val = p_val.unsqueeze(0)
                         setattr(data, p_attr, p_val)
                     if self.pre_transform is not None:
                         data = self.pre_transform(data)

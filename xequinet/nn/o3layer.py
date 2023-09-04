@@ -1,4 +1,4 @@
-from typing import Optional, Iterable
+from typing import Optional, Iterable, Union
 
 import torch
 import torch.nn as nn
@@ -14,7 +14,7 @@ class Invariant(nn.Module):
     """
     def __init__(
         self,
-        irreps_in: str | o3.Irreps | Iterable,
+        irreps_in: Union[str, o3.Irreps, Iterable],
         squared: bool = False,
         eps: float = 1e-6,
     ):
@@ -40,7 +40,7 @@ class Invariant(nn.Module):
 class Gate(nn.Module):
     def __init__(
         self,
-        irreps_in: str | o3.Irreps | Iterable,
+        irreps_in: Union[str, o3.Irreps, Iterable],
         actfn: str = "sigmoid",
     ):
         super().__init__()
@@ -116,8 +116,8 @@ class Int2c1eEmbedding(nn.Module):
 class CGCoupler(o3.TensorProduct):
     def __init__(
         self,
-        irreps_in1: str | o3.Irreps | Iterable,
-        irreps_in2: str | o3.Irreps | Iterable,
+        irreps_in1: Union[str, o3.Irreps, Iterable],
+        irreps_in2: Union[str, o3.Irreps, Iterable],
         filter_ir_out: Iterable[o3.Irrep] = None,
         irrep_normalization: str = None,
         trainable: bool = False,
@@ -152,7 +152,7 @@ class CGCoupler(o3.TensorProduct):
 class EquivariantDot(nn.Module):
     def __init__(
         self,
-        irreps_in: str | o3.Irreps | Iterable,
+        irreps_in: Union[str, o3.Irreps, Iterable],
     ):
         super().__init__()
 

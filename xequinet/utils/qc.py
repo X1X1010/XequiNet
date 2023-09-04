@@ -163,6 +163,17 @@ QM9_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
 QM9_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
     [-0.6038066, -38.0740441, -54.7491437, -75.2252374, -99.8658573]
 )
+# specialzations for tianchi
+TCA_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
+TCA_ATOM_ENERGY[[1, 6, 8, 15, 16]] = torch.DoubleTensor(
+    [-378.62385669, -23894.10955497, -47159.37930543, -214228.02909025, -249800.21072826]
+) * unit_conversion("kcal_per_mol", "Hartree")
+
+TCB_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
+TCB_ATOM_ENERGY[[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]] = torch.DoubleTensor([
+    -3.75297211e+02, -2.38978965e+04, -3.43272344e+04, -4.71646562e+04, -6.26023516e+04,
+    -2.14206766e+05, -2.49786312e+05, -2.88694312e+05, -1.61482812e+06, -1.86865172e+05
+]) * unit_conversion("kcal_per_mol", "Hartree")
 
 
 def gen_int2c1e(basisname="gfn2-xtb"):
@@ -180,7 +191,7 @@ def gen_int2c1e(basisname="gfn2-xtb"):
     nao_aux = aux.nao
     ao_loc_nr = aux.ao_loc_nr()[:-1]
 
-    for atom, mult in zip(ELEMENTS_LIST[1:], ATOM_MULT[1:]):
+    for atom, mult in zip(ELEMENTS_LIST[1:10], ATOM_MULT[1:10]):
         mol = gto.M(
             atom=f"X 0 0 0; {atom} 0 0 0",
             basis={'X': orbaux, atom: basis},
@@ -188,9 +199,10 @@ def gen_int2c1e(basisname="gfn2-xtb"):
         )
         ovlp = mol.intor("int1e_ovlp")
         projection = ovlp[:nao_aux, nao_aux:]
+        print(projection)
         embedding = np.linalg.norm(projection, axis=-1) # / projection.shape[-1] 
         int2c1e_dict[atom] = torch.from_numpy(embedding[ao_loc_nr])
-    torch.save(int2c1e_dict, savefile)
+    # torch.save(int2c1e_dict, savefile)
 
 
 def get_embedding_tensor(basisname="gfn2-xtb") -> torch.Tensor:
@@ -206,7 +218,7 @@ def get_embedding_tensor(basisname="gfn2-xtb") -> torch.Tensor:
         gen_int2c1e(basisname)
     embed_dict = torch.load(PRE_FOLDER / f"{basisname}_embedding.pt")
     embed_tenor = torch.stack([embed_dict[atom] for atom in ELEMENTS_LIST[1:]])
-    embed_tenor =  torch.cat([torch.zeros(1, embed_tenor.shape[-1]), embed_tenor])
+    embed_tenor = torch.cat([torch.zeros(1, embed_tenor.shape[-1]), embed_tenor])
     return embed_tenor.to(torch.get_default_dtype())
 
 
@@ -236,8 +248,8 @@ def calc_cgto_norm(cgto: list):
     return 1 / np.sqrt(intor)
 
 
-def centrization(at_no: torch.Tensor, coords: torch.Tensor):
-    """Centrization of the coordinates of atoms."""
+def centroid(at_no: torch.Tensor, coords: torch.Tensor):
+    """Moving molecules to the center of mass."""
     assert at_no.shape[0] == coords.shape[0]
     masses = ATOM_MASS[at_no]
     centroid = torch.sum(masses * coords, dim=0) / torch.sum(masses)

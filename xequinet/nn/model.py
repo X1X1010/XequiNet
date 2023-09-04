@@ -1,13 +1,12 @@
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
 import torch
 import torch.nn as nn
-from torch_cluster import radius_graph
 
 from .xpainn import (
     XEmbedding,
     PainnMessage, PainnUpdate,
-    ScalarOut, NegGradOut, VectorOut, PolarOut,
+    ScalarOut, NegGradOut, VectorOut, PolarOut, ForceOut,
 )
 from ..utils import NetConfig
 
@@ -45,6 +44,16 @@ def resolve_output(config: NetConfig):
             edge_irreps=config.edge_irreps,
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
+            gatefn=config.gate_actfn,
+            reduce_op=config.reduce_op,
+        )
+    elif config.output_mode == "force":
+        return ForceOut(
+            node_dim=config.node_dim,
+            edge_irreps=config.edge_irreps,
+            hidden_dim=config.hidden_dim,
+            hidden_irreps=config.hidden_irreps,
+            actfn=config.activation,
             gatefn=config.gate_actfn,
             reduce_op=config.reduce_op,
         )
@@ -88,7 +97,7 @@ class xPaiNN(nn.Module):
         self,
         at_no: torch.LongTensor,
         pos: torch.Tensor,
-        edge_index: Optional[torch.LongTensor],
+        edge_index: torch.LongTensor,
         batch_idx: torch.LongTensor,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
@@ -100,8 +109,6 @@ class xPaiNN(nn.Module):
         Returns:
             `result`: Output.
         """
-        if edge_index is None:
-            edge_index = radius_graph(pos, r=self.cutoff, batch=batch_idx)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for msg, upd in zip(self.message, self.update):
