@@ -6,7 +6,10 @@ import torch.nn as nn
 from .xpainn import (
     XEmbedding,
     PainnMessage, PainnUpdate,
-    ScalarOut, NegGradOut, VectorOut, PolarOut, ForceOut,
+)
+from .output import (
+    ScalarOut, NegGradOut, VectorOut,
+    PolarOut, ForceOut, HessianOut,
 )
 from ..utils import NetConfig
 
@@ -55,7 +58,15 @@ def resolve_output(config: NetConfig):
             hidden_irreps=config.hidden_irreps,
             actfn=config.activation,
             gatefn=config.gate_actfn,
-            reduce_op=config.reduce_op,
+        )
+    elif config.output_mode == "hessian":
+        return HessianOut(
+            node_dim=config.node_dim,
+            edge_irreps=config.edge_irreps,
+            hidden_dim=config.hidden_dim,
+            hidden_irreps=config.hidden_irreps,
+            actfn=config.activation,
+            gatefn=config.gate_actfn,
         )
     else:
         raise NotImplementedError(f"output mode {config.output_mode} is not implemented")
@@ -64,11 +75,13 @@ def resolve_output(config: NetConfig):
 class xPaiNN(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
+        self.config = config
         self.cutoff = config.cutoff
         self.embed = XEmbedding(
             node_dim=config.node_dim,
             edge_irreps=config.edge_irreps,
             embed_basis=config.embed_basis,
+            aux_basis=config.aux_basis,
             num_basis=config.num_basis,
             rbf_kernel=config.rbf_kernel,
             cutoff=config.cutoff,
@@ -98,14 +111,14 @@ class xPaiNN(nn.Module):
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         edge_index: torch.LongTensor,
-        batch_idx: torch.LongTensor,
+        output_index: torch.LongTensor,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Args:
             `at_no`: Atomic numbers.
             `pos`: Atomic coordinates.
             `edge_index`: Edge index.
-            `batch_idx`: Batch index.
+            `output_index`: Output index (vary from different output layer).
         Returns:
             `result`: Output.
         """
@@ -114,5 +127,5 @@ class xPaiNN(nn.Module):
         for msg, upd in zip(self.message, self.update):
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
-        result = self.out(x_scalar, x_vector, pos, batch_idx)
+        result = self.out(x_scalar, x_vector, pos, output_index)
         return result

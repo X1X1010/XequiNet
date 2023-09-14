@@ -176,22 +176,22 @@ TCB_ATOM_ENERGY[[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]] = torch.DoubleTensor([
 ]) * unit_conversion("kcal_per_mol", "Hartree")
 
 
-def gen_int2c1e(basisname="gfn2-xtb"):
+def gen_int2c1e(embed_basis="gfn2-xtb", aux_basis="aux28"):
     """
     Projection of atomic orbitals onto auxiliary basis.
     """
     int2c1e_dict = {}
-    if (BASIS_FOLDER / f"{basisname}.dat").exists():
-        basis = str(BASIS_FOLDER / f"{basisname}.dat")
+    if (BASIS_FOLDER / f"{embed_basis}.dat").exists():
+        basis = str(BASIS_FOLDER / f"{embed_basis}.dat")
     else:
-        basis = basisname
-    orbaux = str(BASIS_FOLDER / "orbaux.dat")
-    savefile = PRE_FOLDER / f"{basisname}_embedding.pt"
+        basis = embed_basis
+    orbaux = str(BASIS_FOLDER / f"{aux_basis}.dat")
+    savefile = PRE_FOLDER / f"{embed_basis}_{aux_basis}.pt"
     aux = gto.M(atom="X 0 0 0", basis={'X': orbaux})
     nao_aux = aux.nao
     ao_loc_nr = aux.ao_loc_nr()[:-1]
 
-    for atom, mult in zip(ELEMENTS_LIST[1:10], ATOM_MULT[1:10]):
+    for atom, mult in zip(ELEMENTS_LIST[1:], ATOM_MULT[1:]):
         mol = gto.M(
             atom=f"X 0 0 0; {atom} 0 0 0",
             basis={'X': orbaux, atom: basis},
@@ -199,24 +199,24 @@ def gen_int2c1e(basisname="gfn2-xtb"):
         )
         ovlp = mol.intor("int1e_ovlp")
         projection = ovlp[:nao_aux, nao_aux:]
-        print(projection)
         embedding = np.linalg.norm(projection, axis=-1) # / projection.shape[-1] 
         int2c1e_dict[atom] = torch.from_numpy(embedding[ao_loc_nr])
-    # torch.save(int2c1e_dict, savefile)
+    torch.save(int2c1e_dict, savefile)
 
 
-def get_embedding_tensor(basisname="gfn2-xtb") -> torch.Tensor:
+def get_embedding_tensor(embed_basis="gfn2-xtb", aux_basis="aux28") -> torch.Tensor:
     """
     Get embedding of atoms in a basis.
 
     Args:
-        `basisname`: name of the basis
+        `embed_basis`: name of the basis
+        `aux_basis`: name of the auxiliary basis
     Returns:
         a tensor of shape ``(n_atoms, n_aux)``
     """
-    if not (PRE_FOLDER / f"{basisname}_embedding.pt").exists():
-        gen_int2c1e(basisname)
-    embed_dict = torch.load(PRE_FOLDER / f"{basisname}_embedding.pt")
+    if not (PRE_FOLDER / f"{embed_basis}_{aux_basis}.pt").exists():
+        gen_int2c1e(embed_basis, aux_basis)
+    embed_dict = torch.load(PRE_FOLDER / f"{embed_basis}_{aux_basis}.pt")
     embed_tenor = torch.stack([embed_dict[atom] for atom in ELEMENTS_LIST[1:]])
     embed_tenor = torch.cat([torch.zeros(1, embed_tenor.shape[-1]), embed_tenor])
     return embed_tenor.to(torch.get_default_dtype())
@@ -257,5 +257,5 @@ def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
 
 
 if __name__ == "__main__":
-    gen_int2c1e("pm7")
-    gen_int2c1e("gfn2-xtb")
+    gen_int2c1e("pm7", "aux28")
+    gen_int2c1e("gfn2-xtb", "aux28")

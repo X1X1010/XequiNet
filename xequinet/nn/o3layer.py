@@ -93,13 +93,15 @@ class Int2c1eEmbedding(nn.Module):
     def __init__(
         self,
         embed_basis: str = "gfn2-xtb",
+        aux_basis: str = "aux28",
     ):
         """
         Args:
             `embed_basis`: Type of the embedding basis.
+            `aux_basis`: Type of the auxiliary basis.
         """
         super().__init__()
-        embed_ten = get_embedding_tensor(embed_basis)
+        embed_ten = get_embedding_tensor(embed_basis, aux_basis)
         self.register_buffer("embed_ten", embed_ten)
         self.embed_dim = embed_ten.shape[1]
     

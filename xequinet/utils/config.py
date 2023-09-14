@@ -15,6 +15,7 @@ class NetConfig(BaseModel):
 
     # configurations about the model
     embed_basis: str = "gfn2-xtb"                  # embedding basis type
+    aux_basis: str = "aux28"                       # auxiliary basis type
     node_dim: int = 128                            # node irreps for the input
     edge_irreps: str = "128x0e + 64x1e + 32x2e"    # edge irreps for the input
     hidden_dim: int = 64                           # hidden dimension for the output

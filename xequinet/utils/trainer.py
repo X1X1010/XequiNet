@@ -190,8 +190,10 @@ class Trainer:
             data = data.to(self.device)
             # TODO: AMP
             # forward propagation
-            pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+            output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
+            pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
             real = data.y - data.base_y if hasattr(data, "base_y") else data.y
+            # print(pred.shape, real.shape)
             loss = self.lossfn(pred, real)
             # backward propagation
             self.optimizer.zero_grad()
@@ -210,7 +212,7 @@ class Trainer:
             # record l1 loss
             with torch.no_grad():
                 l1loss = F.l1_loss(pred, real, reduction="sum")
-                self.meter.update(l1loss.item(), real.size(0))
+                self.meter.update(l1loss.item(), real.numel())
             # logging
             if step % self.config.log_interval == 0 or step == len(self.train_loader):
                 mae = self.meter.reduce()
@@ -231,10 +233,11 @@ class Trainer:
             for data in self.valid_loader:
                 data = data.to(self.device)
                 # TODO: AMP
-                pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+                output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
+                pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
                 real = data.y - data.base_y if hasattr(data, "base_y") else data.y
                 l1loss = F.l1_loss(pred, real, reduction="sum")
-                self.meter.update(l1loss.item(), real.size(0))
+                self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
         self.log.f.info(f"Validation MAE: {mae:10.7f}")
         if self.config.lr_scheduler == "plateau":
@@ -253,10 +256,11 @@ class Trainer:
             for data in self.valid_loader:
                 data = data.to(self.device)
                 # TODO: AMP
-                pred = self.ema_model(data.at_no, data.pos, data.edge_index, data.batch)
+                output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
+                pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
                 real = data.y - data.base_y if hasattr(data, "base_y") else data.y
                 l1loss = F.l1_loss(pred, real, reduction="sum")
-                self.meter.update(l1loss.item(), real.size(0))
+                self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
         self.log.f.info("EMA Valid MAE: {mae:10.7f}".format(mae=mae))
         if self.config.lr_scheduler == "plateau":

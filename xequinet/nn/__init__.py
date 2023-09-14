@@ -16,6 +16,8 @@ from .xpainn import (
     XEmbedding,
     PainnMessage,
     PainnUpdate,
+)
+from .output import (
     ScalarOut,
     NegGradOut,
     VectorOut,

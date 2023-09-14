@@ -12,11 +12,11 @@ from xequinet.nn import xPaiNN
 from xequinet.utils import (
     NetConfig, ZeroLogger,
     set_default_unit,
-    distributed_zero_first, calculate_stats,
-    Trainer, GradTrainer,
+    distributed_zero_first,
+    Trainer,
 )
 from xequinet.data import(
-    H5Dataset, H5MemDataset, H5DiskDataset,
+    HessianDataset, HessianMemDataset, HessianDiskDataset,
     data_unit_transform, atom_ref_transform,
 )
 
@@ -33,6 +33,8 @@ def main():
     else:
         Warning(f"Config file {args.config} not found. Default config will be used.")
         config = NetConfig()
+
+    assert config.output_mode == "hessian", "Only hessian output mode is supported for training hessian"
 
     # parallel process
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -67,24 +69,19 @@ def main():
     # ------------------- load dataset ------------------- #
     # select dataset type
     if config.dataset_type == "normal":
-        Dataset = H5Dataset      # inherit from torch.utils.data.Dataset
+        Dataset = HessianDataset      # inherit from torch.utils.data.Dataset
     elif config.dataset_type == "memory":
-        Dataset = H5MemDataset   # inherit from torch_geometric.data.InMemoryDataset
+        Dataset = HessianMemDataset   # inherit from torch_geometric.data.InMemoryDataset
     elif config.dataset_type == "disk":
-        Dataset = H5DiskDataset  # inherit from torch_geometric.data.Dataset
+        Dataset = HessianDiskDataset  # inherit from torch_geometric.data.Dataset
     else:
         raise ValueError(f"Unknown dataset type: {config.dataset_type}")
     
     # set property read from raw data
     prop_dict = {}
-    if config.label_name is not None:
-        prop_dict["y"] = config.label_name
+    prop_dict["y"] = config.label_name
     if config.blabel_name is not None:
         prop_dict["base_y"] = config.blabel_name
-    if config.force_name is not None:
-        prop_dict["force"] = config.force_name
-    if config.bforce_name is not None:
-        prop_dict["base_force"] = config.bforce_name
 
     # set transform function
     pre_transform = lambda data: data_unit_transform(
@@ -116,23 +113,8 @@ def main():
         num_workers=0, pin_memory=True, drop_last=False,
     )
 
-    # calculate element shifts and set to config
     config.node_mean = 0.0
     config.graph_mean = 0.0
-    if isinstance(config.add_mean, float):
-        if config.divided_by_atoms:
-            config.node_mean = config.add_mean
-        else:
-            config.graph_mean = config.add_mean
-    elif config.add_mean == True:
-        mean, std = calculate_stats(train_loader, config.divided_by_atoms)
-        log.s.info(f"Mean : {mean:.4f} {config.default_property_unit}")
-        log.s.info(f"Std. : {std:.4f} {config.default_property_unit}")
-        if config.divided_by_atoms:
-            config.node_mean = mean
-        else:
-            config.graph_mean = mean
-
     # -------------------  build model ------------------- #
     # initialize model
     model = xPaiNN(config)
@@ -156,10 +138,7 @@ def main():
     log.s.info(f"Total number of parameters to be optimized: {n_params}")
     
     # -------------------  train model ------------------- #
-    if config.output_mode == "grad":
-        NetTrainer = GradTrainer
-    else:
-        NetTrainer = Trainer
+    NetTrainer = Trainer
     trainer = NetTrainer(ddp_model, config, device, train_loader, valid_loader, train_sampler, log)
     trainer.start()
     

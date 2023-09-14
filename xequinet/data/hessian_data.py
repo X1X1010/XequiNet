@@ -4,20 +4,19 @@ import os
 
 import h5py
 import torch
-from torch.utils.data import Dataset
-from torch_geometric.data import Data, InMemoryDataset
-from torch_geometric.data import Dataset as DiskDataset
+from torch_geometric.data import Data
 from torch_cluster import radius_graph
 
+from .hdf5_data import H5Dataset, H5MemDataset, H5DiskDataset
 from ..utils import (
     unit_conversion,
     get_atomic_energy, get_default_unit, get_centroid,
 )
 
 
-class H5Dataset(Dataset):
+class HessianDataset(H5Dataset):
     """
-    Classical torch Dataset for XequiNet.
+    Classical torch Dataset for Hessian.
     """
     def __init__(
         self,
@@ -31,26 +30,18 @@ class H5Dataset(Dataset):
         pre_transform: Optional[Callable] = None,
         **prop_dict,
     ):
-        super().__init__()
-        assert mode in ["train", "valid", "test"]
-        assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
-        if isinstance(data_files, str):
-            self._raw_paths = [os.path.join(root, "raw", data_files)]
-        elif isinstance(data_files, Iterable):
-            self._raw_paths = [os.path.join(root, "raw", f) for f in data_files]
-        else:
-            raise TypeError("data_files must be a string or iterable of strings")
-        self._mode = mode
-        self._cutoff = cutoff
-        self._max_size = max_size if max_size is not None else 1e9
-        self._mem_process = mem_process
-        self.transform = transform
-        self.pre_transform = pre_transform
-        self._prop_dict = prop_dict
-        self.data_list = []
-        _, self.len_unit = get_default_unit()
-        self.process()
-
+        super().__init__(
+            root=root,
+            data_files=data_files,
+            mode=mode,
+            cutoff=cutoff,
+            max_size=max_size,
+            mem_process=mem_process,
+            transform=transform,
+            pre_transform=pre_transform,
+            **prop_dict,
+        )
+    
     def process(self):
         ct = 0  # count of data
         for raw_path in self._raw_paths:
@@ -77,13 +68,17 @@ class H5Dataset(Dataset):
                 except:
                     coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
                     coords *= unit_conversion("bohr", self.len_unit)
+                all_range = torch.arange(0, at_no.size(0), dtype=torch.long)
+                fc_edge_index = torch.stack([
+                    all_range.repeat_interleave(at_no.size(0)),
+                    all_range.repeat(at_no.size(0))
+                ])
                 for icfm, coord in enumerate(coords):
                     edge_index = radius_graph(coord, self._cutoff)
-                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index, fc_edge_index=fc_edge_index)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        if p_val.dim() != 2:
-                            p_val = p_val.view(1, -1)
+                        p_val = p_val.view(-1, 3, 3)
                         setattr(data, p_attr, p_val)
                     if self.pre_transform is not None:
                         data = self.pre_transform(data)
@@ -98,25 +93,16 @@ class H5Dataset(Dataset):
             f_h5.close()
             if ct >= self._max_size: break
 
-    def __len__(self):
-        return len(self.data_list)
 
-    def __getitem__(self, index):
-        data = self.data_list[index]
-        if self.transform is not None:
-            data = self.transform(data)
-        return data
-
-
-class H5MemDataset(InMemoryDataset):
+class HessianMemDataset(H5MemDataset):
     """
-    Dataset for XequiNet in-memory processing.
+    Dataset for Hessian matrix in-memory processing.
     """
     def __init__(
         self,
         root: str,
         data_files: Union[str, Iterable[str]],
-        mode: str = "train",
+        mode: str = 'train',
         cutoff: float = 5.0,
         max_size: Optional[int] = None,
         mem_process: bool = True,
@@ -124,33 +110,17 @@ class H5MemDataset(InMemoryDataset):
         pre_transform: Optional[Callable] = None,
         **prop_dict,
     ):
-        assert mode in ["train", "valid", "test"]
-        assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
-        if isinstance(data_files, str):
-            self._raw_files = [data_files]
-        elif isinstance(data_files, Iterable):
-            self._raw_files = data_files
-        else:
-            raise TypeError("data_files must be a string or iterable of strings")
-        suffix = f"{mode}.pt" if max_size is None else f"{mode}_{max_size}.pt"
-        # the processed file are named after the first raw file
-        self._processed_file = f"{self._raw_files[0].split('.')[0]}_{suffix}"
-        self._mode = mode
-        self._cutoff = cutoff
-        self._max_size = max_size if max_size is not None else 1e9
-        self._mem_process = mem_process
-        self._prop_dict = prop_dict
-        _, self.len_unit = get_default_unit()
-        super().__init__(root, transform=transform, pre_transform=pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
-    
-    @property
-    def raw_file_names(self) -> Iterable[str]:
-        return self._raw_files
-
-    @property
-    def processed_file_names(self) -> str:
-        return self._processed_file
+        super().__init__(
+            root=root,
+            data_files=data_files,
+            mode=mode,
+            cutoff=cutoff,
+            max_size=max_size,
+            mem_process=mem_process,
+            transform=transform,
+            pre_transform=pre_transform,
+            **prop_dict,
+        )
 
     def process(self):
         data_list = []
@@ -179,13 +149,17 @@ class H5MemDataset(InMemoryDataset):
                 except:
                     coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
                     coords *= unit_conversion("Bohr", self.len_unit)
+                all_range = torch.arange(0, at_no.size(0), dtype=torch.long)
+                fc_edge_index = torch.stack([
+                    all_range.repeat_interleave(at_no.size(0)),
+                    all_range.repeat(at_no.size(0))
+                ])
                 for icfm, coord in enumerate(coords):
                     edge_index = radius_graph(coord, self._cutoff)
-                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index, fc_edge_index=fc_edge_index)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        if p_val.dim() != 2:
-                            p_val = p_val.view(1, -1)
+                        p_val = p_val.view(-1, 3, 3)
                         setattr(data, p_attr, p_val)
                     data_list.append(data)
                     ct += 1
@@ -204,9 +178,9 @@ class H5MemDataset(InMemoryDataset):
         torch.save((data, slices), self.processed_paths[0])
 
 
-class H5DiskDataset(DiskDataset):
+class HessianDiskDataset(H5DiskDataset):
     """
-    Dataset for XequiNet disk processing.
+    Dataset for Hessian matrix disk processing.
     """
     def __init__(
         self,
@@ -220,32 +194,17 @@ class H5DiskDataset(DiskDataset):
         pre_transform: Optional[Callable] = None,
         **prop_dict,
     ):
-        assert mode in ["train", "valid", "test"]
-        assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
-        if isinstance(data_files, str):
-            self._raw_files = [data_files]
-        elif isinstance(data_files, Iterable):
-            self._raw_files = data_files
-        else:
-            raise TypeError("data_files must be a string or iterable of strings")
-        suffix = f"{mode}" if max_size is None else f"{mode}_{max_size}"
-        self._processed_folder = f"{self._raw_files[0].split('.')[0]}_{suffix}"
-        self._mode = mode
-        self._cutoff = cutoff
-        self._max_size = max_size if max_size is not None else 1e9
-        self._mem_process = mem_process
-        self._prop_dict = prop_dict
-        self._num_data = None
-        _, self.len_unit = get_default_unit()
-        super().__init__(root, transform=transform, pre_transform=pre_transform)
-    
-    @property
-    def raw_file_names(self) -> Iterable[str]:
-        return self._raw_files
-
-    @property
-    def processed_file_names(self) -> str:
-        return self._processed_folder
+        super().__init__(
+            root=root,
+            data_files=data_files,
+            mode=mode,
+            cutoff=cutoff,
+            max_size=max_size,
+            mem_process=mem_process,
+            transform=transform,
+            pre_transform=pre_transform,
+            **prop_dict,
+        )
 
     def process(self):
         idx = 0
@@ -274,13 +233,17 @@ class H5DiskDataset(DiskDataset):
                 except:
                     coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
                     coords *= unit_conversion("bohr", self.len_unit)
+                all_range = torch.arange(0, at_no.size(0), dtype=torch.long)
+                fc_edge_index = torch.stack([
+                    all_range.repeat_interleave(at_no.size(0)),
+                    all_range.repeat(at_no.size(0))
+                ])
                 for icfm, coord in enumerate(coords):
                     edge_index = radius_graph(coord, self._cutoff)
-                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index, fc_edge_index=fc_edge_index)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        if p_val.dim() != 2:
-                            p_val = p_val.view(1, -1)
+                        p_val = p_val.view(-1, 3, 3)
                         setattr(data, p_attr, p_val)
                     if self.pre_transform is not None:
                         data = self.pre_transform(data)
@@ -297,87 +260,3 @@ class H5DiskDataset(DiskDataset):
             f_h5.close()
             if idx >= self._max_size: break
         self._num_data = idx
-    
-    def len(self):
-        if self._num_data is None:
-            data_dir = os.path.join(self.processed_dir, self._processed_folder)
-            max_dir = os.path.join(
-                data_dir,
-                max([d for d in os.listdir(data_dir) if d.isdigit()])
-            )
-            data_file = max([f for f in os.listdir(max_dir) if f.endswith(".pt")])
-            self._num_data = int(data_file.split(".")[0]) + 1
-        return self._num_data
-        
-    def get(self, idx):
-        data = torch.load(os.path.join(
-            self.processed_dir,
-            self._processed_folder,
-            f"{idx // 10000:04d}",
-            f"{idx:08d}.pt"
-        ))
-        return data
-
-
-def data_unit_transform(
-        data: Data,
-        y_unit: Optional[str] = None,
-        by_unit: Optional[str] = None,
-        force_unit: Optional[str] = None,
-        bforce_unit: Optional[str] = None,
-    ) -> Data:
-    """
-    Create a deep copy of the data and transform the units of the copy.
-    """
-    new_data = data.clone()
-    prop_unit, len_unit = get_default_unit()
-    if hasattr(new_data, "y"):
-        new_data.y *= unit_conversion(y_unit, prop_unit)
-        if hasattr(new_data, "base_y"):
-            new_data.base_y *= unit_conversion(by_unit, prop_unit)
-
-    if hasattr(new_data, "force"):
-        new_data.force *= unit_conversion(force_unit, f"{prop_unit}/{len_unit}")
-        if hasattr(new_data, "base_force"):
-            new_data.base_force *= unit_conversion(bforce_unit, f"{prop_unit}/{len_unit}")
-
-    return new_data
-
-
-def atom_ref_transform(
-    data: Data,
-    atom_ref: Optional[str] = None,
-    batom_ref: Optional[str] = None,
-):
-    """
-    Create a deep copy of the data and subtract the atomic energy.
-    """
-    new_data = data.clone()
-
-    if hasattr(new_data, "y"):
-        ref_sum = get_atomic_energy(atom_ref)[new_data.at_no].sum()
-        new_data.y -= ref_sum
-        new_data.y = new_data.y.to(torch.get_default_dtype())
-        if hasattr(new_data, "base_y"):
-            bref_sum = get_atomic_energy(batom_ref)[new_data.at_no].sum()
-            new_data.base_y -= bref_sum
-            new_data.base_y = new_data.base_y.to(torch.get_default_dtype())
-    # change the dtype of force by the way
-    if hasattr(new_data, "force"):
-        new_data.force = new_data.force.to(torch.get_default_dtype())
-        if hasattr(new_data, "base_force"):
-            new_data.base_force = new_data.base_force.to(torch.get_default_dtype())
-
-    return new_data
-
-
-def centroid_transform(
-    data: Data,
-):
-    """
-    Create a deep copy of the data and subtract the centroid.
-    """
-    new_data = data.clone()
-    centroid = get_centroid(new_data.at_no, new_data.pos)
-    new_data.pos -= centroid
-    return new_data
