@@ -95,14 +95,14 @@ def main():
     # set dataset
     with distributed_zero_first(local_rank):
         train_dataset = Dataset(
-            config.data_root, config.data_files, "train", config.cutoff,
-            config.max_mol, config.mem_process, transform, pre_transform,
-            **prop_dict,
+            config.data_root, config.data_files, config.processed_name,
+            "train", config.cutoff, config.max_mol, config.mem_process,
+            transform, pre_transform, **prop_dict,
         )
         valid_dataset = Dataset(
-            config.data_root, config.data_files, "valid", config.cutoff,
-            config.vmax_mol, config.mem_process, transform, pre_transform,
-            **prop_dict,
+            config.data_root, config.data_files, config.processed_name,
+            "valid", config.cutoff, config.vmax_mol, config.mem_process,
+            transform, pre_transform, **prop_dict,
         )
     # set dataloader
     train_sampler = DistributedSampler(train_dataset, world_size, local_rank, shuffle=True)

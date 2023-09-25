@@ -190,8 +190,9 @@ class Trainer:
             data = data.to(self.device)
             # TODO: AMP
             # forward propagation
-            output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
-            pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
+            # output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
+            # pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
+            pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
             real = data.y - data.base_y if hasattr(data, "base_y") else data.y
             # print(pred.shape, real.shape)
             loss = self.lossfn(pred, real)
@@ -233,8 +234,9 @@ class Trainer:
             for data in self.valid_loader:
                 data = data.to(self.device)
                 # TODO: AMP
-                output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
-                pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
+                # output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
+                # pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
+                pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
                 real = data.y - data.base_y if hasattr(data, "base_y") else data.y
                 l1loss = F.l1_loss(pred, real, reduction="sum")
                 self.meter.update(l1loss.item(), real.numel())

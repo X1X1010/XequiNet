@@ -9,6 +9,7 @@ from torch_scatter import scatter
 from e3nn import o3
 
 from .o3layer import Gate
+from .rbf import GaussianSmearing
 from ..utils import resolve_actfn
 
 
@@ -134,7 +135,7 @@ class NegGradOut(nn.Module):
         )
         res = zero_res.index_add(0, batch_index, atom_out)
         grad = torch.autograd.grad(
-            [res.sum(),],
+            [atom_out.sum(),],
             [coord,],
             retain_graph=True,
             create_graph=True,
@@ -455,6 +456,8 @@ class HessianOut(nn.Module):
         edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         hidden_dim: int = 64,
         hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
+        cutoff: float = 5.0,
+        num_basis: int = 20,
         actfn: str = "silu",
         gatefn: str = "sigmoid",
     ):
@@ -498,7 +501,9 @@ class HessianOut(nn.Module):
             Gate(self.hidden_irreps, actfn=gatefn),
             o3.Linear(self.hidden_irreps, "1x1e"),
         )
-
+        self.rbf = GaussianSmearing(num_basis, cutoff)
+        self.rbf_lin = nn.Linear(num_basis, 1)
+        nn.init.zeros_(self.rbf_lin.bias)
 
     def forward(
         self,
@@ -519,12 +524,15 @@ class HessianOut(nn.Module):
         # mlp of scalar and spherical features
         scalar_i = self.scalar_mlp_i(x_scalar)[fc_edge_index[0]]
         scalar_j = self.scalar_mlp_j(x_scalar)[fc_edge_index[1]]
-        spherical_i = self.spherical_mlp_i(x_spherical)[fc_edge_index[0]]
-        spherical_j = self.spherical_mlp_j(x_spherical)[fc_edge_index[1]]
+        spherical_i = self.spherical_mlp_i(x_spherical)[fc_edge_index[0]][:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
+        spherical_j = self.spherical_mlp_j(x_spherical)[fc_edge_index[1]][:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
         # build edges
         node_i = spherical_i + spherical_i * scalar_i
         node_j = spherical_j + spherical_j * scalar_j
-        edge_ij = node_i.unsqueeze(2) * node_j.unsqueeze(1)
+        fc_vec = coord[fc_edge_index[0]] - coord[fc_edge_index[1]]
+        fc_dist = torch.linalg.norm(fc_vec, dim=-1, keepdim=True)
+        fc_rbf = self.rbf_lin(self.rbf(fc_dist))
+        edge_ij = node_i.unsqueeze(2) * (fc_rbf * node_j).unsqueeze(1)
         # symmetrize
         _, src_indices = torch.sort(fc_edge_index[1], stable=True)
         edge_ji = torch.index_select(edge_ij.transpose(1, 2), 0, src_indices)

@@ -42,6 +42,7 @@ class NetConfig(BaseModel):
     dataset_type: str = "normal"                   # dataset type (`memory` is for the dataset in memory, `disk` is for the dataset on disk)
     data_root: str = None                          # root directory of the dataset
     data_files: Union[List[str], str] = None       # list of the data files
+    processed_name: str = None                     # name of the processed dataset
     mem_process: bool = True                       # whether to process the dataset in memory
     label_name: str = None                         # name of the label
     blabel_name: str = None                        # name of the basis label

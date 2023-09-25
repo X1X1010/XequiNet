@@ -111,14 +111,14 @@ class xPaiNN(nn.Module):
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         edge_index: torch.LongTensor,
-        output_index: torch.LongTensor,
+        batch: torch.LongTensor,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Args:
             `at_no`: Atomic numbers.
             `pos`: Atomic coordinates.
             `edge_index`: Edge index.
-            `output_index`: Output index (vary from different output layer).
+            `batch`: Batch index.
         Returns:
             `result`: Output.
         """
@@ -127,5 +127,5 @@ class xPaiNN(nn.Module):
         for msg, upd in zip(self.message, self.update):
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
-        result = self.out(x_scalar, x_vector, pos, output_index)
+        result = self.out(x_scalar, x_vector, pos, batch)
         return result

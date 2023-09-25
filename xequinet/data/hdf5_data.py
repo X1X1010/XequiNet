@@ -23,6 +23,7 @@ class H5Dataset(Dataset):
         self,
         root: str,
         data_files: Union[str, Iterable[str]],
+        data_name: Optional[str] = None,
         mode: str = "train",
         cutoff: float = 5.0,
         max_size: Optional[int] = None,
@@ -116,6 +117,7 @@ class H5MemDataset(InMemoryDataset):
         self,
         root: str,
         data_files: Union[str, Iterable[str]],
+        data_name: Optional[str] = None,
         mode: str = "train",
         cutoff: float = 5.0,
         max_size: Optional[int] = None,
@@ -133,8 +135,11 @@ class H5MemDataset(InMemoryDataset):
         else:
             raise TypeError("data_files must be a string or iterable of strings")
         suffix = f"{mode}.pt" if max_size is None else f"{mode}_{max_size}.pt"
-        # the processed file are named after the first raw file
-        self._processed_file = f"{self._raw_files[0].split('.')[0]}_{suffix}"
+        if data_name is None:
+            # the processed file are named after the first raw file
+            self._processed_file = f"{self._raw_files[0].split('.')[0]}_{suffix}"
+        else:
+            self._processed_file = f"{data_name}_{suffix}"
         self._mode = mode
         self._cutoff = cutoff
         self._max_size = max_size if max_size is not None else 1e9
@@ -212,6 +217,7 @@ class H5DiskDataset(DiskDataset):
         self,
         root: str,
         data_files: Union[str, Iterable[str]],
+        data_name: Optional[str] = None,
         mode: str = "train",
         cutoff: float = 5.0,
         max_size: Optional[int] = None,
@@ -229,7 +235,10 @@ class H5DiskDataset(DiskDataset):
         else:
             raise TypeError("data_files must be a string or iterable of strings")
         suffix = f"{mode}" if max_size is None else f"{mode}_{max_size}"
-        self._processed_folder = f"{self._raw_files[0].split('.')[0]}_{suffix}"
+        if data_name is None:
+            self._processed_folder = f"{self._raw_files[0].split('.')[0]}_{suffix}"
+        else:
+            self._processed_folder = f"{data_name}_{suffix}"
         self._mode = mode
         self._cutoff = cutoff
         self._max_size = max_size if max_size is not None else 1e9

@@ -47,11 +47,11 @@ class XYZDataset(Dataset):
         """
         super().__init__()
         self._file = xyz_file
-        self._cutoff = cutoff
         self._max_size = max_size if max_size is not None else 1e9
         self._transform = transform
         self.data_list = []
         _, self.len_unit = get_default_unit()
+        self._cutoff = cutoff * unit_conversion("Angstrom", self.len_unit)
         self.process()
 
     def process(self):

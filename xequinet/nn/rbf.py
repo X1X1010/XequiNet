@@ -3,6 +3,25 @@ import torch
 import torch.nn as nn
 
 
+
+def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float):
+    if rbf_kernel == "bessel":
+        return SphericalBesselj0(num_basis, cutoff)
+    elif rbf_kernel == "gaussian":
+        return GaussianSmearing(num_basis, cutoff)
+    else:
+        raise NotImplementedError(f"rbf kernel {rbf_kernel} is not implemented")
+
+
+def resolve_cutoff(cutoff_fn: str, cutoff: float):
+    if cutoff_fn == "cosine":
+        return CosineCutoff(cutoff)
+    elif cutoff_fn == "polynomial":
+        return PolynomialCutoff(cutoff)
+    else:
+        raise NotImplementedError(f"cutoff function {cutoff_fn} is not implemented")
+
+
 class CosineCutoff(nn.Module):
     def __init__(self, cutoff: float):
         super().__init__()
