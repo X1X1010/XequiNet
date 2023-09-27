@@ -2,8 +2,6 @@ import os
 import argparse
 
 import torch
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
 
 from xequinet.nn import xPaiNN
 from xequinet.utils import (

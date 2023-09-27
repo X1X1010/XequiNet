@@ -1,0 +1,3 @@
+[console_scripts]
+xeqjit = xequinet.jit_script:main
+xeqtrain = xequinet.train:main

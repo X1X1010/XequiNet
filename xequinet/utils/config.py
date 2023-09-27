@@ -88,7 +88,7 @@ class NetConfig(BaseModel):
 
     def model_hyper_params(self):
         hyper_params = self.dict(include={
-            "embed_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
+            "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
             "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "action_blocks",
             "activation", "gate_actfn", "output_mode", "output_dim", "reduce_op",
             "atom_ref", "batom_ref", "default_property_unit", "default_length_unit",
