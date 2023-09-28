@@ -50,15 +50,15 @@ def resolve_output(config: NetConfig):
             gatefn=config.gate_actfn,
             reduce_op=config.reduce_op,
         )
-    elif config.output_mode == "force":
-        return ForceOut(
-            node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
-            hidden_dim=config.hidden_dim,
-            hidden_irreps=config.hidden_irreps,
-            actfn=config.activation,
-            gatefn=config.gate_actfn,
-        )
+    # elif config.output_mode == "force":
+    #     return ForceOut(
+    #         node_dim=config.node_dim,
+    #         edge_irreps=config.edge_irreps,
+    #         hidden_dim=config.hidden_dim,
+    #         hidden_irreps=config.hidden_irreps,
+    #         actfn=config.activation,
+    #         gatefn=config.gate_actfn,
+    #     )
     elif config.output_mode == "hessian":
         return HessianOut(
             node_dim=config.node_dim,
