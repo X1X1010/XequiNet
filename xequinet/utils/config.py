@@ -84,7 +84,7 @@ class NetConfig(BaseModel):
 
     # others
     seed: int = None                               # random seed
-    num_workers: int = 4                           # number of the workers for the data loader
+    num_workers: int = 0                           # number of the workers for the data loader
 
     def model_hyper_params(self):
         hyper_params = self.dict(include={

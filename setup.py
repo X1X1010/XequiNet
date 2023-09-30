@@ -8,7 +8,7 @@ setup(
             "xeqtrain = xequinet.train:main",
             "xeqjit = xequinet.jit_script:main",
             "xeqinfer = xequinet.inference:main",
-            # "xeqtest = xequinet.test:main",
+            "xeqtest = xequinet.test:main",
         ]
     }
 )

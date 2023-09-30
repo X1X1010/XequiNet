@@ -1,3 +1,5 @@
 [console_scripts]
+xeqinfer = xequinet.inference:main
 xeqjit = xequinet.jit_script:main
+xeqtest = xequinet.test:main
 xeqtrain = xequinet.train:main

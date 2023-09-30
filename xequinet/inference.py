@@ -96,27 +96,35 @@ def predict_grad(
 
 def main():
     # parse arguments
-    parser = argparse.ArgumentParser(description="XPainn test script")
-    parser.add_argument("--ckpt", "-c", type=str, required=True, help="Checkpoint file")
-    parser.add_argument("--output-dir", "-o", type=str, default=".")
-    parser.add_argument("--force", "-f", action="store_true", help="Calculate force")
-    parser.add_argument("--base", "-b",
-                        type=str, default=None,
-                        choices=["pm7", "gfn2-xtb"],
-                        help="Base semiempirical method")
-    parser.add_argument("inp", type=str, help="Input file")
+    parser = argparse.ArgumentParser(description="Xequinet inference script")
+    parser.add_argument(
+        "--ckpt", "-c", type=str, required=True,
+        help="Xequinet checkpoint file. (XXX.pt containing 'model' and 'config')",
+    )
+    parser.add_argument(
+        "--force", "-f", action="store_true",
+        help="Whether testing force additionally when the output mode is 'scalar'",
+    )
+    parser.add_argument(
+        "--base-method", "-bm", type=str, default=None, choices=["pm7", "gfn2-xtb"],
+        help="Base semiempirical method for delta learning."
+    )
+    parser.add_argument(
+        "inp", type=str,
+        help="Input xyz file.")
     args = parser.parse_args()
 
-    # load checkpoint
+    # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ckpt = torch.load(args.ckpt, map_location=device)
 
-    # load config
+    # load checkpoint and config
+    ckpt = torch.load(args.ckpt, map_location=device)
     config = NetConfig.parse_obj(ckpt["config"])
 
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
+    # adjust some configurations
     config.node_mean = 0.0; config.graph_mean = 0.0
     if args.force:
         config.output_mode = "grad"
@@ -131,12 +139,12 @@ def main():
     outp = os.path.join(args.output_dir, outp)
 
     with open(outp, 'w') as wf:
-        wf.write("xPaiNN prediction\n")
+        wf.write("XequiNet prediction\n")
         wf.write(f"Coordinates in Angstrom, Properties in Atomic Unit\n")
     if config.output_mode == "grad":
-        predict_grad(model, dataset, device, outp, config.atom_ref, config.batom_ref, args.base)
+        predict_grad(model, dataset, device, outp, config.atom_ref, config.batom_ref, args.base_method)
     else:
-        predict_scalar(model, dataset, device, outp, config.atom_ref, config.batom_ref, args.base)
+        predict_scalar(model, dataset, device, outp, config.atom_ref, config.batom_ref, args.base_method)
 
 if __name__ == "__main__":
     main()

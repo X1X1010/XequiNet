@@ -257,7 +257,6 @@ class H5DiskDataset(DiskDataset):
         return self._processed_folder
 
     def process(self):
-        idx = 0
         data_dir = os.path.join(self.processed_dir, self._processed_folder)
         for raw_path in self.raw_paths:
             # read by memory io-buffer or by disk directly

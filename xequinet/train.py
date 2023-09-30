@@ -24,8 +24,11 @@ from xequinet.data import(
 def main():
     # ------------------- set up ------------------- #
     # parse config
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="config.json")
+    parser = argparse.ArgumentParser(description="Xequinet distributed training script")
+    parser.add_argument(
+        "--config", type=str, default="config.json",
+        help="Configuration file (default: config.json).",
+    )
     args = parser.parse_args()
 
     if os.path.isfile(args.config):

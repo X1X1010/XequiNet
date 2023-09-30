@@ -10,4 +10,3 @@ xequinet/inference.py
 xequinet/jit_script.py
 xequinet/test.py
 xequinet/train.py
-xequinet/train_hessian.py

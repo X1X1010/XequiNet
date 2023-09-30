@@ -75,24 +75,32 @@ class JitGradModel(xPaiNN):
 
 def main():
     # parse arguments
-    parser = argparse.ArgumentParser(description="Just in time script for xPaiNN")
-    parser.add_argument("--ckpt", "-c", type=str, required=True, help="Checkpoint file")
-    parser.add_argument("--output-dir", "-o", type=str, default=".")
-    parser.add_argument("--force", "-f", action="store_true", help="Output force")
+    parser = argparse.ArgumentParser(description="Just in time script for XequiNet")
+    parser.add_argument(
+        "--ckpt", "-c", type=str, required=True,
+        help="Xequinet checkpoint file. (XXX.pt containing 'model' and 'config')",
+    )
+    parser.add_argument(
+        "--force", "-f", action="store_true",
+        help="Whether testing force additionally when the output mode is 'scalar'",
+    )
     args = parser.parse_args()
 
-    # load checkpoint
+    # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # load checkpoint and config
     ckpt = torch.load(args.ckpt, map_location=device)
-
-    # load config
     config = NetConfig.parse_obj(ckpt["config"])
-    config.node_mean = 0.0; config.graph_mean = 0.0
-    if args.force:
-        config.output_mode = "grad"
+    
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
+    # adjust some configurations
+    config.node_mean = 0.0; config.graph_mean = 0.0
+    if args.force and config.output_mode == "scalar":
+        config.output_mode = "grad"
+    
     # build model
     if config.output_mode == "grad":
         model = JitGradModel(config).to(device)

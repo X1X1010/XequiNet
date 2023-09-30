@@ -169,7 +169,7 @@ class Trainer:
             "optimizer": self.optimizer.state_dict(),
             "lr_scheduler": self.lr_scheduler.state_dict(),
             "warmup_scheduler": self.warmup_scheduler.state_dict(),
-            "config": self.config.model_hyper_params(),
+            "config": self.config.dict(),
         }
         torch.save(state, ckpt_file)
 
@@ -344,6 +344,7 @@ class GradTrainer(Trainer):
         super().__init__(
             model, config, device, train_loader, valid_loader, dist_sampler, log
         )
+        assert config.force_weight <= 1.0
         self.meter = WithForceMeter(self.device)
 
     
@@ -361,7 +362,8 @@ class GradTrainer(Trainer):
             if hasattr(data, "base_y") and hasattr(data, "base_force"):
                 realE -= data.base_y
                 realF -= data.base_force
-            loss = self.lossfn(predE, realE) + self.config.force_weight * self.lossfn(predF, realF)
+            loss = (1 - self.config.force_weight) * self.lossfn(predE, realE) \
+                 + self.config.force_weight * self.lossfn(predF, realF)
             # backward propagation
             self.optimizer.zero_grad()
             # with torch.autograd.detect_anomaly():
@@ -414,7 +416,7 @@ class GradTrainer(Trainer):
                 self.meter.update(l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel())
         maeE, maeF = self.meter.reduce()
         self.log.f.info(f"Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
-        mae = maeE + self.config.force_weight * maeF
+        mae = (1 - self.config.force_weight) * maeE + self.config.force_weight * maeF
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
@@ -442,7 +444,7 @@ class GradTrainer(Trainer):
                 self.meter.update(l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel())
         maeE, maeF = self.meter.reduce()
         self.log.f.info(f"EMA Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
-        mae = maeE + self.config.force_weight * maeF
+        mae = (1 - self.config.force_weight) * maeE + self.config.force_weight * maeF
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)

@@ -1,13 +1,12 @@
-import os
 import argparse
 
 import torch
 import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 
-from xequinet.data import H5Dataset, H5MemDataset, H5DiskDataset, data_unit_transform, atom_ref_transform
+from xequinet.data import H5Dataset, data_unit_transform, atom_ref_transform
 from xequinet.nn import xPaiNN
-from xequinet.utils import NetConfig, unit_conversion, set_default_unit
+from xequinet.utils import NetConfig, unit_conversion, set_default_unit, get_default_unit
 from xequinet.utils.qc import ELEMENTS_LIST
 
 
@@ -28,7 +27,7 @@ def test_scalar(model, test_loader, device, outfile):
                 for imol in range(len(data.y)):
                     idx = (data.batch == imol)
                     at_no = data.at_no[idx]
-                    coord = data.pos[idx]
+                    coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
                     for a, c in zip(at_no, coord):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
                     wf.write(f"real: {real[imol].tolist()}  pred: {pred[imol].tolist()}  loss: {l1loss[imol].tolist()}\n")
@@ -59,12 +58,12 @@ def test_grad(model, test_loader, device, outfile):
             for imol in range(len(data.y)):
                 idx = (data.batch == imol)
                 at_no = data.at_no[idx]
-                coord = data.pos[idx] * unit_conversion("bohr", "angstrom")
-                for a, c in zip(at_no, coord):
+                coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
+                for a, c, pF, rF, l in zip(at_no, coord, predF[idx], realF[idx], l1lossF[idx]):
                     wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}  ")
-                    wf.write(f"real: {realF[imol][0].item():10.7f} {realF[imol][1].item():10.7f} {realF[imol][2].item():10.7f}  ")
-                    wf.write(f"pred: {predF[imol][0].item():10.7f} {predF[imol][1].item():10.7f} {predF[imol][2].item():10.7f}  ")
-                    wf.write(f"loss: {l1lossF[imol][0].item():10.7f} {l1lossF[imol][1].item():10.7f} {l1lossF[imol][2].item():10.7f}\n")
+                    wf.write(f"real: {rF[0].item():10.7f} {rF[1].item():10.7f} {rF[2].item():10.7f}  ")
+                    wf.write(f"pred: {pF[0].item():10.7f} {pF[1].item():10.7f} {pF[2].item():10.7f}  ")
+                    wf.write(f"loss: {l[0].item():10.7f} {l[1].item():10.7f} {l[2].item():10.7f}\n")
                 wf.write(f"real: {realE[imol].item():10.7f}  pred: {predE[imol].item():10.7f}  loss: {l1lossE[imol].item():10.7f}\n")
     with open(outfile, 'a') as wf:
         wf.write(f"Test MAE: Energy {sum_lossE / num_mol:10.7f}  Force {sum_lossF / (3*num_atm):10.7f}\n")
@@ -73,34 +72,31 @@ def test_grad(model, test_loader, device, outfile):
 
 def main():
     # parse config
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="config.json", help="configuration file")
-    parser.add_argument("--ckpt-file", type=str, default="checkpoint.pt", help="checkpoint file")
-    parser.add_argument("--output-file", "-o", default=None, help="output file name")
-    parser.add_argument("--force", "-f", action="store_true", help="test force")
+    parser = argparse.ArgumentParser(description="XequiNet test script")
+    parser.add_argument(
+        "--config", "-C", type=str, default="config.json",
+        help="Configuration file (default: config.json).",
+    )
+    parser.add_argument(
+        "--ckpt", "-c", type=str, required=True,
+        help="Xequinet checkpoint file. (XXX.pt containing 'model' and 'config')",
+    )
+    parser.add_argument(
+        "--force", "-f", action="store_true",
+        help="Whether testing force additionally when the output mode is 'scalar'",
+    )
     args = parser.parse_args()
-    config = NetConfig.parse_file(args.config)
-    
+
     # set device
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.cuda.set_device(device)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # load checkpoint and config
+    config = NetConfig.parse_file(args.config)
+    ckpt = torch.load(args.ckpt, map_location=device)
+    config.parse_obj(ckpt["config"])
     
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)
-
-    # update configuration with config saved in checkpoint
-    ckpt = torch.load(args.ckpt_file, map_location=device)
-    config.parse_obj(ckpt["config"])
-
-    # choose dataset type
-    if config.dataset_type == "normal":
-        Dataset = H5Dataset      # inherit from torch.utils.data.Dataset
-    elif config.dataset_type == "memory":
-        Dataset = H5MemDataset   # inherit from torch_geometric.data.InMemoryDataset
-    elif config.dataset_type == "disk":
-        Dataset = H5DiskDataset  # inherit from torch_geometric.data.Dataset
-    else:
-        raise ValueError(f"Unknown dataset type: {config.dataset_type}")
 
     # set property read from raw data
     prop_dict = {}
@@ -119,9 +115,10 @@ def main():
     )
     transform = lambda data: atom_ref_transform(data, config.atom_ref, config.batom_ref)
     # load dataset
-    test_dataset = Dataset(
-        config.data_root, config.data_files, "test", config.cutoff,
-        config.vmax_mol, config.mem_process, transform, pre_transform,
+    test_dataset = H5Dataset(
+        config.data_root, config.data_files, config.processed_name,
+        "test", config.cutoff, config.vmax_mol,
+        config.mem_process, transform, pre_transform,
         **prop_dict,
     )
     test_loader = DataLoader(
@@ -129,28 +126,27 @@ def main():
         num_workers=config.num_workers, pin_memory=True, drop_last=False,
     )
     
-    # build model
-    config.node_mean = 0.0
-    config.graph_mean = 0.0
+    # adjust some configurations
+    config.node_mean = 0.0; config.graph_mean = 0.0
     if args.force == True and config.output_mode == "scalar":
         config.output_mode = "grad"
+    
+    # build model
     model = xPaiNN(config).to(device)
     model.load_state_dict(ckpt["model"])
 
     # test
-    if args.output_file is None:
-        args.output_file = f"{config.run_name}_test.log"
+    output_file = f"{config.run_name}_test.log"
         
-    with open(args.output_file, 'w') as wf:
+    with open(output_file, 'w') as wf:
         wf.write("XequiNet testing\n")
+        wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
-    if config.output_mode == "scalar":
-        test_scalar(model, test_loader, device, args.output_file)
-    elif config.output_mode == "grad":
-        test_grad(model, test_loader, device, args.output_file)
+    if config.output_mode == "grad":
+        test_grad(model, test_loader, device, output_file)
     else:
-        raise NotImplementedError(f"Unknown output mode: {config.output_mode}")
-    
+        test_scalar(model, test_loader, device, output_file)
+
 
 if __name__ == "__main__":
     main()
