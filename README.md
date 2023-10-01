@@ -101,7 +101,7 @@ During training, `loss.log` and `run_name_0.pt` will be automatically generated,
 ### Test
 Similarily, prepare the dataset and configuration file `config.json`. Run
 ```
-xeqtest --config config.json -ckpt run_name_0.pt
+xeqtest --config config.json --ckpt run_name_0.pt
 ```
 Test result will be recorded in `run_name_test.log`.
 
