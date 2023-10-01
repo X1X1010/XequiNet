@@ -135,7 +135,7 @@ def main():
 
     # load input data
     dataset = XYZDataset(xyz_file=args.inp, cutoff=config.cutoff)
-    outp = f"{args.inp.split('/')[-1].split('.')[0]}.out"
+    outp = f"{args.inp.split('/')[-1].split('.')[0]}.log"
     outp = os.path.join(args.output_dir, outp)
 
     with open(outp, 'w') as wf:

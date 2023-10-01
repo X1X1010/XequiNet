@@ -26,7 +26,7 @@ def main():
     # parse config
     parser = argparse.ArgumentParser(description="Xequinet distributed training script")
     parser.add_argument(
-        "--config", type=str, default="config.json",
+        "--config", "-C", type=str, default="config.json",
         help="Configuration file (default: config.json).",
     )
     args = parser.parse_args()
