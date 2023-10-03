@@ -30,7 +30,13 @@ def test_scalar(model, test_loader, device, outfile):
                     coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
                     for a, c in zip(at_no, coord):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
-                    wf.write(f"real: {real[imol].tolist()}  pred: {pred[imol].tolist()}  loss: {l1loss[imol].tolist()}\n")
+                    wf.write("real: ")
+                    wf.write(" ".join([f"{r.item():10.7f}" for r in real[imol]]))
+                    wf.write("  pred:")
+                    wf.write(" ".join([f"{p.item():10.7f}" for p in pred[imol]]))
+                    wf.write("  loss:")
+                    wf.write(" ".join([f"{l.item():10.7f}" for l in l1loss[imol]]))
+                    wf.write("\n")
     with open(outfile, 'a') as wf:
         wf.write(f"Test MAE: {sum_loss / num_mol:10.7f}\n")
 
