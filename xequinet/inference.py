@@ -1,4 +1,3 @@
-import os
 import argparse
 
 import torch
@@ -126,7 +125,7 @@ def main():
 
     # adjust some configurations
     config.node_mean = 0.0; config.graph_mean = 0.0
-    if args.force:
+    if args.force and config.output_mode == "scalar":
         config.output_mode = "grad"
 
     # build model
@@ -136,7 +135,6 @@ def main():
     # load input data
     dataset = XYZDataset(xyz_file=args.inp, cutoff=config.cutoff)
     outp = f"{args.inp.split('/')[-1].split('.')[0]}.log"
-    outp = os.path.join(args.output_dir, outp)
 
     with open(outp, 'w') as wf:
         wf.write("XequiNet prediction\n")

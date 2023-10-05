@@ -1,4 +1,3 @@
-import os
 import argparse
 
 import torch
@@ -36,7 +35,7 @@ class JitModel(xPaiNN):
             x_scalar, x_vector = upd(x_scalar, x_vector)
         model_res = self.out(x_scalar, x_vector, pos, batch)
         atom_energies = self.atom_sp[at_no]
-        result = model_res.index_add(0, batch, atom_energies)
+        result = model_res.double().index_add(0, batch, atom_energies)
         result = result * self.prop_unit_conv
         return result
     
@@ -68,8 +67,8 @@ class JitGradModel(xPaiNN):
             x_scalar, x_vector = upd(x_scalar, x_vector)
         model_prop, model_neg_grad = self.out(x_scalar, x_vector, pos, batch)
         atom_energies = self.atom_sp[at_no]
-        prop_res = model_prop.index_add(0, batch, atom_energies) * self.prop_unit_conv
-        neg_grad = model_neg_grad * self.grad_unit_conv
+        prop_res = model_prop.double().index_add(0, batch, atom_energies) * self.prop_unit_conv
+        neg_grad = model_neg_grad.double() * self.grad_unit_conv
         return prop_res, neg_grad
         
 
@@ -109,7 +108,7 @@ def main():
     model.load_state_dict(ckpt["model"], strict=False)
     model_script = torch.jit.script(model)
     output_file = f"{args.ckpt.split('/')[-1].split('.')[0]}.jit"
-    model_script.save(os.path.join(args.output_dir, output_file))
+    model_script.save(output_file)
 
 
 if __name__ == "__main__":
