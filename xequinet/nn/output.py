@@ -209,12 +209,11 @@ class VectorOut(nn.Module):
         """
         spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
         scalar_out = self.scalar_out_mlp(x_scalar)
-        # atom_out = scalar_out * coord + spherical_out
-        atom_out = spherical_out + spherical_out * scalar_out
+        atom_out = spherical_out * scalar_out
         res = scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
         # num_mol = int(batch_index.max().item() + 1)
         # zero_res = torch.zeros(
-        #     (num_mol + 1, 3),
+        #     (num_mol, 3),
         #     dtype=atom_out.dtype, device=atom_out.device,
         # )
         # res = zero_res.index_add(0, batch_index, atom_out)
@@ -290,8 +289,15 @@ class PolarOut(nn.Module):
         spherical_out = self.spherical_out_mlp(x_spherical)
         scalar_out = self.scalar_out_mlp(x_scalar)
         atom_out = self.rsh_conv(spherical_out, scalar_out)
-        zero_order = atom_out[:, [0]]
-        second_order = atom_out[:, 1:6]
+        mol_out = scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
+        # num_mol = int(batch_index.max().item() + 1)
+        # zero_res = torch.zeros(
+        #     (num_mol, 3, 3),
+        #     dtype=atom_out.dtype, device=atom_out.device,
+        # )
+        # mol_out = zero_res.index_add(0, batch_index, atom_out)
+        zero_order = mol_out[:, 0:1]
+        second_order = mol_out[:, 1:6]
         # build zero order output
         zero_out = torch.diag_embed(torch.repeat_interleave(zero_order, 3, dim=-1))
         # build second order output
@@ -307,77 +313,9 @@ class PolarOut(nn.Module):
         second_out[:, 1, 2] = second_out[:, 2, 1] = dyz
         second_out[:, 0, 2] = second_out[:, 2, 0] = dzx
         # add together
-        res = scatter(zero_out + second_out, batch_index, dim=0, reduce=self.reduce_op)
-        # num_mol = int(batch_index.max().item() + 1)
-        # zero_res = torch.zeros(
-        #     (num_mol + 1, 3, 3),
-        #     dtype=atom_out.dtype, device=atom_out.device,
-        # )
-        # res = zero_res.index_add(0, batch_index, atom_out)
+        res = zero_out + second_out
         if self.output_dim == 1:
-            res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True)
-        return res
-
-
-class ForceOut(nn.Module):
-    def __init__(
-        self,
-        node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
-        hidden_dim: int = 64,
-        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
-        actfn: str = "silu",
-        gatefn: str = "sigmoid",
-    ):
-        """
-        Args:
-            `node_dim`: Node dimension.
-            `edge_irreps`: Edge irreps.
-            `hidden_dim`: Hidden dimension.
-            `hidden_irreps`: Hidden irreps.
-            `actfn`: Activation function type.
-            `gatefn`: Gate function type.
-        """
-        super().__init__()
-        self.node_dim = node_dim
-        self.edge_irreps = o3.Irreps(edge_irreps)
-        self.hidden_dim = hidden_dim
-        self.hidden_irreps = o3.Irreps(hidden_irreps)
-        self.scalar_out_mlp = nn.Sequential(
-            nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
-            nn.Linear(self.hidden_dim, 1),
-        )
-        nn.init.zeros_(self.scalar_out_mlp[0].bias)
-        nn.init.zeros_(self.scalar_out_mlp[2].bias)
-        self.spherical_out_mlp = nn.Sequential(
-            o3.Linear(self.edge_irreps, self.hidden_irreps),
-            Gate(self.hidden_irreps, actfn=gatefn),
-            o3.Linear(self.hidden_irreps, "1x1e"),
-        )
-
-    def forward(
-        self,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor,
-        coord: torch.Tensor,
-        batch_index: torch.LongTensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features.
-            `coord`: Atomic coordinates.
-            `batch_index`: Batch index.
-        Returns:
-            `res`: Force output.
-        """
-        spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
-        scalar_out = self.scalar_out_mlp(x_scalar)#[edge_index[1]]
-        # vec = coord[edge_index[0]] - coord[edge_index[1]]
-        # atom_out = scatter(scalar_out * vec, edge_index[0], dim=0)
-        res = spherical_out + spherical_out * scalar_out
-        # res = atom_out + spherical_out
+            res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3
         return res
 
 
