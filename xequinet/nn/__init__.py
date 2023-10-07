@@ -22,7 +22,6 @@ from .output import (
     NegGradOut,
     VectorOut,
     PolarOut,
-    ForceOut,
 )
 from .model import xPaiNN
 
@@ -44,6 +43,5 @@ __all__ = [
     "NegGradOut",
     "VectorOut",
     "PolarOut",
-    "ForceOut",
     "xPaiNN",
 ]
