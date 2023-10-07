@@ -118,7 +118,7 @@ CC_ATOM_ENERGY = torch.DoubleTensor([0.0,
 ])
 # atomic energies at XYG3/def2-tzvpp in Hartree
 XYG3_ATOM_ENERGY = torch.DoubleTensor([0.0,
-    -0.5,                  -0.29043290587871e+01, -0.74821424039682e+01, -0.14666480618773e+02, -0.24650034021807e+02,
+    -0.49968785231665e+00, -0.29043290587871e+01, -0.74821424039682e+01, -0.14666480618773e+02, -0.24650034021807e+02,
     -0.37842487556945e+02, -0.54586359823001e+02, -0.75066942670999e+02, -0.99732673729857e+02, -0.12893231000575e+03,
     -0.16221353733685e+03, -0.20001425032089e+03, -0.24230646155029e+03, -0.28931437715167e+03, -0.34121180081888e+03,
     -0.39806179178386e+03, -0.46009815899427e+03, -0.52748667116356e+03, -0.59978166199076e+03, -0.67744240954779e+03,
@@ -159,16 +159,34 @@ GFN2_ATOM_ENERGY = torch.DoubleTensor([0.0,
     -2.160600494682, -3.007276817897, -3.779630263390, -3.883588498190,
 ])
 # specializations for qm9 by Z.R. Qiao
-QM9_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
-QM9_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
-    [-0.6038066, -38.0740441, -54.7491437, -75.2252374, -99.8658573]
-)
-# specialzations for tianchi
-TCA_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
-TCA_ATOM_ENERGY[[1, 6, 8, 15, 16]] = torch.DoubleTensor(
-    [-378.62385669, -23894.10955497, -47159.37930543, -214228.02909025, -249800.21072826]
-) * unit_conversion("kcal_per_mol", "Hartree")
+# QM9_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
+# QM9_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
+#     [-0.6038066, -38.0740441, -54.7491437, -75.2252374, -99.8658573]
+# )
 
+# qm9 atom reference energies
+QM9U0_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+QM9U0_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
+    [-0.500273, -37.846772, -54.583861, -75.064579, -99.718730]
+)
+QM9U_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+QM9U_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
+    [-0.498857, -37.845355, -54.582445, -75.063163, -99.717314]
+)
+QM9H_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+QM9H_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
+    [-0.497912, -37.844411, -54.581501, -75.062219, -99.716370]
+)
+QM9G_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+QM9G_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
+    [-0.510927, -37.861317, -54.598897, -75.079532, -99.733544]
+)
+QM9CV_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+QM9CV_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
+    [2.981, 2.981, 2.981, 2.981, 2.981]
+)
+
+# specialzations for tianchi
 TCB_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
 TCB_ATOM_ENERGY[[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]] = torch.DoubleTensor([
     -3.68123383e+02, -2.39023145e+04, -3.43134805e+04, -4.71499961e+04, -6.25899414e+04,
