@@ -1,4 +1,5 @@
 import os
+import random
 import argparse
 
 import numpy as np
@@ -50,6 +51,8 @@ def main():
         torch.manual_seed(config.seed)
         torch.cuda.manual_seed(config.seed)
         np.random.seed(config.seed)
+        random.seed(config.seed)
+        torch.backends.cudnn.deterministic = True
 
     # set default dtype
     if config.default_dtype == "float32":
