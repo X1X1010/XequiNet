@@ -66,13 +66,13 @@ class ScalarOut(nn.Module):
             `res`: Scalar output.
         """
         atom_out = self.out_mlp(x_scalar) + self.node_bias
-        res = scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
-        # num_mol = int(batch_index.max().item() + 1)
-        # zero_res = torch.zeros(
-        #     (num_mol, self.out_dim),
-        #     dtype=atom_out.dtype, device=atom_out.device,
-        # )
-        # res = zero_res.index_add(0, batch_index, atom_out)
+        # res = scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
+        num_mol = int(batch_index.max().item() + 1)
+        zero_res = torch.zeros(
+            (num_mol, self.out_dim),
+            dtype=atom_out.dtype, device=atom_out.device,
+        )
+        res = zero_res.index_add(0, batch_index, atom_out)
         return res + self.graph_bias
 
 
