@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 import re
 from pathlib import Path
 
@@ -158,12 +158,6 @@ GFN2_ATOM_ENERGY = torch.DoubleTensor([0.0,
     -4.409845299930, -3.821738210271, -0.533037255301, -1.125937778890, -2.011082469458,
     -2.160600494682, -3.007276817897, -3.779630263390, -3.883588498190,
 ])
-# specializations for qm9 by Z.R. Qiao
-# QM9_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
-# QM9_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
-#     [-0.6038066, -38.0740441, -54.7491437, -75.2252374, -99.8658573]
-# )
-
 # qm9 atom reference energies
 QM9U0_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
 QM9U0_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
@@ -240,7 +234,7 @@ def get_embedding_tensor(embed_basis="gfn2-xtb", aux_basis="aux28") -> torch.Ten
     return embed_tenor.to(torch.get_default_dtype())
 
 
-def get_atomic_energy(atom_ref: str = None) -> torch.Tensor:
+def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
     """
     Get the shift of the atomic energies for each element.
 
@@ -251,9 +245,15 @@ def get_atomic_energy(atom_ref: str = None) -> torch.Tensor:
     """
     if atom_ref is None:
         return torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+    elif isinstance(atom_ref, dict):
+        atomic_energy = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+        at_no = list(atom_ref.keys())
+        if isinstance(at_no[0], str):
+            at_no = [ELEMENTS_DICT[atom] for atom in at_no]
+        atomic_energy[at_no] = torch.DoubleTensor(list(atom_ref.values()))
     else:
         atomic_energy = globals().get(f"{atom_ref.upper()}_ATOM_ENERGY")
-        return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
+    return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
 
 
 def calc_cgto_norm(cgto: list):
