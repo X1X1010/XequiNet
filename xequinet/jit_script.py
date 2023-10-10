@@ -12,13 +12,13 @@ from xequinet.utils import (
 class JitModel(xPaiNN):
     def __init__(self, config: NetConfig):
         super().__init__(config)
-        self.len_unit, self.prop_unit = get_default_unit()
+        self.prop_unit, self.len_unit = get_default_unit()
         atom_sp = get_atomic_energy(config.atom_ref)
         if config.batom_ref is not None:
             atom_sp -= get_atomic_energy(config.batom_ref)
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
-        self.prop_unit_conv = unit_conversion(self.len_unit, "AU")
+        self.prop_unit_conv = unit_conversion(self.prop_unit, "kcal_per_mol")
 
     def forward(
         self,
@@ -43,14 +43,14 @@ class JitModel(xPaiNN):
 class JitGradModel(xPaiNN):
     def __init__(self, config: NetConfig):
         super().__init__(config)
-        self.len_unit, self.prop_unit = get_default_unit()
+        self.prop_unit, self.len_unit = get_default_unit()
         atom_sp = get_atomic_energy(config.atom_ref)
         if config.batom_ref is not None:
             atom_sp -= get_atomic_energy(config.batom_ref)
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
-        self.prop_unit_conv = unit_conversion(self.len_unit, "AU")
-        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "AU")
+        self.prop_unit_conv = unit_conversion(self.prop_unit, "kcal_per_mol")
+        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "kcal_per_mol/Angstrom")
 
     def forward(
         self,
