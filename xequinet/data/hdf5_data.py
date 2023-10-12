@@ -79,7 +79,7 @@ class H5Dataset(Dataset):
                     coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
                     coords *= unit_conversion("bohr", self.len_unit)
                 for icfm, coord in enumerate(coords):
-                    edge_index = radius_graph(coord, self._cutoff)
+                    edge_index = radius_graph(coord, self._cutoff, max_num_neighbors=100)
                     data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])
@@ -185,7 +185,7 @@ class H5MemDataset(InMemoryDataset):
                     coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
                     coords *= unit_conversion("Bohr", self.len_unit)
                 for icfm, coord in enumerate(coords):
-                    edge_index = radius_graph(coord, self._cutoff)
+                    edge_index = radius_graph(coord, self._cutoff, max_num_neighbors=100)
                     data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])
@@ -258,6 +258,7 @@ class H5DiskDataset(DiskDataset):
 
     def process(self):
         data_dir = os.path.join(self.processed_dir, self._processed_folder)
+        idx = 0  # count of data
         for raw_path in self.raw_paths:
             # read by memory io-buffer or by disk directly
             if self._mem_process:
@@ -283,7 +284,7 @@ class H5DiskDataset(DiskDataset):
                     coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
                     coords *= unit_conversion("bohr", self.len_unit)
                 for icfm, coord in enumerate(coords):
-                    edge_index = radius_graph(coord, self._cutoff)
+                    edge_index = radius_graph(coord, self._cutoff, max_num_neighbors=100)
                     data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
                     for p_attr, p_name in self._prop_dict.items():
                         p_val = torch.tensor(mol_grp[p_name][()][icfm])

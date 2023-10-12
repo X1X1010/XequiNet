@@ -5,6 +5,7 @@ from .o3layer import (
     CGCoupler,
     EquivariantDot,
     Int2c1eEmbedding,
+    EquivariantLayerNorm,
 )
 from .rbf import (
     CosineCutoff,
@@ -32,6 +33,7 @@ __all__ = [
     "CGCoupler",
     "EquivariantDot",
     "Int2c1eEmbedding",
+    "EquivariantLayerNorm",
     "CosineCutoff",
     "PolynomialCutoff",
     "GaussianSmearing",

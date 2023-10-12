@@ -73,7 +73,7 @@ class XYZDataset(Dataset):
                 at_no = torch.LongTensor(at_no)
                 coord = torch.Tensor(coord).to(torch.get_default_dtype())
                 coord *= unit_conversion("Angstrom", self.len_unit)
-                edge_index = radius_graph(coord, r=self._cutoff)
+                edge_index = radius_graph(coord, r=self._cutoff, max_num_neighbors=100)
                 data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
                 self.data_list.append(data)
                 ct += 1

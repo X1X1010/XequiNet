@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch_scatter import scatter
 from e3nn import o3
 
-from .o3layer import Invariant, EquivariantDot, Int2c1eEmbedding
+from .o3layer import Invariant, EquivariantDot, Int2c1eEmbedding, EquivariantLayerNorm
 from .rbf import resolve_cutoff, resolve_rbf
 from ..utils import resolve_actfn
 
@@ -87,6 +87,7 @@ class PainnMessage(nn.Module):
         edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         num_basis: int = 20,
         actfn: str = "silu",
+        normalize: bool = True,
     ):
         """
         Args:
@@ -114,6 +115,13 @@ class PainnMessage(nn.Module):
         nn.init.zeros_(self.rbf_lin.bias)
         # elementwise tensor product
         self.rsh_conv = o3.ElementwiseTensorProduct(self.edge_irreps, f"{self.edge_num_irreps}x0e")
+        if normalize:
+            self.norm = nn.LayerNorm(self.node_dim)
+            self.o3norm = EquivariantLayerNorm(self.edge_irreps)
+        else:
+            self.norm = nn.Identity()
+            self.o3norm = nn.Identity()
+
 
     def forward(
         self,
@@ -134,8 +142,10 @@ class PainnMessage(nn.Module):
         Returns:
             `new_scalar`: New scalar features.
             `new_spherical`: New spherical features.
-        """        
-        scalar_out = self.scalar_mlp(x_scalar)
+        """
+        scalar_in = self.norm(x_scalar)
+        spherical_in = self.o3norm(x_spherical)
+        scalar_out = self.scalar_mlp(scalar_in)
         filter_weight = self.rbf_lin(rbf) * fcut
         filter_out = scalar_out[edge_index[1]] * filter_weight
         
@@ -144,14 +154,14 @@ class PainnMessage(nn.Module):
             [self.edge_num_irreps, self.edge_num_irreps, self.node_dim],
             dim=-1,
         )
-        message_spherical = self.rsh_conv(x_spherical[edge_index[1]], gate_state_spherical)
+        message_spherical = self.rsh_conv(spherical_in[edge_index[1]], gate_state_spherical)
         edge_spherical = self.rsh_conv(rsh, gate_edge_spherical)
         message_spherical = message_spherical + edge_spherical
 
-        new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
-        new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
-        # new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
-        # new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
+        new_scalar = scalar_in.index_add(0, edge_index[0], message_scalar)
+        new_spherical = spherical_in.index_add(0, edge_index[0], message_spherical)
+        # new_scalar = scalar_in + scatter(message_scalar, edge_index[0], dim=0)
+        # new_spherical = spherical_in + scatter(message_spherical, edge_index[0], dim=0)
 
         return new_scalar, new_spherical
 
@@ -163,6 +173,7 @@ class PainnUpdate(nn.Module):
         node_dim: int = 128,
         edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         actfn: str = "silu",
+        normalize: bool = True,
     ):
         """
         Args:
@@ -190,6 +201,12 @@ class PainnUpdate(nn.Module):
         )
         nn.init.zeros_(self.update_mlp[0].bias)
         nn.init.zeros_(self.update_mlp[2].bias)
+        if normalize:
+            self.norm = nn.LayerNorm(self.node_dim)
+            self.o3norm = EquivariantLayerNorm(self.edge_irreps)
+        else:
+            self.norm = nn.Identity()
+            self.o3norm = nn.Identity()
 
     def forward(
         self,
@@ -204,11 +221,13 @@ class PainnUpdate(nn.Module):
             `new_scalar`: New scalar features.
             `new_spherical`: New spherical features.
         """
-        U_spherical = self.update_U(x_spherical)
-        V_spherical = self.update_V(x_spherical)
+        scalar_in = self.norm(x_scalar)
+        spherical_in = self.o3norm(x_spherical)
+        U_spherical = self.update_U(spherical_in)
+        V_spherical = self.update_V(spherical_in)
 
         V_invariant = self.invariant(V_spherical)
-        mlp_in = torch.cat([x_scalar, V_invariant], dim=-1)
+        mlp_in = torch.cat([scalar_in, V_invariant], dim=-1)
         mlp_out = self.update_mlp(mlp_in)
 
         a_vv, a_sv, a_ss = torch.split(
@@ -221,4 +240,4 @@ class PainnUpdate(nn.Module):
         inner_prod = self.dot_lin(inner_prod)
         d_scalar = a_sv * inner_prod + a_ss
 
-        return x_scalar + d_scalar, x_spherical + d_spherical
+        return scalar_in + d_scalar, spherical_in + d_spherical

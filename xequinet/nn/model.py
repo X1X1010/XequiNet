@@ -84,6 +84,7 @@ class xPaiNN(nn.Module):
                 edge_irreps=config.edge_irreps,
                 num_basis=config.num_basis,
                 actfn=config.activation,
+                normalize=config.layer_norm,
             )
             for _ in range(config.action_blocks)
         ])
@@ -92,6 +93,7 @@ class xPaiNN(nn.Module):
                 node_dim=config.node_dim,
                 edge_irreps=config.edge_irreps,
                 actfn=config.activation,
+                normalize=config.layer_norm,
             )
             for _ in range(config.action_blocks)
         ])

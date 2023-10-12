@@ -177,3 +177,92 @@ class EquivariantDot(nn.Module):
             "Input tensor must have the same last dimension as the irreps"
         out = self.tp(features1, features2)
         return out
+    
+
+
+class EquivariantLayerNorm(nn.Module):
+    def __init__(self, irreps, eps=1e-5, affine=True, normalization='component'):
+        super().__init__()
+
+        self.irreps = o3.Irreps(irreps)
+        self.eps = eps
+        self.affine = affine
+
+        num_scalar = sum(mul for mul, ir in self.irreps if ir.l == 0 and ir.p == 1)
+        num_features = self.irreps.num_irreps
+
+        if affine:
+            self.affine_weight = nn.Parameter(torch.ones(num_features))
+            self.affine_bias = nn.Parameter(torch.zeros(num_scalar))
+        else:
+            self.register_parameter('affine_weight', None)
+            self.register_parameter('affine_bias', None)
+
+        assert normalization in ['norm', 'component'], "normalization needs to be 'norm' or 'component'"
+        self.normalization = normalization
+
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.irreps}, eps={self.eps})"
+
+
+    @torch.cuda.amp.autocast(enabled=False)
+    def forward(self, node_input):
+        # the node_input batch slices this into separate graphs
+        dim = node_input.shape[-1]
+
+        fields = []
+        ix = 0
+        iw = 0
+        ib = 0
+
+        for mul, ir in self.irreps:  # mul is the multiplicity (number of copies) of some irrep type (ir)
+            d = ir.dim
+            field = node_input.narrow(-1, ix, mul*d)
+            ix += mul * d
+
+            # [batch, mul, repr]
+            field = field.reshape(-1, mul, d)
+
+            # For scalars first compute and subtract the mean
+            if ir.l == 0 and ir.p == 1:
+                # Compute the mean
+                field_mean = torch.mean(field, dim=1, keepdim=True) # [batch, mul, 1]]
+                # Subtract the mean
+                field = field - field_mean
+
+            # Then compute the rescaling factor (norm of each feature vector)
+            # Rescaling of the norms themselves based on the option "normalization"
+            if self.normalization == 'norm':
+                field_norm = field.pow(2).sum(-1)  # [batch, mul]
+            elif self.normalization == 'component':
+                field_norm = field.pow(2).mean(-1)  # [batch, mul]
+            else:
+                raise ValueError("Invalid normalization option {}".format(self.normalization))
+            field_norm = torch.mean(field_norm, dim=1, keepdim=True)
+
+            # Then apply the rescaling (divide by the sqrt of the squared_norm, i.e., divide by the norm
+            field_norm = (field_norm + self.eps).pow(-0.5)  # [batch, mul]
+
+            if self.affine:
+                weight = self.affine_weight[None, iw: iw + mul]  # [batch, mul]
+                iw += mul
+                field_norm = field_norm * weight  # [batch, mul]
+
+            field = field * field_norm.reshape(-1, mul, 1)  # [batch, mul, 1]
+
+            if self.affine and d == 1 and ir.p == 1:  # scalars
+                bias = self.affine_bias[ib: ib + mul]  # [batch, mul]
+                ib += mul
+                field += bias.reshape(mul, 1)  # [batch, mul, 1]
+
+            # Save the result, to be stacked later with the rest
+            fields.append(field.reshape(-1, mul * d))  # [batch, mul * repr]
+
+        if ix != dim:
+            fmt = "`ix` should have reached node_input.size(-1) ({}), but it ended at {}"
+            msg = fmt.format(dim, ix)
+            raise AssertionError(msg)
+
+        output = torch.cat(fields, dim=-1)  # [batch * sample, stacked features]
+        return output
