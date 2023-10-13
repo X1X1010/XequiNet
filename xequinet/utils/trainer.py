@@ -154,7 +154,7 @@ class Trainer:
 
     def _load_params(self, ckpt_file: str):
         state = torch.load(ckpt_file, map_location=self.device)
-        self.model.module.load_state_dict(state["model"])
+        self.model.module.load_state_dict(state["model"], strict=False)
         if self.config.resumption:
             self.optimizer.load_state_dict(state["optimizer"])
             self.lr_scheduler.load_state_dict(state["lr_scheduler"])
@@ -188,10 +188,7 @@ class Trainer:
         for step, data in enumerate(self.train_loader, start=1):
             self.meter.reset()
             data = data.to(self.device)
-            # TODO: AMP
             # forward propagation
-            # output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
-            # pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
             pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
             real = data.y - data.base_y if hasattr(data, "base_y") else data.y
             # print(pred.shape, real.shape)
@@ -233,9 +230,6 @@ class Trainer:
         with torch.no_grad():
             for data in self.valid_loader:
                 data = data.to(self.device)
-                # TODO: AMP
-                # output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
-                # pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
                 pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
                 real = data.y - data.base_y if hasattr(data, "base_y") else data.y
                 l1loss = F.l1_loss(pred, real, reduction="sum")
@@ -257,7 +251,6 @@ class Trainer:
         with torch.no_grad():
             for data in self.valid_loader:
                 data = data.to(self.device)
-                # TODO: AMP
                 output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
                 pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
                 real = data.y - data.base_y if hasattr(data, "base_y") else data.y
@@ -354,7 +347,6 @@ class GradTrainer(Trainer):
         for step, data in enumerate(self.train_loader, start=1):
             self.meter.reset()
             data = data.to(self.device)
-            # TODO: AMP
             # forward propagation
             data.pos.requires_grad_(True)
             predE, predF = self.model(data.at_no, data.pos, data.edge_index, data.batch)
@@ -403,7 +395,6 @@ class GradTrainer(Trainer):
         self.meter.reset()
         for data in self.valid_loader:
             data = data.to(self.device)
-            # TODO: AMP
             data.pos.requires_grad_(True)
             predE, predF = self.model(data.at_no, data.pos, data.edge_index, data.batch)
             with torch.no_grad():
@@ -431,7 +422,6 @@ class GradTrainer(Trainer):
         self.meter.reset()
         for data in self.valid_loader:
             data = data.to(self.device)
-            # TODO: AMP
             data.pos.requires_grad_(True)
             predE, predF = self.ema_model(data.at_no, data.pos, data.edge_index, data.batch)
             with torch.no_grad():
