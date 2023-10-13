@@ -184,7 +184,8 @@ class EquivariantLayerNorm(nn.Module):
     def __init__(self, irreps, eps=1e-5, affine=True, normalization='component'):
         super().__init__()
 
-        self.irreps = o3.Irreps(irreps)
+        self.irreps = o3.Irreps(irreps).simplify()
+        self.dim = self.irreps.dim
         self.eps = eps
         self.affine = affine
 
@@ -210,6 +211,7 @@ class EquivariantLayerNorm(nn.Module):
     def forward(self, node_input):
         # the node_input batch slices this into separate graphs
         dim = node_input.shape[-1]
+        assert dim == self.dim, "Input tensor must have the same last dimension as the irreps"
 
         fields = []
         ix = 0
@@ -258,11 +260,6 @@ class EquivariantLayerNorm(nn.Module):
 
             # Save the result, to be stacked later with the rest
             fields.append(field.reshape(-1, mul * d))  # [batch, mul * repr]
-
-        if ix != dim:
-            fmt = "`ix` should have reached node_input.size(-1) ({}), but it ended at {}"
-            msg = fmt.format(dim, ix)
-            raise AssertionError(msg)
 
         output = torch.cat(fields, dim=-1)  # [batch * sample, stacked features]
         return output
