@@ -181,7 +181,7 @@ QM9CV_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
 )
 
 # specialzations for tianchi
-TCB_ATOM_ENERGY = CC_ATOM_ENERGY.clone()
+TCB_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
 TCB_ATOM_ENERGY[[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]] = torch.DoubleTensor([
     -3.68123383e+02, -2.39023145e+04, -3.43134805e+04, -4.71499961e+04, -6.25899414e+04,
     -2.14219750e+05, -2.49775828e+05, -2.88682906e+05, -1.61372700e+06, -1.86852156e+05
