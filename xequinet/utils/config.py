@@ -27,7 +27,7 @@ class NetConfig(BaseModel):
     action_blocks: int = 3                         # number of the action blocks
     activation: str = "silu"                       # activation function type
     gate_actfn: str = "sigmoid"                    # activation function type for the gate
-    layer_norm: bool = True                        # whether to use the layer normalization
+    norm_type: str = "layer"                       # normalization layer type
     output_mode: str = "scalar"                    # task type (`scalar` is for energy like, `grad` is for force like, etc.)
     output_dim: int = 1                            # output dimension of multi-task (only for `scalar` mode)
     reduce_op: str = "sum"                         # reduce operation for graph level aggregation

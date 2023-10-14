@@ -1,8 +1,11 @@
 from contextlib import contextmanager
+from typing import Union, Iterable
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
+import e3nn
+from ..nn.o3layer import EquivariantLayerNorm
 from torch_geometric.loader import DataLoader
 from .lr_scheduler import SmoothReduceLROnPlateau
 import pytorch_warmup as warmup
@@ -91,43 +94,64 @@ def resolve_actfn(actfn: str) -> nn.Module:
 
 
 def resolve_norm(
-    normtype: str,
+    norm_type: str,
     num_features: int,
-    momentum: float = 0.1,
     affine: bool = True,
 ) -> nn.Module:
     """Helper function to return normalization layer"""
-    normtype = normtype.lower()
-    if normtype == "batch":
+    norm_type = norm_type.lower()
+    if norm_type == "batch":
         return nn.BatchNorm1d(
             num_features,
-            momentum=momentum,
             affine=affine,
         )
-    elif normtype == "layer":
+    elif norm_type == "layer":
         return nn.LayerNorm(
             num_features,
             elementwise_affine=affine,
         )
-    elif normtype == "nonorm":
+    elif norm_type == "nonorm":
         return nn.Identity()
     else:
-        raise NotImplementedError(f"Unsupported normalization layer {normtype}")
+        raise NotImplementedError(f"Unsupported normalization layer {norm_type}")
 
 
-def resolve_optimizer(optimtype: str, params: dict, lr: float, **kwargs) -> torch.optim.Optimizer:
+def resolve_o3norm(
+    norm_type: str,
+    irreps: Union[str, e3nn.o3.Irreps, Iterable],
+    affine: bool = True,
+) -> nn.Module:
+    """Helper function to return equivariant normalization layer"""
+    norm_type = norm_type.lower()
+    if norm_type == "batch":
+        return e3nn.nn.BatchNorm(
+            irreps,
+            affine=affine,
+        )
+    elif norm_type == "layer":
+        return EquivariantLayerNorm(
+            irreps,
+            affine=affine,
+        )
+    elif norm_type == "nonorm":
+        return nn.Identity()
+    else:
+        raise NotImplementedError(f"Unsupported equivariant normalization layer {norm_type}")
+
+
+def resolve_optimizer(optim_type: str, params: dict, lr: float, **kwargs) -> torch.optim.Optimizer:
     """Helper function to return an optimizer"""
-    optimtype = optimtype.lower()
-    if optimtype == "adam":
+    optim_type = optim_type.lower()
+    if optim_type == "adam":
         return torch.optim.Adam(params, lr=lr, **kwargs)
-    elif optimtype == "adamw":
+    elif optim_type == "adamw":
         return torch.optim.AdamW(params, lr=lr, **kwargs)
     else:
-        raise NotImplementedError(f"Unsupported optimizer {optimtype}")
+        raise NotImplementedError(f"Unsupported optimizer {optim_type}")
 
 
 def resolve_lr_scheduler(
-    schedtype: str,
+    sched_type: str,
     optimizer: torch.optim.Optimizer,
     max_lr: float = 5e-4,
     min_lr: float = 0.0,
@@ -135,15 +159,15 @@ def resolve_lr_scheduler(
     **kwargs,
 ) -> lr_scheduler.LRScheduler:
     """Helper function to return a learning rate scheduler"""
-    schedtype = schedtype.lower()
-    if schedtype == "cosine_annealing":
+    sched_type = sched_type.lower()
+    if sched_type == "cosine_annealing":
         return lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer,
             T_max=num_steps,
             eta_min=min_lr,
             **kwargs,
         )
-    elif schedtype == "cyclic":
+    elif sched_type == "cyclic":
         return lr_scheduler.CyclicLR(
             optimizer=optimizer,
             base_lr=min_lr,
@@ -151,51 +175,51 @@ def resolve_lr_scheduler(
             step_size_up=num_steps // 2,
             **kwargs,
         )
-    elif schedtype == "exponential":
+    elif sched_type == "exponential":
         return lr_scheduler.ExponentialLR(
             optimizer=optimizer,
             **kwargs,
         )
-    elif schedtype == "step":
+    elif sched_type == "step":
         return lr_scheduler.StepLR(
             optimizer=optimizer,
             step_size=num_steps // 5,
             **kwargs,
         )
-    elif schedtype == "plateau":
+    elif sched_type == "plateau":
         return SmoothReduceLROnPlateau(
             optimizer=optimizer,
             min_lr=min_lr,
             **kwargs,
         )
     else:
-        raise NotImplementedError(f"Unsupported scheduler {schedtype}")
+        raise NotImplementedError(f"Unsupported scheduler {sched_type}")
 
 
 def resolve_warmup_scheduler(
-    warmtype: str,
+    warm_type: str,
     optimizer: torch.optim.Optimizer,
     warm_steps: int,
 ) -> warmup.BaseWarmup:
     """Helper function to return a warmup scheduler"""
-    warmtype = warmtype.lower()
-    if warmtype == "linear":
+    warm_type = warm_type.lower()
+    if warm_type == "linear":
         return warmup.LinearWarmup(
             optimizer=optimizer,
             warmup_period=warm_steps,
         )
-    elif warmtype == "exponential":
+    elif warm_type == "exponential":
         return warmup.ExponentialWarmup(
             optimizer=optimizer,
             warmup_period=warm_steps,
         )
-    elif warmtype == "untuned_linear":
+    elif warm_type == "untuned_linear":
         return warmup.UntunedLinearWarmup(
             optimizer=optimizer,
         )
-    elif warmtype == "untuned_exponential":
+    elif warm_type == "untuned_exponential":
         return warmup.UntunedExponentialWarmup(
             optimizer=optimizer,
         )
     else:
-        raise NotImplementedError(f"Unsupported warmup scheduler {warmtype}")
+        raise NotImplementedError(f"Unsupported warmup scheduler {warm_type}")
