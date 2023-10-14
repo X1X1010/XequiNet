@@ -53,17 +53,22 @@ class AverageMeter:
 
 
 class EarlyStopping:
-    def __init__(self, patience: int = 100, min_delta: float = 0.0):
-        self.patience = patience
+    def __init__(
+        self, patience: int = None, min_delta: float = 0.0, min_lr: float = 1e-6,
+    ):
+        self.patience = patience if patience is not None else float("inf")
         self.min_delta = min_delta
+        self.min_lr = min_lr
         self.counter = 0
         self.stop = False
 
-    def __call__(self, val_loss, best_loss):
+    def __call__(self, val_loss: float, best_loss: float, lr: float):
         if val_loss - best_loss > self.min_delta:
             self.counter += 1
             if self.counter >= self.patience:
                 self.stop = True
+        elif lr < self.min_lr:
+            self.stop = True
         else:
             self.counter = 0
         return self.stop
@@ -128,7 +133,9 @@ class Trainer:
             warm_steps=warm_steps,
         )
         # set early stopping (only work when lr_scheduler is plateau)
-        self.early_stop = EarlyStopping(patience=config.early_stop)
+        self.early_stop = EarlyStopping(
+            patience=config.early_stop, min_lr=config.min_lr
+        )
         # load checkpoint
         self.start_epoch = 1
         if config.ckpt_file is not None:
@@ -239,7 +246,8 @@ class Trainer:
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
-            self.early_stop(mae, self.best_l2fs[0].loss)
+            lr = self.optimizer.param_groups[0]["lr"]
+            self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.model.module, mae)
 
 
@@ -261,7 +269,8 @@ class Trainer:
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
-            self.early_stop(mae, self.best_l2fs[0].loss)
+            lr = self.optimizer.param_groups[0]["lr"]
+            self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.ema_model.module, mae)
 
 
@@ -411,7 +420,8 @@ class GradTrainer(Trainer):
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
-            self.early_stop(mae, self.best_l2fs[0].loss)
+            lr = self.optimizer.param_groups[0]["lr"]
+            self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.model.module, mae)
 
     
@@ -438,7 +448,8 @@ class GradTrainer(Trainer):
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
-            self.early_stop(mae, self.best_l2fs[0].loss)
+            lr = self.optimizer.param_groups[0]["lr"]
+            self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.ema_model.module, mae)
 
     
