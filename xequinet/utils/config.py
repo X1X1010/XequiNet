@@ -74,7 +74,7 @@ class NetConfig(BaseModel):
     optim_kwargs: dict = {}                        # kwargs for the optimizer
     lr_scheduler: str = "cosine_annealing"         # learning rate scheduler type
     lr_sche_kwargs: dict = {}                      # kwargs for the learning rate scheduler
-    early_stop: int = 100                          # number of the epochs to wait before stopping the training
+    early_stop: int = None                         # number of the epochs to wait before stopping the training
     ema_decay: float = None                        # exponential moving average decay
 
     # configurations about the logging
