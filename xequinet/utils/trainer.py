@@ -109,14 +109,14 @@ class Trainer:
         self.lossfn = resolve_lossfn(config.lossfn).to(device)
         # set optimizer
         self.optimizer = resolve_optimizer(
-            optimtype=config.optimizer,
+            optim_type=config.optimizer,
             params=filter(lambda p: p.requires_grad, model.parameters()),
             lr=config.max_lr,
             **config.optim_kwargs,
         )
         # set lr scheduler
         self.lr_scheduler = resolve_lr_scheduler(
-            schedtype=config.lr_scheduler,
+            sched_type=config.lr_scheduler,
             optimizer=self.optimizer,
             max_lr=config.max_lr,
             min_lr=config.min_lr,
@@ -128,7 +128,7 @@ class Trainer:
         if config.lr_scheduler == "plateau":
             warm_steps = config.warmup_epochs
         self.warmup_scheduler = resolve_warmup_scheduler(
-            warmtype=config.warmup_scheduler,
+            warm_type=config.warmup_scheduler,
             optimizer=self.optimizer,
             warm_steps=warm_steps,
         )

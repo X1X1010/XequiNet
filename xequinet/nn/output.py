@@ -8,9 +8,8 @@ import torch_geometric.utils
 from torch_scatter import scatter
 from e3nn import o3
 
-from .o3layer import Gate
+from .o3layer import Gate, resolve_actfn
 from .rbf import GaussianSmearing
-from ..utils import resolve_actfn
 
 
 class ScalarOut(nn.Module):
@@ -65,7 +64,7 @@ class ScalarOut(nn.Module):
         Returns:
             `res`: Scalar output.
         """
-        atom_out = self.out_mlp(x_scalar) + self.node_bias
+        atom_out: torch.Tensor = self.out_mlp(x_scalar) + self.node_bias
         # res = scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
         num_mol = int(batch_index.max().item() + 1)
         zero_res = torch.zeros(
@@ -126,7 +125,7 @@ class NegGradOut(nn.Module):
             `res`: Scalar output.
             `neg_grad`: Negative gradient.
         """
-        atom_out = self.out_mlp(x_scalar) + self.node_bias
+        atom_out: torch.Tensor = self.out_mlp(x_scalar) + self.node_bias
         # res =  scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
         num_mol = int(batch_index.max().item() + 1)
         zero_res = torch.zeros(
@@ -155,7 +154,6 @@ class VectorOut(nn.Module):
         hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
         output_dim: int = 3,
         actfn: str = "silu",
-        gatefn: str = "sigmoid",
         reduce_op: str = "sum",
     ):
         """
@@ -166,7 +164,6 @@ class VectorOut(nn.Module):
             `hidden_irreps`: Hidden irreps.
             `output_dim`: Output dimension. (3 for vector and 1 for norm of the vector)
             `actfn`: Activation function type.
-            `gatefn`: Gate function type.
             `reduce_op`: Reduce operation.
         """
         super().__init__()
@@ -184,7 +181,7 @@ class VectorOut(nn.Module):
         nn.init.zeros_(self.scalar_out_mlp[2].bias)
         self.spherical_out_mlp = nn.Sequential(
             o3.Linear(self.edge_irreps, self.hidden_irreps),
-            Gate(self.hidden_irreps, actfn=gatefn),
+            Gate(self.hidden_irreps),
             o3.Linear(self.hidden_irreps, "1x1e"),
         )
         if output_dim != 3 and output_dim != 1:
@@ -231,7 +228,6 @@ class PolarOut(nn.Module):
         hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
         output_dim: int = 9,
         actfn: str = "silu",
-        gatefn: str = "sigmoid",
         reduce_op: str = "sum",
     ):
         """
@@ -242,7 +238,6 @@ class PolarOut(nn.Module):
             `hidden_irreps`: Hidden irreps.
             `output_dim`: Output dimension. (9 for 3x3 matrix and 1 for trace of the matrix)
             `actfn`: Activation function type.
-            `gatefn`: Gate function type.
             `reduce_op`: Reduce operation.
         """
         super().__init__()
@@ -260,7 +255,7 @@ class PolarOut(nn.Module):
         nn.init.zeros_(self.scalar_out_mlp[2].bias)
         self.spherical_out_mlp = nn.Sequential(
             o3.Linear(self.edge_irreps, self.hidden_irreps, biases=True),
-            Gate(self.hidden_irreps, actfn=gatefn),
+            Gate(self.hidden_irreps),
             o3.Linear(self.hidden_irreps, "1x0e + 1x2e", biases=True),
         )
         nn.init.zeros_(self.spherical_out_mlp[0].bias)
@@ -397,7 +392,6 @@ class HessianOut(nn.Module):
         cutoff: float = 5.0,
         num_basis: int = 20,
         actfn: str = "silu",
-        gatefn: str = "sigmoid",
     ):
         """
         Args:
@@ -406,7 +400,6 @@ class HessianOut(nn.Module):
             `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
             `actfn`: Activation function type.
-            `gatefn`: Gate function type.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -431,12 +424,12 @@ class HessianOut(nn.Module):
  
         self.spherical_mlp_i = nn.Sequential(
             o3.Linear(self.edge_irreps, self.hidden_irreps),
-            Gate(self.hidden_irreps, actfn=gatefn),
+            Gate(self.hidden_irreps),
             o3.Linear(self.hidden_irreps, "1x1e"),
         )
         self.spherical_mlp_j = nn.Sequential(
             o3.Linear(self.edge_irreps, self.hidden_irreps),
-            Gate(self.hidden_irreps, actfn=gatefn),
+            Gate(self.hidden_irreps),
             o3.Linear(self.hidden_irreps, "1x1e"),
         )
         self.rbf = GaussianSmearing(num_basis, cutoff)

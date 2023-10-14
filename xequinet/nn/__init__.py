@@ -1,49 +1,28 @@
 from .o3layer import (
-    Invariant,
-    Gate,
-    ElementShifts,
-    CGCoupler,
-    EquivariantDot,
-    Int2c1eEmbedding,
-    EquivariantLayerNorm,
+    Invariant, Gate, ElementShifts, CGCoupler,
+    EquivariantDot, Int2c1eEmbedding, EquivariantLayerNorm,
+    resolve_norm, resolve_o3norm, resolve_actfn,
+
 )
 from .rbf import (
-    CosineCutoff,
-    PolynomialCutoff,
-    GaussianSmearing,
-    SphericalBesselj0,
+    CosineCutoff, PolynomialCutoff,
+    GaussianSmearing, SphericalBesselj0,
 )
 from .xpainn import (
-    XEmbedding,
-    PainnMessage,
-    PainnUpdate,
+    XEmbedding, PainnMessage, PainnUpdate,
 )
 from .output import (
-    ScalarOut,
-    NegGradOut,
-    VectorOut,
-    PolarOut,
+    ScalarOut, NegGradOut, VectorOut, PolarOut,
 )
 from .model import xPaiNN
 
 __all__ = [
-    "Invariant",
-    "Gate",
-    "ElementShifts",
-    "CGCoupler",
-    "EquivariantDot",
-    "Int2c1eEmbedding",
-    "EquivariantLayerNorm",
-    "CosineCutoff",
-    "PolynomialCutoff",
-    "GaussianSmearing",
-    "SphericalBesselj0",
-    "XEmbedding",
-    "PainnMessage",
-    "PainnUpdate",
-    "ScalarOut",
-    "NegGradOut",
-    "VectorOut",
-    "PolarOut",
+    "Invariant", "Gate", "ElementShifts", "CGCoupler",
+    "EquivariantDot", "Int2c1eEmbedding", "EquivariantLayerNorm",
+    "resolve_norm", "resolve_o3norm", "resolve_actfn",
+    "CosineCutoff", "PolynomialCutoff",
+    "GaussianSmearing", "SphericalBesselj0",
+    "XEmbedding", "PainnMessage", "PainnUpdate",
+    "ScalarOut", "NegGradOut", "VectorOut", "PolarOut",
     "xPaiNN",
 ]

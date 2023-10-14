@@ -26,7 +26,6 @@ class NetConfig(BaseModel):
     cutoff_fn: str = "cosine"                      # cutoff function type
     action_blocks: int = 3                         # number of the action blocks
     activation: str = "silu"                       # activation function type
-    gate_actfn: str = "sigmoid"                    # activation function type for the gate
     norm_type: str = "layer"                       # normalization layer type
     output_mode: str = "scalar"                    # task type (`scalar` is for energy like, `grad` is for force like, etc.)
     output_dim: int = 1                            # output dimension of multi-task (only for `scalar` mode)
@@ -90,8 +89,8 @@ class NetConfig(BaseModel):
     def model_hyper_params(self):
         hyper_params = self.dict(include={
             "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
-            "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "action_blocks",
-            "activation", "gate_actfn", "output_mode", "output_dim", "reduce_op",
+            "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "action_blocks", "activation",
+            "norm_type", "output_mode", "output_dim", "reduce_op",
             "atom_ref", "batom_ref", "default_property_unit", "default_length_unit",
             "default_dtype",
         })

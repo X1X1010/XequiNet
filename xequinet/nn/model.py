@@ -39,7 +39,6 @@ def resolve_output(config: NetConfig):
             edge_irreps=config.edge_irreps,
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
-            gatefn=config.gate_actfn,
             reduce_op=config.reduce_op,
         )
     elif config.output_mode == "polar":
@@ -47,7 +46,6 @@ def resolve_output(config: NetConfig):
             edge_irreps=config.edge_irreps,
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
-            gatefn=config.gate_actfn,
             reduce_op=config.reduce_op,
         )
     elif config.output_mode == "hessian":
@@ -57,7 +55,6 @@ def resolve_output(config: NetConfig):
             hidden_dim=config.hidden_dim,
             hidden_irreps=config.hidden_irreps,
             actfn=config.activation,
-            gatefn=config.gate_actfn,
         )
     else:
         raise NotImplementedError(f"output mode {config.output_mode} is not implemented")

@@ -1,11 +1,8 @@
 from contextlib import contextmanager
-from typing import Union, Iterable
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
-import e3nn
-from ..nn.o3layer import EquivariantLayerNorm
 from torch_geometric.loader import DataLoader
 from .lr_scheduler import SmoothReduceLROnPlateau
 import pytorch_warmup as warmup
@@ -70,73 +67,6 @@ def resolve_lossfn(lossfn: str) -> nn.Module:
         return nn.SmoothL1Loss()
     else:
         raise NotImplementedError(f"Unsupported loss function {lossfn}")
-
-
-def resolve_actfn(actfn: str) -> nn.Module:
-    """Helper function to return activation function"""
-    actfn = actfn.lower()
-    if actfn == "relu":
-        return nn.ReLU()
-    elif actfn == "leakyrelu":
-        return nn.LeakyReLU()
-    elif actfn == "softplus":
-        return nn.Softplus()
-    elif actfn == "sigmoid":
-        return nn.Sigmoid()
-    elif actfn == "silu":
-        return nn.SiLU()
-    elif actfn == "tanh":
-        return nn.Tanh()
-    elif actfn == "identity":
-        return nn.Identity()
-    else:
-        raise NotImplementedError(f"Unsupported activation function {actfn}")
-
-
-def resolve_norm(
-    norm_type: str,
-    num_features: int,
-    affine: bool = True,
-) -> nn.Module:
-    """Helper function to return normalization layer"""
-    norm_type = norm_type.lower()
-    if norm_type == "batch":
-        return nn.BatchNorm1d(
-            num_features,
-            affine=affine,
-        )
-    elif norm_type == "layer":
-        return nn.LayerNorm(
-            num_features,
-            elementwise_affine=affine,
-        )
-    elif norm_type == "nonorm":
-        return nn.Identity()
-    else:
-        raise NotImplementedError(f"Unsupported normalization layer {norm_type}")
-
-
-def resolve_o3norm(
-    norm_type: str,
-    irreps: Union[str, e3nn.o3.Irreps, Iterable],
-    affine: bool = True,
-) -> nn.Module:
-    """Helper function to return equivariant normalization layer"""
-    norm_type = norm_type.lower()
-    if norm_type == "batch":
-        return e3nn.nn.BatchNorm(
-            irreps,
-            affine=affine,
-        )
-    elif norm_type == "layer":
-        return EquivariantLayerNorm(
-            irreps,
-            affine=affine,
-        )
-    elif norm_type == "nonorm":
-        return nn.Identity()
-    else:
-        raise NotImplementedError(f"Unsupported equivariant normalization layer {norm_type}")
 
 
 def resolve_optimizer(optim_type: str, params: dict, lr: float, **kwargs) -> torch.optim.Optimizer:

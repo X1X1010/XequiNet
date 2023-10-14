@@ -2,10 +2,12 @@ from typing import Optional, Iterable, Union
 
 import torch
 import torch.nn as nn
+
+import e3nn
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
-from ..utils import resolve_actfn, get_atomic_energy, get_embedding_tensor
+from ..utils import get_atomic_energy, get_embedding_tensor
 
 
 class Invariant(nn.Module):
@@ -41,12 +43,11 @@ class Gate(nn.Module):
     def __init__(
         self,
         irreps_in: Union[str, o3.Irreps, Iterable],
-        actfn: str = "sigmoid",
     ):
         super().__init__()
         irreps_in = o3.Irreps(irreps_in).simplify()
         self.invariant = Invariant(irreps_in)
-        self.activation = resolve_actfn(actfn)
+        self.activation = nn.Sigmoid()
         self.scalar_mul = o3.ElementwiseTensorProduct(irreps_in, f"{irreps_in.num_irreps}x0e")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -263,3 +264,70 @@ class EquivariantLayerNorm(nn.Module):
 
         output = torch.cat(fields, dim=-1)  # [batch * sample, stacked features]
         return output
+
+
+def resolve_actfn(actfn: str) -> nn.Module:
+    """Helper function to return activation function"""
+    actfn = actfn.lower()
+    if actfn == "relu":
+        return nn.ReLU()
+    elif actfn == "leakyrelu":
+        return nn.LeakyReLU()
+    elif actfn == "softplus":
+        return nn.Softplus()
+    elif actfn == "sigmoid":
+        return nn.Sigmoid()
+    elif actfn == "silu":
+        return nn.SiLU()
+    elif actfn == "tanh":
+        return nn.Tanh()
+    elif actfn == "identity":
+        return nn.Identity()
+    else:
+        raise NotImplementedError(f"Unsupported activation function {actfn}")
+
+
+def resolve_norm(
+    norm_type: str,
+    num_features: int,
+    affine: bool = True,
+) -> nn.Module:
+    """Helper function to return normalization layer"""
+    norm_type = norm_type.lower()
+    if norm_type == "batch":
+        return nn.BatchNorm1d(
+            num_features,
+            affine=affine,
+        )
+    elif norm_type == "layer":
+        return nn.LayerNorm(
+            num_features,
+            elementwise_affine=affine,
+        )
+    elif norm_type == "nonorm":
+        return nn.Identity()
+    else:
+        raise NotImplementedError(f"Unsupported normalization layer {norm_type}")
+
+
+def resolve_o3norm(
+    norm_type: str,
+    irreps: Union[str, o3.Irreps, Iterable],
+    affine: bool = True,
+) -> nn.Module:
+    """Helper function to return equivariant normalization layer"""
+    norm_type = norm_type.lower()
+    if norm_type == "batch":
+        return e3nn.nn.BatchNorm(
+            irreps,
+            affine=affine,
+        )
+    elif norm_type == "layer":
+        return EquivariantLayerNorm(
+            irreps,
+            affine=affine,
+        )
+    elif norm_type == "nonorm":
+        return nn.Identity()
+    else:
+        raise NotImplementedError(f"Unsupported equivariant normalization layer {norm_type}")
