@@ -58,7 +58,7 @@ class EarlyStopping:
     ):
         self.patience = patience if patience is not None else float("inf")
         self.min_delta = min_delta
-        self.min_lr = min_lr
+        self.min_lr = 1e-6 if min_lr == 0.0 else min_lr
         self.counter = 0
         self.stop = False
 

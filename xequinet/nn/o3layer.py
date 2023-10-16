@@ -220,7 +220,7 @@ class EquivariantLayerNorm(nn.Module):
         ib = 0
 
         for mul, ir in self.irreps:  # mul is the multiplicity (number of copies) of some irrep type (ir)
-            d = ir.dim
+            d = ir[0] * 2 + 1
             field = node_input.narrow(-1, ix, mul*d)
             ix += mul * d
 
@@ -228,7 +228,7 @@ class EquivariantLayerNorm(nn.Module):
             field = field.reshape(-1, mul, d)
 
             # For scalars first compute and subtract the mean
-            if ir.l == 0 and ir.p == 1:
+            if ir[0] == 0 and ir[1] == 1:
                 # Compute the mean
                 field_mean = torch.mean(field, dim=1, keepdim=True) # [batch, mul, 1]]
                 # Subtract the mean
@@ -254,7 +254,7 @@ class EquivariantLayerNorm(nn.Module):
 
             field = field * field_norm.reshape(-1, mul, 1)  # [batch, mul, 1]
 
-            if self.affine and d == 1 and ir.p == 1:  # scalars
+            if self.affine and d == 1 and ir[1] == 1:  # scalars
                 bias = self.affine_bias[ib: ib + mul]  # [batch, mul]
                 ib += mul
                 field += bias.reshape(mul, 1)  # [batch, mul, 1]
