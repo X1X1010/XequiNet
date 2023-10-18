@@ -208,8 +208,7 @@ class EquivariantLayerNorm(nn.Module):
         return f"{self.__class__.__name__}({self.irreps}, eps={self.eps})"
 
 
-    @torch.cuda.amp.autocast(enabled=False)
-    def forward(self, node_input):
+    def forward(self, node_input: torch.Tensor) -> torch.Tensor:
         # the node_input batch slices this into separate graphs
         dim = node_input.shape[-1]
         assert dim == self.dim, "Input tensor must have the same last dimension as the irreps"
@@ -221,7 +220,8 @@ class EquivariantLayerNorm(nn.Module):
 
         for mul, ir in self.irreps:  # mul is the multiplicity (number of copies) of some irrep type (ir)
             d = ir[0] * 2 + 1
-            field = node_input.narrow(-1, ix, mul*d)
+            # field = node_input.narrow(1, ix, mul * d)
+            field = node_input[:, ix: ix + mul * d]
             ix += mul * d
 
             # [batch, mul, repr]
@@ -230,7 +230,7 @@ class EquivariantLayerNorm(nn.Module):
             # For scalars first compute and subtract the mean
             if ir[0] == 0 and ir[1] == 1:
                 # Compute the mean
-                field_mean = torch.mean(field, dim=1, keepdim=True) # [batch, mul, 1]]
+                field_mean = torch.mean(field, dim=1, keepdim=True)  # [batch, mul, 1]
                 # Subtract the mean
                 field = field - field_mean
 
@@ -245,19 +245,19 @@ class EquivariantLayerNorm(nn.Module):
             field_norm = torch.mean(field_norm, dim=1, keepdim=True)
 
             # Then apply the rescaling (divide by the sqrt of the squared_norm, i.e., divide by the norm
-            field_norm = (field_norm + self.eps).pow(-0.5)  # [batch, mul]
+            field_norm = (field_norm + self.eps).pow(-0.5)  # [batch, 1]
 
             if self.affine:
-                weight = self.affine_weight[None, iw: iw + mul]  # [batch, mul]
+                weight = self.affine_weight[None, iw: iw + mul]  # [1, mul]
                 iw += mul
                 field_norm = field_norm * weight  # [batch, mul]
 
             field = field * field_norm.reshape(-1, mul, 1)  # [batch, mul, 1]
 
             if self.affine and d == 1 and ir[1] == 1:  # scalars
-                bias = self.affine_bias[ib: ib + mul]  # [batch, mul]
+                bias = self.affine_bias[ib: ib + mul]  # [mul]
                 ib += mul
-                field += bias.reshape(mul, 1)  # [batch, mul, 1]
+                field += bias.reshape(-1, mul, 1)  # [1, mul, 1]
 
             # Save the result, to be stacked later with the rest
             fields.append(field.reshape(-1, mul * d))  # [batch, mul * repr]

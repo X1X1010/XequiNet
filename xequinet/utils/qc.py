@@ -273,7 +273,3 @@ def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
     centroid = torch.sum(masses * coords, dim=0) / torch.sum(masses)
     return centroid
 
-
-if __name__ == "__main__":
-    gen_int2c1e("pm7", "aux28")
-    gen_int2c1e("gfn2-xtb", "aux28")

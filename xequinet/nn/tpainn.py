@@ -5,9 +5,11 @@ import torch.nn as nn
 from torch_scatter import scatter
 from e3nn import o3
 
-from .o3layer import Invariant, EquivariantDot, Int2c1eEmbedding
+from .o3layer import (
+    Invariant, EquivariantDot, Int2c1eEmbedding,
+    resolve_actfn, resolve_norm, resolve_o3norm,
+)
 from .rbf import resolve_cutoff, resolve_rbf
-from ..utils import resolve_actfn, resolve_norm, resolve_o3norm
 
 
 

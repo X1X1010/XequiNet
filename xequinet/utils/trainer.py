@@ -67,7 +67,7 @@ class EarlyStopping:
             self.counter += 1
             if self.counter >= self.patience:
                 self.stop = True
-        elif lr < self.min_lr:
+        elif lr <= self.min_lr:
             self.stop = True
         else:
             self.counter = 0
