@@ -120,13 +120,15 @@ class Trainer:
             optimizer=self.optimizer,
             max_lr=config.max_lr,
             min_lr=config.min_lr,
-            num_steps=config.max_epochs * len(train_loader),
+            max_epochs=config.max_epochs,
+            steps_per_epoch=len(train_loader),
             **config.lr_sche_kwargs,
         )
         # set warmup scheduler
-        warm_steps = config.warmup_epochs * len(train_loader)
         if config.lr_scheduler == "plateau":
             warm_steps = config.warmup_epochs
+        else:
+            warm_steps = config.warmup_epochs * len(train_loader)
         self.warmup_scheduler = resolve_warmup_scheduler(
             warm_type=config.warmup_scheduler,
             optimizer=self.optimizer,
@@ -198,7 +200,6 @@ class Trainer:
             # forward propagation
             pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
             real = data.y - data.base_y if hasattr(data, "base_y") else data.y
-            # print(pred.shape, real.shape)
             loss = self.lossfn(pred, real)
             # backward propagation
             self.optimizer.zero_grad()

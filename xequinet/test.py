@@ -32,9 +32,9 @@ def test_scalar(model, test_loader, device, outfile):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
                     wf.write("real: ")
                     wf.write(" ".join([f"{r.item():10.7f}" for r in real[imol]]))
-                    wf.write("  pred:")
+                    wf.write("  pred: ")
                     wf.write(" ".join([f"{p.item():10.7f}" for p in pred[imol]]))
-                    wf.write("  loss:")
+                    wf.write("  loss: ")
                     wf.write(" ".join([f"{l.item():10.7f}" for l in l1loss[imol]]))
                     wf.write("\n")
     with open(outfile, 'a') as wf:

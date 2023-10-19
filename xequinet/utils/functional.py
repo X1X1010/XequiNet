@@ -85,24 +85,27 @@ def resolve_lr_scheduler(
     optimizer: torch.optim.Optimizer,
     max_lr: float = 5e-4,
     min_lr: float = 0.0,
-    num_steps: int = None,
+    max_epochs: int = 500,
+    steps_per_epoch: int = 1,
     **kwargs,
 ) -> lr_scheduler.LRScheduler:
     """Helper function to return a learning rate scheduler"""
     sched_type = sched_type.lower()
     if sched_type == "cosine_annealing":
+        T_max = kwargs.pop("T_max", max_epochs) * steps_per_epoch
         return lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer,
-            T_max=num_steps,
             eta_min=min_lr,
+            T_max=T_max,
             **kwargs,
         )
     elif sched_type == "cyclic":
+        step_size_up = kwargs.pop("step_size_up", max_epochs // 2) * steps_per_epoch
         return lr_scheduler.CyclicLR(
             optimizer=optimizer,
             base_lr=min_lr,
             max_lr=max_lr,
-            step_size_up=num_steps // 2,
+            step_size_up=step_size_up,
             **kwargs,
         )
     elif sched_type == "exponential":
@@ -111,9 +114,10 @@ def resolve_lr_scheduler(
             **kwargs,
         )
     elif sched_type == "step":
+        step_size = kwargs.pop("step_size", max_epochs // 5) * steps_per_epoch
         return lr_scheduler.StepLR(
             optimizer=optimizer,
-            step_size=num_steps // 5,
+            step_size=step_size,
             **kwargs,
         )
     elif sched_type == "plateau":

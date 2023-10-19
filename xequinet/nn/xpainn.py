@@ -52,7 +52,7 @@ class XEmbedding(nn.Module):
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             `x`: Atomic features.
@@ -71,10 +71,11 @@ class XEmbedding(nn.Module):
         x = self.int2c1e(at_no)
         x_scalar = self.node_lin(x)
         # calculate radial basis function
-        rbf = self.rbf(dist) * self.cutoff_fn(dist)
+        rbf = self.rbf(dist)
+        fcut = self.cutoff_fn(dist)
         # calculate spherical harmonics
         rsh = self.sph_harm(vec)  # unit vector, normalized by component
-        return x_scalar, rbf, rsh
+        return x_scalar, rbf, fcut, rsh
 
 
 
@@ -110,7 +111,8 @@ class PainnMessage(nn.Module):
         nn.init.zeros_(self.scalar_mlp[0].bias)
         nn.init.zeros_(self.scalar_mlp[2].bias)
         # spherical feature
-        self.rbf_lin = nn.Linear(self.num_basis, self.hidden_dim, bias=False)
+        self.rbf_lin = nn.Linear(self.num_basis, self.hidden_dim, bias=True)
+        nn.init.zeros_(self.rbf_lin.bias)
         # elementwise tensor product
         self.rsh_conv = o3.ElementwiseTensorProduct(self.edge_irreps, f"{self.edge_num_irreps}x0e")
         # normalization
@@ -123,6 +125,7 @@ class PainnMessage(nn.Module):
         x_scalar: torch.Tensor,
         x_spherical: torch.Tensor,
         rbf: torch.Tensor,
+        fcut: torch.Tensor,
         rsh: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -140,7 +143,7 @@ class PainnMessage(nn.Module):
         scalar_in: torch.Tensor = self.norm(x_scalar)
         spherical_in: torch.Tensor = self.o3norm(x_spherical)
         scalar_out = self.scalar_mlp(scalar_in)
-        filter_weight = self.rbf_lin(rbf)
+        filter_weight = self.rbf_lin(rbf) * fcut
         filter_out = scalar_out[edge_index[1]] * filter_weight
         
         gate_state_spherical, gate_edge_spherical, message_scalar = torch.split(
@@ -152,10 +155,10 @@ class PainnMessage(nn.Module):
         edge_spherical = self.rsh_conv(rsh, gate_edge_spherical)
         message_spherical = message_spherical + edge_spherical
 
-        new_scalar = scalar_in.index_add(0, edge_index[0], message_scalar)
-        new_spherical = spherical_in.index_add(0, edge_index[0], message_spherical)
-        # new_scalar = scalar_in + scatter(message_scalar, edge_index[0], dim=0)
-        # new_spherical = spherical_in + scatter(message_spherical, edge_index[0], dim=0)
+        # new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
+        # new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
+        new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
+        new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
 
         return new_scalar, new_spherical
 
@@ -233,4 +236,4 @@ class PainnUpdate(nn.Module):
         inner_prod = self.dot_lin(inner_prod)
         d_scalar = a_sv * inner_prod + a_ss
 
-        return scalar_in + d_scalar, spherical_in + d_spherical
+        return x_scalar + d_scalar, x_spherical + d_spherical

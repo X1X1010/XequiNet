@@ -112,10 +112,10 @@ class xPaiNN(nn.Module):
         Returns:
             `result`: Output.
         """
-        x_scalar, rbf, rsh = self.embed(at_no, pos, edge_index)
+        x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for msg, upd in zip(self.message, self.update):
-            x_scalar, x_vector = msg(x_scalar, x_vector, rbf, rsh, edge_index)
+            x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
         result = self.out(x_scalar, x_vector, pos, batch)
         return result

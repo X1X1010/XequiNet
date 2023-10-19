@@ -181,7 +181,7 @@ class EquivariantDot(nn.Module):
     
 
 
-class EquivariantLayerNorm(nn.Module):
+class EquivariantLayerNormV0(nn.Module):
     def __init__(self, irreps, eps=1e-5, affine=True, normalization='component'):
         super().__init__()
 
@@ -264,6 +264,62 @@ class EquivariantLayerNorm(nn.Module):
 
         output = torch.cat(fields, dim=-1)  # [batch * sample, stacked features]
         return output
+
+
+class EquivariantLayerNorm(nn.Module):
+    def __init__(self, irreps, eps=1e-5, affine=True):
+        super().__init__()
+
+        self.irreps = o3.Irreps(irreps)
+        self.dim = self.irreps.dim
+        self.eps = eps
+
+        self.num_scalar = sum(mul for mul, ir in self.irreps if ir.l == 0 and ir.p == 1)
+        self.num_features = self.irreps.num_irreps
+        scalar_index = []
+        ix = 0
+        for mul, ir in self.irreps:
+            if ir.l == 0 and ir.p == 1:
+                scalar_index.extend(list(range(ix, ix + mul)))
+            ix += ir.dim * mul
+        self.register_buffer('scalar_index', torch.LongTensor(scalar_index))
+
+        self.invariant = Invariant(self.irreps)
+        self.scalar_mul = o3.ElementwiseTensorProduct(self.irreps, f"{self.num_features}x0e")
+
+        weight = torch.ones(self.num_features)
+        bias = torch.zeros(self.num_scalar)
+        if affine:
+            self.affine_weight = nn.Parameter(weight)
+            self.affine_bias = nn.Parameter(bias)
+        else:
+            self.register_buffer('affine_weight', weight)
+            self.register_parameter('affine_bias', bias)
+
+
+    def forward(self, node_input: torch.Tensor) -> torch.Tensor:
+        assert node_input.shape[-1] == self.dim, "Input tensor must have the same last dimension as the irreps"
+
+        scalar_input = node_input[:, self.scalar_index]
+
+        node_input = node_input.index_add(
+            dim=1,
+            index=self.scalar_index,
+            source=-scalar_input.mean(dim=1, keepdim=True).repeat(1, self.num_scalar)
+        )
+
+        input_norm = self.invariant(node_input)
+        input_1_rms = torch.reciprocal(torch.sqrt(torch.square(input_norm).mean(dim=1, keepdim=True)))
+        node_input = node_input * input_1_rms
+        
+        node_input = self.scalar_mul(node_input, self.affine_weight.unsqueeze(0))
+        node_input = node_input.index_add(
+            dim=1,
+            index=self.scalar_index,
+            source=self.affine_bias.unsqueeze(0).repeat(node_input.shape[0], 1)
+        )
+
+        return node_input
 
 
 def resolve_actfn(actfn: str) -> nn.Module:

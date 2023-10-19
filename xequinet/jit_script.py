@@ -60,10 +60,10 @@ class JitGradModel(xPaiNN):
         batch: torch.LongTensor,
     ):
         pos = pos * self.len_unit_conv
-        x_scalar, rbf, rsh = self.embed(at_no, pos, edge_index)
+        x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for msg, upd in zip(self.message, self.update):
-            x_scalar, x_vector = msg(x_scalar, x_vector, rbf, rsh, edge_index)
+            x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
         model_prop, model_neg_grad = self.out(x_scalar, x_vector, pos, batch)
         atom_energies = self.atom_sp[at_no]
