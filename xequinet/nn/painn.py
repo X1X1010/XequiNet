@@ -4,22 +4,13 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter
 
-from .rbf import GaussianSmearing, SphericalBesselj0, CosineCutoff
 from ..utils import NetConfig
-from .o3layer import resolve_actfn
+from .o3layer import resolve_actfn, Int2c1eEmbedding
+from .output import ScalarOut
+from .rbf import resolve_cutoff, resolve_rbf
 
 
-def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float):
-    if rbf_kernel == "bessel":
-        return SphericalBesselj0(num_basis, cutoff)
-    elif rbf_kernel == "gaussian":
-        return GaussianSmearing(num_basis, cutoff)
-    else:
-        raise NotImplementedError(f"rbf kernel {rbf_kernel} is not implemented")
-
-
-
-class OriEmbedding(nn.Module):
+class Embedding(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
@@ -27,13 +18,19 @@ class OriEmbedding(nn.Module):
         rbf_kernel: str = "bessel",
         cutoff: float = 5.0,
         cutoff_fn: str = "cosine",
-
+        onehot: bool = True,
     ):
         super().__init__()
         self.node_dim = node_dim
-        self.embedding = nn.Embedding(100, self.node_dim, padding_idx=0)
+        if onehot:
+            self.embedding = nn.Embedding(100, self.node_dim, padding_idx=0)
+        else:
+            self.embedding = nn.Sequential(
+                Int2c1eEmbedding("gfn2-xtb", "aux56"),
+                nn.Linear(56, self.node_dim),
+            )
         self.rbf = resolve_rbf(rbf_kernel, num_basis, cutoff)
-        self.cutoff_fn = CosineCutoff(cutoff)
+        self.cutoff_fn = resolve_cutoff(cutoff_fn, cutoff)
 
     def forward(
         self,
@@ -42,17 +39,16 @@ class OriEmbedding(nn.Module):
         edge_index: torch.LongTensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # calculate distance and relative position
-        # pos = pos[:, [1, 2, 0]]  # [x, y, z] -> [y, z, x]
         vec = pos[edge_index[1]] - pos[edge_index[0]]
         dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
         # node linear
         x_scalar = self.embedding(at_no)
         # calculate radial basis function
         rbf = self.rbf(dist)
-        envelope = self.cutoff_fn(dist)
+        fcut = self.cutoff_fn(dist)
         # calculate spherical harmonics
         rsh = vec / dist
-        return x_scalar, rbf, envelope, rsh
+        return x_scalar, rbf, fcut, rsh
 
 
 class PainnMessage(nn.Module):
@@ -154,7 +150,6 @@ class PainnUpdate(nn.Module):
             [self.node_dim, self.edge_dim, self.node_dim],
             dim=-1
         )
-
         d_vector = a_vv.unsqueeze(1) * U_vector
         inner_prod = torch.sum(U_vector * V_vector, dim=1)
         d_scalar = a_sv * inner_prod + a_ss
@@ -162,60 +157,10 @@ class PainnUpdate(nn.Module):
         return x_scalar + d_scalar, x_vector + d_vector
 
 
-class ScalarOut(nn.Module):
-    def __init__(
-        self,
-        node_dim: int = 128,
-        hidden_dim: int = 64,
-        out_dim: int = 1,
-        actfn: str = "silu",
-        reduce_op: str = "sum",
-    ):
-        super().__init__()
-        self.node_dim = node_dim
-        self.hidden_dim = hidden_dim
-        self.out_dim = out_dim
-        self.reduce_op = reduce_op
-        self.out_mlp = nn.Sequential(
-            nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
-            nn.Linear(self.hidden_dim, self.out_dim),
-        )
-        nn.init.zeros_(self.out_mlp[0].bias)
-        nn.init.zeros_(self.out_mlp[2].bias)
-    
-    def forward(
-        self,
-        x_scalar: torch.Tensor,
-        at_no: torch.LongTensor,
-        coords: torch.Tensor,
-        batch_idx: torch.LongTensor,
-    ) -> torch.DoubleTensor:
-        """
-        Args:
-            `atom_out`: Atomic outputs.
-            `at_no`: Atomic numbers.
-            `coord`: Atomic coordinates, must required grads.
-            `batch_idx`: Index of the graphs in the batch.
-        Returns:
-            Scalar outputs.
-        """
-        assert len(x_scalar) == len(at_no) == len(batch_idx), \
-            "x_scalar, at_no and batch_idx must have the same length"
-        atom_out = self.out_mlp(x_scalar) - 4.2433421
-        res = scatter(
-            atom_out,
-            batch_idx,
-            dim=0,
-            reduce=self.reduce_op,
-        )
-        return res
-
-
 class PaiNN(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
-        self.embed = OriEmbedding()
+        self.embed = Embedding(onehot=True)
         self.message = nn.ModuleList([
             PainnMessage()
             for _ in range(3)
@@ -228,7 +173,6 @@ class PaiNN(nn.Module):
     
     def forward(
         self,
-        x: torch.Tensor,
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         edge_index: torch.LongTensor,

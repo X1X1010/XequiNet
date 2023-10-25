@@ -79,8 +79,8 @@ class XEmbedding(nn.Module):
 
 
 
-class PainnMessage(nn.Module):
-    """Message function for PaiNN"""
+class XPainnMessage(nn.Module):
+    """Message function for XPaiNN"""
     def __init__(
         self,
         node_dim: int = 128,
@@ -164,8 +164,8 @@ class PainnMessage(nn.Module):
 
 
 
-class PainnUpdate(nn.Module):
-    """Update function for PaiNN"""
+class XPainnUpdate(nn.Module):
+    """Update function for XPaiNN"""
     def __init__(
         self,
         node_dim: int = 128,

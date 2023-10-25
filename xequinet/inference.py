@@ -2,7 +2,7 @@ import argparse
 
 import torch
 
-from xequinet.nn import xPaiNN
+from xequinet.nn import XPaiNN
 from xequinet.utils import (
     NetConfig,
     set_default_unit, get_default_unit, unit_conversion,
@@ -143,7 +143,7 @@ def main():
         config.max_edges = args.max_edges
 
     # build model
-    model = xPaiNN(config).to(device)
+    model = XPaiNN(config).to(device)
     model.load_state_dict(ckpt["model"], strict=False)
 
     # load input data

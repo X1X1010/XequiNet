@@ -3,14 +3,14 @@ import argparse
 import torch
 from torch_cluster import radius_graph
 
-from xequinet.nn import xPaiNN
+from xequinet.nn import XPaiNN
 from xequinet.utils import (
     NetConfig,
     unit_conversion, get_default_unit, set_default_unit,
     get_atomic_energy,
 )
 
-class JitModel(xPaiNN):
+class JitModel(XPaiNN):
     def __init__(self, config: NetConfig):
         super().__init__(config)
         self.prop_unit, self.len_unit = get_default_unit()
@@ -43,7 +43,7 @@ class JitModel(xPaiNN):
         return result
     
 
-class JitGradModel(xPaiNN):
+class JitGradModel(XPaiNN):
     def __init__(self, config: NetConfig):
         super().__init__(config)
         self.prop_unit, self.len_unit = get_default_unit()

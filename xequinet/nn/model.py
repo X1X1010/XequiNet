@@ -5,12 +5,9 @@ import torch.nn as nn
 
 from .xpainn import (
     XEmbedding,
-    PainnMessage, PainnUpdate,
+    XPainnMessage, XPainnUpdate,
 )
-from .output import (
-    ScalarOut, NegGradOut, VectorOut,
-    PolarOut, HessianOut,
-)
+from .output import ScalarOut, NegGradOut, VectorOut, PolarOut
 from ..utils import NetConfig
 
 
@@ -48,19 +45,11 @@ def resolve_output(config: NetConfig):
             output_dim=config.output_dim,
             reduce_op=config.reduce_op,
         )
-    elif config.output_mode == "hessian":
-        return HessianOut(
-            node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
-            hidden_dim=config.hidden_dim,
-            hidden_irreps=config.hidden_irreps,
-            actfn=config.activation,
-        )
     else:
         raise NotImplementedError(f"output mode {config.output_mode} is not implemented")
 
 
-class xPaiNN(nn.Module):
+class XPaiNN(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
         self.config = config
@@ -76,7 +65,7 @@ class xPaiNN(nn.Module):
             cutoff_fn=config.cutoff_fn,
         )
         self.message = nn.ModuleList([
-            PainnMessage(
+            XPainnMessage(
                 node_dim=config.node_dim,
                 edge_irreps=config.edge_irreps,
                 num_basis=config.num_basis,
@@ -86,7 +75,7 @@ class xPaiNN(nn.Module):
             for _ in range(config.action_blocks)
         ])
         self.update = nn.ModuleList([
-            PainnUpdate(
+            XPainnUpdate(
                 node_dim=config.node_dim,
                 edge_irreps=config.edge_irreps,
                 actfn=config.activation,

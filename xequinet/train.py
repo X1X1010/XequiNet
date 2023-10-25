@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
-from xequinet.nn import xPaiNN
+from xequinet.nn import XPaiNN
 from xequinet.utils import (
     NetConfig, ZeroLogger,
     set_default_unit,
@@ -143,7 +143,7 @@ def main():
 
     # -------------------  build model ------------------- #
     # initialize model
-    model = xPaiNN(config)
+    model = XPaiNN(config)
     log.s.info(model)
     model.to(device)
 

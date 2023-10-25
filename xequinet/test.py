@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 
 from xequinet.data import H5Dataset, data_unit_transform, atom_ref_transform
-from xequinet.nn import xPaiNN
+from xequinet.nn import XPaiNN
 from xequinet.utils import NetConfig, unit_conversion, set_default_unit, get_default_unit
 from xequinet.utils.qc import ELEMENTS_LIST
 
@@ -138,7 +138,7 @@ def main():
         config.output_mode = "grad"
     
     # build model
-    model = xPaiNN(config).to(device)
+    model = XPaiNN(config).to(device)
     model.load_state_dict(ckpt["model"])
 
     # test
