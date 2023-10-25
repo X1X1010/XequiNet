@@ -5,8 +5,8 @@ import torch.nn as nn
 from torch_scatter import scatter
 
 from .rbf import GaussianSmearing, SphericalBesselj0, CosineCutoff
-from ..utils import resolve_actfn, NetConfig
-
+from ..utils import NetConfig
+from .o3layer import resolve_actfn
 
 
 def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float):

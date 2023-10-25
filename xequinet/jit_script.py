@@ -1,6 +1,7 @@
 import argparse
 
 import torch
+from torch_cluster import radius_graph
 
 from xequinet.nn import xPaiNN
 from xequinet.utils import (
@@ -18,16 +19,18 @@ class JitModel(xPaiNN):
             atom_sp -= get_atomic_energy(config.batom_ref)
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
-        self.prop_unit_conv = unit_conversion(self.prop_unit, "kcal_per_mol")
+        self.prop_unit_conv = unit_conversion(self.prop_unit, "AU")
+        self.cutoff = config.cutoff
+        self.max_edges = config.max_edges
 
     def forward(
         self,
         at_no: torch.LongTensor,
         pos: torch.Tensor,
-        edge_index: torch.LongTensor,
         batch: torch.LongTensor,
     ):
         pos = pos * self.len_unit_conv
+        edge_index = radius_graph(pos, r=self.cutoff, batch=batch, max_num_neighbors=self.max_edges)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for msg, upd in zip(self.message, self.update):
@@ -49,17 +52,19 @@ class JitGradModel(xPaiNN):
             atom_sp -= get_atomic_energy(config.batom_ref)
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
-        self.prop_unit_conv = unit_conversion(self.prop_unit, "kcal_per_mol")
-        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "kcal_per_mol/Angstrom")
+        self.prop_unit_conv = unit_conversion(self.prop_unit, "AU")
+        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "AU")
+        self.cutoff = config.cutoff
+        self.max_edges = config.max_edges
 
     def forward(
         self,
         at_no: torch.LongTensor,
         pos: torch.Tensor,
-        edge_index: torch.LongTensor,
         batch: torch.LongTensor,
     ):
         pos = pos * self.len_unit_conv
+        edge_index = radius_graph(pos, r=self.cutoff, batch=batch, max_num_neighbors=self.max_edges)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for msg, upd in zip(self.message, self.update):

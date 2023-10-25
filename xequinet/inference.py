@@ -29,7 +29,7 @@ def predict_scalar(
         for data in dataset:
             data = data.to(device)
             batch = torch.zeros_like(data.at_no, dtype=torch.int64)
-            pred = model(data.at_no, data.pos, data.edge_index, batch)
+            pred = model(data.at_no, data.pos, data.edge_index, batch).double()
             atom_energy = calc_atom_ref(data.at_no, atom_ref, batom_ref, device)
             pred += atom_energy
             if base_method in ["PM7", "PM6"]:
@@ -65,6 +65,7 @@ def predict_grad(
         batch = torch.zeros_like(data.at_no, dtype=torch.int64, device=device)
         data.pos.requires_grad = True
         predE, predF = model(data.at_no, data.pos, data.edge_index, batch)
+        predE = predE.double()
         atom_energy = calc_atom_ref(data.at_no, atom_ref, batom_ref, device)
         predE += atom_energy
         if base_method in ["pm7", "pm6"]:
@@ -101,8 +102,16 @@ def main():
         help="Xequinet checkpoint file. (XXX.pt containing 'model' and 'config')",
     )
     parser.add_argument(
+        "--max-edges", "-me", type=int, default=None,
+        help="Maximum number of edges in a molecule.",
+    )
+    parser.add_argument(
         "--force", "-f", action="store_true",
         help="Whether testing force additionally when the output mode is 'scalar'",
+    )
+    parser.add_argument(
+        "--no-force", "-nf", action="store_true",
+        help="Whether not testing force when the output mode is 'grad'",
     )
     parser.add_argument(
         "--base-method", "-bm", type=str, default=None, choices=["pm7", "gfn2-xtb"],
@@ -110,7 +119,8 @@ def main():
     )
     parser.add_argument(
         "inp", type=str,
-        help="Input xyz file.")
+        help="Input xyz file."
+    )
     args = parser.parse_args()
 
     # set device
@@ -127,13 +137,17 @@ def main():
     config.node_mean = 0.0; config.graph_mean = 0.0
     if args.force and config.output_mode == "scalar":
         config.output_mode = "grad"
+    if args.no_force and config.output_mode == "grad":
+        config.output_mode = "scalar"
+    if args.max_edges is not None:
+        config.max_edges = args.max_edges
 
     # build model
     model = xPaiNN(config).to(device)
-    model.load_state_dict(ckpt["model"])
+    model.load_state_dict(ckpt["model"], strict=False)
 
     # load input data
-    dataset = XYZDataset(xyz_file=args.inp, cutoff=config.cutoff)
+    dataset = XYZDataset(xyz_file=args.inp, cutoff=config.cutoff, max_edges=config.max_edges)
     outp = f"{args.inp.split('/')[-1].split('.')[0]}.log"
 
     with open(outp, 'w') as wf:
@@ -143,6 +157,7 @@ def main():
         predict_grad(model, dataset, device, outp, config.atom_ref, config.batom_ref, args.base_method)
     else:
         predict_scalar(model, dataset, device, outp, config.atom_ref, config.batom_ref, args.base_method)
+
 
 if __name__ == "__main__":
     main()

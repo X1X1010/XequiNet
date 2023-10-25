@@ -52,7 +52,7 @@ class XEmbedding(nn.Module):
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             `x`: Atomic features.
@@ -155,10 +155,10 @@ class PainnMessage(nn.Module):
         edge_spherical = self.rsh_conv(rsh, gate_edge_spherical)
         message_spherical = message_spherical + edge_spherical
 
-        # new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
-        # new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
-        new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
-        new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
+        new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
+        new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
+        # new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
+        # new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
 
         return new_scalar, new_spherical
 

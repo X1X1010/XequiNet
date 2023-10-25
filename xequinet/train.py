@@ -101,14 +101,16 @@ def main():
     # set dataset
     with distributed_zero_first(local_rank):
         train_dataset = Dataset(
-            config.data_root, config.data_files, config.processed_name,
-            "train", config.cutoff, config.max_mol, config.mem_process,
-            transform, pre_transform, **prop_dict,
+            root=config.data_root, data_files=config.data_files, data_name=config.processed_name,
+            mode="train", cutoff=config.cutoff, max_size=config.max_mol, max_edges=config.max_edges,
+            mem_process=config.mem_process, transform=transform, pre_transform=pre_transform,
+            **prop_dict,
         )
         valid_dataset = Dataset(
-            config.data_root, config.data_files, config.processed_name,
-            "valid", config.cutoff, config.vmax_mol, config.mem_process,
-            transform, pre_transform, **prop_dict,
+            root=config.data_root, data_files=config.data_files, data_name=config.processed_name,
+            mode="valid", cutoff=config.cutoff, max_size=config.vmax_mol, max_edges=config.max_edges,
+            mem_process=config.mem_process, transform=transform, pre_transform=pre_transform,
+            **prop_dict,
         )
     # set dataloader
     train_sampler = DistributedSampler(train_dataset, world_size, local_rank, shuffle=True)

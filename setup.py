@@ -1,7 +1,7 @@
 from setuptools import setup
 setup(
     name = "XequiNet",
-    version = "0.1.2",
+    version = "0.1.3",
     packages = ["xequinet"],
     entry_points={
         'console_scripts': [
@@ -9,6 +9,7 @@ setup(
             "xeqjit = xequinet.jit_script:main",
             "xeqinfer = xequinet.inference:main",
             "xeqtest = xequinet.test:main",
+            "xeqopt = xequinet.geo_opt:main"
         ]
     }
 )

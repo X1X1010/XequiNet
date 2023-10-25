@@ -6,6 +6,7 @@ XequiNet.egg-info/dependency_links.txt
 XequiNet.egg-info/entry_points.txt
 XequiNet.egg-info/top_level.txt
 xequinet/__init__.py
+xequinet/geo_opt.py
 xequinet/inference.py
 xequinet/jit_script.py
 xequinet/test.py

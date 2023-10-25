@@ -15,6 +15,29 @@ from ..utils import (
 )
 
 
+def process_h5(f_h5: h5py.File, mode: str, cutoff: float, max_edges: int, prop_dict: dict):
+    len_unit = get_default_unit()[1]
+    # loop over samples
+    for mol_name in f_h5[mode].keys():
+        mol_grp = f_h5[mode][mol_name]
+        at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
+        try:
+            coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Angstrom", len_unit)
+        except:
+            coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Bohr", len_unit)
+        for icfm, coord in enumerate(coords):
+            edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
+            data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+            for p_attr, p_name in prop_dict.items():
+                p_val = torch.tensor(mol_grp[p_name][()][icfm])
+                if p_val.dim() != 2:
+                    p_val = p_val.view(1, -1)
+                setattr(data, p_attr, p_val)
+            yield data
+
+
 class H5Dataset(Dataset):
     """
     Classical torch Dataset for XequiNet.
@@ -27,6 +50,7 @@ class H5Dataset(Dataset):
         mode: str = "train",
         cutoff: float = 5.0,
         max_size: Optional[int] = None,
+        max_edges: Optional[int] = None,
         mem_process: bool = True,
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
@@ -43,6 +67,7 @@ class H5Dataset(Dataset):
             raise TypeError("data_files must be a string or iterable of strings")
         self._mode = mode
         self._cutoff = cutoff
+        self._max_edges = max_edges if max_edges is not None else 100
         self._max_size = max_size if max_size is not None else 1e9
         self._mem_process = mem_process
         self.transform = transform
@@ -68,31 +93,13 @@ class H5Dataset(Dataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            # loop over samples
-            for mol_name in f_h5[self._mode].keys():
-                mol_grp = f_h5[self._mode][mol_name]
-                at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
-                try:
-                    coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
-                    coords *= unit_conversion("angstrom", self.len_unit)
-                except:
-                    coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
-                    coords *= unit_conversion("bohr", self.len_unit)
-                for icfm, coord in enumerate(coords):
-                    edge_index = radius_graph(coord, self._cutoff, max_num_neighbors=100)
-                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
-                    for p_attr, p_name in self._prop_dict.items():
-                        p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        if p_val.dim() != 2:
-                            p_val = p_val.view(1, -1)
-                        setattr(data, p_attr, p_val)
-                    if self.pre_transform is not None:
-                        data = self.pre_transform(data)
-                    self.data_list.append(data)
-                    ct += 1
-                    # break if max size is reached
-                    if ct >= self._max_size: break
-                if ct >= self._max_size: break
+            data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
+            for data in data_iter:
+                self.data_list.append(data)
+                ct += 1
+                # break if max size is reached
+                if ct >= self._max_size:
+                    break
             # close the file
             if self._mem_process:
                 f_disk.close(); io_mem.close()
@@ -121,6 +128,7 @@ class H5MemDataset(InMemoryDataset):
         mode: str = "train",
         cutoff: float = 5.0,
         max_size: Optional[int] = None,
+        max_edges: Optional[int] = None,
         mem_process: bool = True,
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
@@ -142,6 +150,7 @@ class H5MemDataset(InMemoryDataset):
             self._processed_file = f"{data_name}_{suffix}"
         self._mode = mode
         self._cutoff = cutoff
+        self._max_edges = max_edges if max_edges is not None else 100
         self._max_size = max_size if max_size is not None else 1e9
         self._mem_process = mem_process
         self._prop_dict = prop_dict
@@ -174,34 +183,19 @@ class H5MemDataset(InMemoryDataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            # loop over samples
-            for mol_name in f_h5[self._mode].keys():
-                mol_grp = f_h5[self._mode][mol_name]
-                at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
-                try:
-                    coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
-                    coords *= unit_conversion("Angstrom", self.len_unit)
-                except:
-                    coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
-                    coords *= unit_conversion("Bohr", self.len_unit)
-                for icfm, coord in enumerate(coords):
-                    edge_index = radius_graph(coord, self._cutoff, max_num_neighbors=100)
-                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
-                    for p_attr, p_name in self._prop_dict.items():
-                        p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        if p_val.dim() != 2:
-                            p_val = p_val.view(1, -1)
-                        setattr(data, p_attr, p_val)
-                    data_list.append(data)
-                    ct += 1
-                    # break if max_size is reached
-                    if ct >= self._max_size: break
-                if ct >= self._max_size: break
+            data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
+            for data in data_iter:
+                data_list.append(data)
+                ct += 1
+                # break if max_size is reached
+                if ct >= self._max_size:
+                    break
             # close the file
             if self._mem_process:
                 f_disk.close(); io_mem.close()
             f_h5.close()
-            if ct >= self._max_size: break
+            if ct >= self._max_size:
+                break
         if self.pre_transform is not None:
             data_list = [self.pre_transform(data) for data in data_list]
         # save the processed data
@@ -221,6 +215,7 @@ class H5DiskDataset(DiskDataset):
         mode: str = "train",
         cutoff: float = 5.0,
         max_size: Optional[int] = None,
+        max_edges: Optional[int] = None,
         mem_process: bool = True,
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
@@ -241,6 +236,7 @@ class H5DiskDataset(DiskDataset):
             self._processed_folder = f"{data_name}_{suffix}"
         self._mode = mode
         self._cutoff = cutoff
+        self._max_edges = max_edges if max_edges is not None else 100
         self._max_size = max_size if max_size is not None else 1e9
         self._mem_process = mem_process
         self._prop_dict = prop_dict
@@ -273,38 +269,23 @@ class H5DiskDataset(DiskDataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            # loop over samples
-            for mol_name in f_h5[self._mode].keys():
-                mol_grp = f_h5[self._mode][mol_name]
-                at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
-                try:
-                    coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
-                    coords *= unit_conversion("angstrom", self.len_unit)
-                except:
-                    coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
-                    coords *= unit_conversion("bohr", self.len_unit)
-                for icfm, coord in enumerate(coords):
-                    edge_index = radius_graph(coord, self._cutoff, max_num_neighbors=100)
-                    data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
-                    for p_attr, p_name in self._prop_dict.items():
-                        p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                        if p_val.dim() != 2:
-                            p_val = p_val.view(1, -1)
-                        setattr(data, p_attr, p_val)
-                    if self.pre_transform is not None:
-                        data = self.pre_transform(data)
-                    # save the data like `0012/00121234.pt`
-                    os.makedirs(os.path.join(data_dir, f"{idx // 10000:04d}"), exist_ok=True)
-                    torch.save(data, os.path.join(data_dir, f"{idx // 10000:04d}", f"{idx:08d}.pt"))
-                    idx += 1
-                    # break if max_size is reached
-                    if idx >= self._max_size: break
-                if idx >= self._max_size: break
+            data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
+            for data in data_iter:
+                if self.pre_transform is not None:
+                    data = self.pre_transform(data)
+                # save the data like `0012/00121234.pt`
+                os.makedirs(os.path.join(data_dir, f"{idx // 10000:04d}"), exist_ok=True)
+                torch.save(data, os.path.join(data_dir, f"{idx // 10000:04d}", f"{idx:08d}.pt"))
+                idx += 1
+                # break if max_size is reached
+                if idx >= self._max_size:
+                    break
             # close hdf5 file
             if self._mem_process:
                 f_disk.close(); io_mem.close()
             f_h5.close()
-            if idx >= self._max_size: break
+            if idx >= self._max_size:
+                break
         self._num_data = idx
     
     def len(self):
