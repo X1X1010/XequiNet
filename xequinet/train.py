@@ -12,7 +12,7 @@ from torch_geometric.loader import DataLoader
 from xequinet.nn import XPaiNN
 from xequinet.utils import (
     NetConfig, ZeroLogger,
-    set_default_unit,
+    set_default_unit, get_atomic_energy,
     distributed_zero_first, calculate_stats,
     Trainer, GradTrainer,
 )
@@ -97,7 +97,11 @@ def main():
         data, config.label_unit, config.blabel_unit,
         config.force_unit, config.bforce_unit,
     )
-    transform = lambda data: atom_ref_transform(data, config.atom_ref, config.batom_ref)
+    with distributed_zero_first(local_rank):
+        atom_sp = get_atomic_energy(config.atom_ref)
+        batom_sp = get_atomic_energy(config.batom_ref)
+    transform = lambda data: atom_ref_transform(data, atom_sp, batom_sp)
+
     # set dataset
     with distributed_zero_first(local_rank):
         train_dataset = Dataset(

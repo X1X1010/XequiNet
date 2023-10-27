@@ -10,8 +10,7 @@ from torch_geometric.data import Dataset as DiskDataset
 from torch_cluster import radius_graph
 
 from ..utils import (
-    unit_conversion,
-    get_atomic_energy, get_default_unit, get_centroid,
+    unit_conversion, get_default_unit, get_centroid,
 )
 
 
@@ -95,6 +94,8 @@ class H5Dataset(Dataset):
                 continue
             data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
             for data in data_iter:
+                if self.pre_transform is not None:
+                    data = self.pre_transform(data)
                 self.data_list.append(data)
                 ct += 1
                 # break if max size is reached
@@ -336,8 +337,8 @@ def data_unit_transform(
 
 def atom_ref_transform(
     data: Data,
-    atom_ref: Optional[str] = None,
-    batom_ref: Optional[str] = None,
+    atom_sp: Optional[torch.Tensor] = None,
+    batom_sp: Optional[torch.Tensor] = None,
 ):
     """
     Create a deep copy of the data and subtract the atomic energy.
@@ -345,11 +346,11 @@ def atom_ref_transform(
     new_data = data.clone()
 
     if hasattr(new_data, "y"):
-        ref_sum = get_atomic_energy(atom_ref)[new_data.at_no].sum()
+        ref_sum = atom_sp[new_data.at_no].sum() if atom_sp is not None else 0.0
         new_data.y -= ref_sum
         new_data.y = new_data.y.to(torch.get_default_dtype())
         if hasattr(new_data, "base_y"):
-            bref_sum = get_atomic_energy(batom_ref)[new_data.at_no].sum()
+            bref_sum = batom_sp[new_data.at_no].sum() if batom_sp is not None else 0.0
             new_data.base_y -= bref_sum
             new_data.base_y = new_data.base_y.to(torch.get_default_dtype())
     # change the dtype of force by the way

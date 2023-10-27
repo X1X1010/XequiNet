@@ -158,9 +158,9 @@ class PainnUpdate(nn.Module):
 
 
 class PaiNN(nn.Module):
-    def __init__(self, config: NetConfig):
+    def __init__(self, onehot=True):
         super().__init__()
-        self.embed = Embedding(onehot=True)
+        self.embed = Embedding(onehot=onehot)
         self.message = nn.ModuleList([
             PainnMessage()
             for _ in range(3)

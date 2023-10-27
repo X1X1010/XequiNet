@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pyscf import gto
 import numpy as np
-import scipy.special
+# import scipy.special
 import torch
 
 
@@ -102,90 +102,6 @@ ATOM_MASS = torch.Tensor([0.0,
     92.906, 95.95,  98.,    101.07, 102.91, 106.42, 107.87, 112.41, 114.82, 118.71,
     121.76, 127.60, 126.90, 131.29,
 ])
-# atomic energies at CCSD(T)/AHGBS-5 in Hartree
-CC_ATOM_ENERGY = torch.DoubleTensor([0.0,
-    -0.5,                -2.8789743710420823, -7.4735853872549045,  -14.66086539355887,  -24.618489920509003,
-    -37.77873539152293,  -54.493372218958974, -74.93408104902329,   -99.565762667769,    -128.73876519337327,
-    -162.03893799957353, -199.8197982721131,  -242.0738343479831,   -289.0419016677005,  -340.895954021737,
-    -397.68939305632034, -459.6724933115134,  -527.0142415492794,   -599.7209115836976,  -677.3620106765908,
-    -760.3512159960259,  -849.018198712152,   -943.5067439896815,   -1043.9712203798786, -1150.4062812979296,
-    -1263.0422058284594, -1382.0962724844153, -1507.6115255825416,  -1639.7979759854961, -1778.6792007055597,
-    -1924.0713566704283, -2076.157840716771,  -2235.0267459021884,  -2400.6631576850277, -2573.243483522314,
-    -2752.8629931685527, -2939.160652158978,  -3132.3723325850056,  -3332.4745615309844, -3539.8002937779042,
-    -3754.349504498755,  -3976.2813890211232, -4205.513231496394,   -4442.262920922795,  -4686.600084500385,
-    -4938.6654926371875, -5198.411833925291,  -5465.847416806276,   -5740.861680559743,  -6023.604995076103,
-    -6314.13783680609,   -6612.428613454331,  -6918.614467921217,   -7232.758318265938,
-])
-# atomic energies at XYG3/def2-tzvpp in Hartree
-XYG3_ATOM_ENERGY = torch.DoubleTensor([0.0,
-    -0.49968785231665e+00, -0.29043290587871e+01, -0.74821424039682e+01, -0.14666480618773e+02, -0.24650034021807e+02,
-    -0.37842487556945e+02, -0.54586359823001e+02, -0.75066942670999e+02, -0.99732673729857e+02, -0.12893231000575e+03,
-    -0.16221353733685e+03, -0.20001425032089e+03, -0.24230646155029e+03, -0.28931437715167e+03, -0.34121180081888e+03,
-    -0.39806179178386e+03, -0.46009815899427e+03, -0.52748667116356e+03, -0.59978166199076e+03, -0.67744240954779e+03,
-    -0.76047671773897e+03, -0.84920267006776e+03, -0.94374835333269e+03, -0.10442618010004e+04, -0.11508349212012e+04,
-    -0.12634999689409e+04, -0.13825506590235e+04, -0.15081072999464e+04, -0.16403156989334e+04, -0.17792194536389e+04,
-    -0.19244555980640e+04, -0.20765728467622e+04, -0.22354574669595e+04, -0.24011265011379e+04, -0.25737493598374e+04,
-    -0.27534060478926e+04, -0.24004276468957e+02, -0.30631090187891e+02, -0.38138298016806e+02, -0.46804516330085e+02, 
-    -0.56718201228084e+02, -0.67999361868654e+02, -0.80618726714728e+02, -0.94702177140742e+02, -0.11038946312889e+03, 
-    -0.12777812924020e+03, -0.14689064789166e+03, -0.16771478030172e+03, -0.18990497560720e+03, -0.21406003176131e+03, 
-    -0.24002494587873e+03, -0.26784975283526e+03, -0.29756385775764e+03, -0.32926260941879e+03,
-])
-# atomic energies at PM7 in Hartree
-PM7_ATOM_ENERGY = torch.DoubleTensor([0.0,
-    0.830298220756e-01, 0.222044604925e-15,  0.612102311989e-01, 0.122643566599,     0.216251715014,
-    0.272330549585,     0.180076962392,      0.949133079920e-01, 0.301031311468e-01, 0.177635683940e-14,
-    0.408758768615e-01, 0.557760502984e-01,  0.123739226582,     0.172566429745,     0.120428460601,
-    0.105259416178,     0.458812887577e-01, -0.177635683940e-14, 0.341349427826e-01, 0.678874212203e-01,
-    0.380624526905,     0.140549567169,      0.195354155026,     0.151392136524,     0.179674918114,
-    0.155308997006,     0.202239477529,      0.148434688775,     0.128603635974,     0.496725567943e-01,
-    0.104221533986,     0.142627328620,      0.115217383902,     0.865325580344e-01, 0.384348875065e-01,
-   -0.177635683940e-14, 0.312345881671e-01,  0.623098161905e-01, 0.119786735363,     0.234002299098,
-    0.433294829034,     0.250673506055,      0.215696611424,     0.265452633300,     0.219696230385,
-    0.143424129339,     0.108524257866,      0.425810303992e-01, 0.924288833516e-01, 0.115058023758,
-    0.100715610825,     0.748992675436e-01,  0.383116673137e-01, 0.00000000000,
-])
-# atomic energies at GFN1-xTB in Hartree
-GFN2_ATOM_ENERGY = torch.DoubleTensor([0.0,
-    -0.393482763936, -1.743126632946, -0.180071686575, -0.569105981616, -0.952436614164,
-    -1.793296371365, -2.605824161279, -3.767606950376, -4.619339964238, -5.932215052758,
-    -0.167096749822, -0.465974663792, -0.905328611479, -1.569609938455, -2.374178794732,
-    -3.146456870402, -4.482525134961, -4.279043267590, -0.165752239061, -0.371646352489,
-    -0.854183293246, -1.365500218647, -1.715748172741, -1.660416970851, -2.435435377098,
-    -2.787494867799, -3.427209889079, -4.521799939018, -3.748006130985, -0.527521402296,
-    -1.081111835714, -1.808089637246, -2.235797655243, -3.118622050579, -4.048339371234,
-    -4.271855540848, -0.159998948675, -0.462430853001, -1.194852897131, -1.309096670199,
-    -1.657343281017, -1.731014633087, -2.361087129907, -2.849205104045, -3.745587067752,
-    -4.409845299930, -3.821738210271, -0.533037255301, -1.125937778890, -2.011082469458,
-    -2.160600494682, -3.007276817897, -3.779630263390, -3.883588498190,
-])
-# qm9 atom reference energies
-QM9U0_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-QM9U0_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
-    [-0.500273, -37.846772, -54.583861, -75.064579, -99.718730]
-)
-QM9U_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-QM9U_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
-    [-0.498857, -37.845355, -54.582445, -75.063163, -99.717314]
-)
-QM9H_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-QM9H_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
-    [-0.497912, -37.844411, -54.581501, -75.062219, -99.716370]
-)
-QM9G_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-QM9G_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
-    [-0.510927, -37.861317, -54.598897, -75.079532, -99.733544]
-)
-QM9CV_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-QM9CV_ATOM_ENERGY[[1, 6, 7, 8, 9]] = torch.DoubleTensor(
-    [2.981, 2.981, 2.981, 2.981, 2.981]
-)
-
-# specialzations for tianchi
-TCB_ATOM_ENERGY = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-TCB_ATOM_ENERGY[[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]] = torch.DoubleTensor([
-    -3.68123383e+02, -2.39023145e+04, -3.43134805e+04, -4.71499961e+04, -6.25899414e+04,
-    -2.14219750e+05, -2.49775828e+05, -2.88682906e+05, -1.61372700e+06, -1.86852156e+05
-]) * unit_conversion("kcal_per_mol", "Hartree")
 
 
 def gen_int2c1e(embed_basis="gfn2-xtb", aux_basis="aux28"):
@@ -214,6 +130,67 @@ def gen_int2c1e(embed_basis="gfn2-xtb", aux_basis="aux28"):
         embedding = np.linalg.norm(projection, axis=-1) # / projection.shape[-1] 
         int2c1e_dict[atom] = torch.from_numpy(embedding[ao_loc_nr])
     torch.save(int2c1e_dict, savefile)
+
+
+def gen_atom_sp(atom_ref: str):
+    """
+    Calculate the shift of the atomic energies for each element.
+    """
+    atom_sp_dict = {}
+    if "xtb" in atom_ref:
+        from tblite.interface import Calculator
+        m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
+        for at_no, mult in enumerate(ATOM_MULT, start=1):
+            calc = Calculator(
+                method=m_dict[atom_ref],
+                positions=np.array([[0.0, 0.0, 0.0]]),
+                numbers=np.array([at_no]),
+            )
+            print(f"Calculating single point of atom {atom}")
+            energy = calc.singlepoint().get("energy")
+            atom_sp_dict[ELEMENTS_LIST[at_no]] = energy
+    else:
+        from pyscf import dft, scf, cc, dh
+        method, basis = atom_ref.split("/")
+        if "def2" in basis:
+            ecp = basis
+        elif "cc-pv" in basis:
+            ecp = basis + "-pp"
+        else:
+            ecp = None
+        for atom, mult in zip(ELEMENTS_LIST[1:], ATOM_MULT[1:]):
+            try:
+                mol = gto.Mole(atom=f"{atom} 0 0 0", basis=basis, spin=mult - 1)
+                if ecp is not None:
+                    mol.ecp = ecp
+                mol.build()
+            except:
+                print(f"Unsupported atom {atom} for basis {basis}")
+                continue
+            print(f"Calculating single point of atom {atom}")
+            if "xyg" in method or "xdh" in method:
+                mf = dh.DH(mol, xc=method).set(max_cycle=150).build_scf().run()
+                if not mf.converged:
+                    continue
+                energy = mf.e_tot
+            elif "cc" in method:
+                mf = scf.HF(mol).set(max_cycle=150).run()
+                mycc = cc.CCSD(mf).set(max_cycle=150).run()
+                if not mycc.converged:
+                    continue
+                if method == "ccsd":
+                    energy = mycc.e_tot
+                elif method == "ccsd(t)":
+                    energy = mycc.e_tot + mycc.ccsd_t()
+                else:
+                    raise ValueError(f"Unsupported method: {method}")
+            else:
+                mf = dft.KS(mol, xc=method).set(max_cycle=150).build().run()
+                if not mf.converged:
+                    continue
+                energy = mf.e_tot
+            atom_sp_dict[atom] = energy
+    torch.save(atom_sp_dict, PRE_FOLDER / f"{method}_{basis}_sp.pt")
 
 
 def get_embedding_tensor(embed_basis="gfn2-xtb", aux_basis="aux28") -> torch.Tensor:
@@ -252,18 +229,24 @@ def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
             at_no = [ELEMENTS_DICT[atom] for atom in at_no]
         atomic_energy[at_no] = torch.DoubleTensor(list(atom_ref.values()))
     else:
-        atomic_energy = globals().get(f"{atom_ref.upper()}_ATOM_ENERGY")
+        atom_ref = atom_ref.lower()
+        if not (PRE_FOLDER / f"{atom_ref.replace('/', '_')}_sp.pt").exists():
+            gen_atom_sp(atom_ref)
+        atom_sp_dict = torch.load(PRE_FOLDER / f"{atom_ref.replace('/', '_')}_sp.pt")
+        atomic_energy = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+        for atom, energy in atom_sp_dict.items():
+            atomic_energy[ELEMENTS_DICT[atom]] = energy
     return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
 
 
-def calc_cgto_norm(cgto: list):
-    """cgto: [l, [exp1, coeff1], [exp2, coeff2], ...]"""
-    intor = 0.
-    l = cgto[0]
-    for exp1, coeff1 in cgto[1:]:
-        for exp2, coeff2 in cgto[1:]:
-            intor += coeff1 * coeff2 * scipy.special.gamma(l + 0.5) / (2 * (exp1 + exp2)**(l + 0.5))
-    return 1 / np.sqrt(intor)
+# def calc_cgto_norm(cgto: list):
+#     """cgto: [l, [exp1, coeff1], [exp2, coeff2], ...]"""
+#     intor = 0.
+#     l = cgto[0]
+#     for exp1, coeff1 in cgto[1:]:
+#         for exp2, coeff2 in cgto[1:]:
+#             intor += coeff1 * coeff2 * scipy.special.gamma(l + 0.5) / (2 * (exp1 + exp2)**(l + 0.5))
+#     return 1 / np.sqrt(intor)
 
 
 def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
@@ -273,3 +256,6 @@ def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
     centroid = torch.sum(masses * coords, dim=0) / torch.sum(masses)
     return centroid
 
+
+if __name__ == "__main__":
+    gen_atom_sp("pbe/def2-svp")
