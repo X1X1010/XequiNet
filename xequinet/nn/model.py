@@ -18,7 +18,6 @@ def resolve_output(config: NetConfig):
             hidden_dim=config.hidden_dim,
             out_dim=config.output_dim,
             actfn=config.activation,
-            reduce_op=config.reduce_op,
             node_bias=config.node_mean,
             graph_bias=config.graph_mean,
         )
@@ -27,7 +26,6 @@ def resolve_output(config: NetConfig):
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
             actfn=config.activation,
-            reduce_op=config.reduce_op,
             node_bias=config.node_mean,
             graph_bias=config.graph_mean,
         )
@@ -36,14 +34,12 @@ def resolve_output(config: NetConfig):
             edge_irreps=config.edge_irreps,
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
-            reduce_op=config.reduce_op,
         )
     elif config.output_mode == "polar":
         return PolarOut(
             edge_irreps=config.edge_irreps,
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
-            reduce_op=config.reduce_op,
         )
     else:
         raise NotImplementedError(f"output mode {config.output_mode} is not implemented")

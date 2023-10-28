@@ -159,8 +159,6 @@ class XPainnMessage(nn.Module):
 
         new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
         new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
-        # new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
-        # new_spherical = x_spherical + scatter(message_spherical, edge_index[0], dim=0)
 
         return new_scalar, new_spherical
 

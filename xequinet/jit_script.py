@@ -2,6 +2,7 @@ import argparse
 
 import torch
 from torch_cluster import radius_graph
+from torch_scatter import scatter
 
 from xequinet.nn import XPaiNN
 from xequinet.utils import (

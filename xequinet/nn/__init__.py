@@ -12,7 +12,7 @@ from .xpainn import (
     XEmbedding, XPainnMessage, XPainnUpdate,
 )
 from .output import (
-    ScalarOut, NegGradOut, VectorOut, PolarOut,
+    ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut,
 )
 from .model import XPaiNN
 
@@ -23,6 +23,6 @@ __all__ = [
     "CosineCutoff", "PolynomialCutoff",
     "GaussianSmearing", "SphericalBesselj0",
     "XEmbedding", "XPainnMessage", "XPainnUpdate",
-    "ScalarOut", "NegGradOut", "VectorOut", "PolarOut",
+    "ScalarOut", "NegGradOut", "VectorOut", "PolarOut", "SpatialOut",
     "XPaiNN",
 ]

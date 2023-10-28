@@ -9,7 +9,6 @@ from torch_scatter import scatter
 from e3nn import o3
 
 from .o3layer import Gate, resolve_actfn
-from .rbf import GaussianSmearing
 
 
 class ScalarOut(nn.Module):
@@ -19,7 +18,6 @@ class ScalarOut(nn.Module):
         hidden_dim: int = 64,
         out_dim: int = 1,
         actfn: str = "silu",
-        reduce_op: str = "sum",
         node_bias: float = 0.0,
         graph_bias: float = 0.0,
     ):
@@ -28,7 +26,6 @@ class ScalarOut(nn.Module):
             `node_dim`: Node dimension.
             `out_dim`: Output dimension.
             `actfn`: Activation function type.
-            `reduce_op`: Reduce operation.
             `node_bias`: Bias for atomic wise output.
             `graph_bias`: Bias for graphic output.
         """
@@ -36,7 +33,6 @@ class ScalarOut(nn.Module):
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
         self.out_dim = out_dim
-        self.reduce_op = reduce_op
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
@@ -65,13 +61,7 @@ class ScalarOut(nn.Module):
             `res`: Scalar output.
         """
         atom_out: torch.Tensor = self.out_mlp(x_scalar) + self.node_bias
-        # res = scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
-        num_mol = int(batch_index.max().item() + 1)
-        zero_res = torch.zeros(
-            (num_mol, self.out_dim),
-            dtype=atom_out.dtype, device=atom_out.device,
-        )
-        res = zero_res.index_add(0, batch_index, atom_out)
+        res = scatter(atom_out, batch_index, dim=0)
         return res + self.graph_bias
 
 
@@ -81,7 +71,6 @@ class NegGradOut(nn.Module):
         node_dim: int = 128,
         hidden_dim: int = 64,
         actfn: str = "silu",
-        reduce_op: str = "sum",
         node_bias: float = 0.0,
         graph_bias: float = 0.0,
     ):
@@ -89,14 +78,12 @@ class NegGradOut(nn.Module):
         Args:
             `node_dim`: Node dimension.
             `actfn`: Activation function type.
-            `reduce_op`: Reduce operation.
             `node_bias`: Bias for atomic wise output.
             `graph_bias`: Bias for graphic output.
         """
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
-        self.reduce_op = reduce_op
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
@@ -126,13 +113,7 @@ class NegGradOut(nn.Module):
             `neg_grad`: Negative gradient.
         """
         atom_out: torch.Tensor = self.out_mlp(x_scalar) + self.node_bias
-        # res =  scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
-        num_mol = int(batch_index.max().item() + 1)
-        zero_res = torch.zeros(
-            (num_mol, 1),
-            dtype=atom_out.dtype, device=atom_out.device,
-        )
-        res = zero_res.index_add(0, batch_index, atom_out)
+        res =  scatter(atom_out, batch_index, dim=0)
         grad = torch.autograd.grad(
             [atom_out.sum(),],
             [coord,],
@@ -154,7 +135,6 @@ class VectorOut(nn.Module):
         hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
         output_dim: int = 3,
         actfn: str = "silu",
-        reduce_op: str = "sum",
     ):
         """
         Args:
@@ -164,14 +144,12 @@ class VectorOut(nn.Module):
             `hidden_irreps`: Hidden irreps.
             `output_dim`: Output dimension. (3 for vector and 1 for norm of the vector)
             `actfn`: Activation function type.
-            `reduce_op`: Reduce operation.
         """
         super().__init__()
         self.node_dim = node_dim
         self.edge_irreps = o3.Irreps(edge_irreps)
         self.hidden_dim = hidden_dim
         self.hidden_irreps = o3.Irreps(hidden_irreps)
-        self.reduce_op = reduce_op
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
@@ -207,13 +185,7 @@ class VectorOut(nn.Module):
         spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
         scalar_out = self.scalar_out_mlp(x_scalar)
         atom_out = spherical_out * scalar_out
-        res = scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
-        # num_mol = int(batch_index.max().item() + 1)
-        # zero_res = torch.zeros(
-        #     (num_mol, 3),
-        #     dtype=atom_out.dtype, device=atom_out.device,
-        # )
-        # res = zero_res.index_add(0, batch_index, atom_out)
+        res = scatter(atom_out, batch_index, dim=0)
         if self.output_dim == 1:
             res = torch.linalg.norm(res, dim=-1, keepdim=True)
         return res
@@ -228,7 +200,6 @@ class PolarOut(nn.Module):
         hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
         output_dim: int = 9,
         actfn: str = "silu",
-        reduce_op: str = "sum",
     ):
         """
         Args:
@@ -238,14 +209,12 @@ class PolarOut(nn.Module):
             `hidden_irreps`: Hidden irreps.
             `output_dim`: Output dimension. (9 for 3x3 matrix and 1 for trace of the matrix)
             `actfn`: Activation function type.
-            `reduce_op`: Reduce operation.
         """
         super().__init__()
         self.node_dim = node_dim
         self.edge_irreps = o3.Irreps(edge_irreps)
         self.hidden_dim = hidden_dim
         self.hidden_irreps = o3.Irreps(hidden_irreps)
-        self.reduce_op = reduce_op
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
@@ -284,13 +253,7 @@ class PolarOut(nn.Module):
         spherical_out = self.spherical_out_mlp(x_spherical)
         scalar_out = self.scalar_out_mlp(x_scalar)
         atom_out = self.rsh_conv(spherical_out, scalar_out)
-        mol_out = scatter(atom_out, batch_index, dim=0, reduce=self.reduce_op)
-        # num_mol = int(batch_index.max().item() + 1)
-        # zero_res = torch.zeros(
-        #     (num_mol, 3, 3),
-        #     dtype=atom_out.dtype, device=atom_out.device,
-        # )
-        # mol_out = zero_res.index_add(0, batch_index, atom_out)
+        mol_out = scatter(atom_out, batch_index, dim=0)
         zero_order = mol_out[:, 0:1]
         second_order = mol_out[:, 1:6]
         # build zero order output
@@ -314,13 +277,70 @@ class PolarOut(nn.Module):
         return res
 
 
+class SpatialOut(nn.Module):
+    def __init__(
+        self,
+        node_dim: int = 128,
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        hidden_dim: int = 64,
+        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
+        actfn: str = "silu",
+    ):
+        """
+        Args:
+            `node_dim`: Node dimension.
+            `edge_irreps`: Edge irreps.
+            `hidden_dim`: Hidden dimension.
+            `hidden_irreps`: Hidden irreps.
+            `actfn`: Activation function type.
+        """
+        super().__init__()
+        self.node_dim = node_dim
+        self.edge_irreps = o3.Irreps(edge_irreps)
+        self.hidden_dim = hidden_dim
+        self.hidden_irreps = o3.Irreps(hidden_irreps)
+        self.scalar_out_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, 1),
+        )
+        nn.init.zeros_(self.scalar_out_mlp[0].bias)
+        nn.init.zeros_(self.scalar_out_mlp[2].bias)
+        self.spherical_out_mlp = nn.Sequential(
+            o3.Linear(self.edge_irreps, self.hidden_irreps),
+            Gate(self.hidden_irreps),
+            o3.Linear(self.hidden_irreps, "1x1e"),
+        )
+
+    def forward(
+        self,
+        x_scalar: torch.Tensor,
+        x_spherical: torch.Tensor,
+        coord: torch.Tensor,
+        batch_index: torch.LongTensor,
+    ) -> torch.Tensor:
+        """
+        Args:
+            `x_scalar`: Scalar features.
+            `x_spherical`: Spherical features.
+            `coord`: Atomic coordinates.
+            `batch_index`: Batch index.
+        Returns:
+            `res`: Spatial output.
+        """
+        spherical_out = self.spherical_out_mlp(x_spherical)
+        scalar_out = self.scalar_out_mlp(x_scalar)
+        atom_out = torch.square(spherical_out).sum(dim=1) * scalar_out
+        res = scatter(atom_out, batch_index, dim=0)
+        return res
+
+
 class CoulombOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
         actfn: str = "silu",
-        reduce_op: str = "sum",
         node_bias: float = 0.0,
         graph_bias: float = 0.0,
     ):
@@ -328,14 +348,12 @@ class CoulombOut(nn.Module):
         Args:
             `node_dim`: Node dimension.
             `actfn`: Activation function type.
-            `reduce_op`: Reduce operation.
             `node_bias`: Bias for atomic wise output.
             `graph_bias`: Bias for graphic output.
         """
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
-        self.reduce_op = reduce_op
         self.energy_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
@@ -377,6 +395,6 @@ class CoulombOut(nn.Module):
             index=batch_index,
         ) * mol_charge.index_select(0, batch_index)
         coulomb = atom_charge_out[edge_index[0]] * atom_charge_out[edge_index[1]] / dist
-        coulomb_out = scatter(0.5 * coulomb, edge_index[0], dim=0, reduce=self.reduce_op)
-        res = scatter(coulomb_out + atom_energy_out, batch_index, dim=0, reduce=self.reduce_op)
+        coulomb_out = scatter(0.5 * coulomb, edge_index[0], dim=0)
+        res = scatter(coulomb_out + atom_energy_out, batch_index, dim=0)
         return res + self.graph_bias

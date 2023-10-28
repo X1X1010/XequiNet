@@ -30,7 +30,6 @@ class NetConfig(BaseModel):
     norm_type: str = "nonorm"                      # normalization layer type
     output_mode: str = "scalar"                    # task type (`scalar` is for energy like, `grad` is for force like, etc.)
     output_dim: int = 1                            # output dimension of multi-task (only for `scalar` mode)
-    reduce_op: str = "sum"                         # reduce operation for graph level aggregation
     atom_ref: Union[str, dict] = None              # atomic reference (only for `scalar` mode)
     batom_ref: Union[str, dict] = None             # base atomic reference (only for `scalar` mode)
     add_mean: Union[bool, float] = False           # whether to add the mean atomic energy to the output (only for `scalar` mode)
@@ -91,7 +90,7 @@ class NetConfig(BaseModel):
         hyper_params = self.dict(include={
             "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
             "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "max_edges", "action_blocks",
-            "activation", "norm_type", "output_mode", "output_dim", "reduce_op",
+            "activation", "norm_type", "output_mode", "output_dim",
             "atom_ref", "batom_ref", "default_property_unit", "default_length_unit",
             "default_dtype",
         })
