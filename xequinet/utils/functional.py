@@ -157,3 +157,21 @@ def resolve_warmup_scheduler(
         )
     else:
         raise NotImplementedError(f"Unsupported warmup scheduler {warm_type}")
+
+
+class ModelWrapper:
+    def __init__(self, model: nn.Module, model_type: str):
+        self.type = model_type.lower()
+        assert self.type in ["xpainn", "pbc"]
+        self.model = model
+
+    def __call__(self, data):
+        if self.type == "pbc":
+            return self.model(data.at_no, data.pos, data.shifts,
+                              data.edge_index, data.batch, data.at_filter)
+        elif self.type == "xpainn":
+            return self.model(data.at_no, data.pos, data.edge_index, data.batch)
+    
+    def __getattr__(self, name):
+        return getattr(self.model, name)
+    

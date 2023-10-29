@@ -5,18 +5,17 @@ import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 
 from xequinet.data import H5Dataset, data_unit_transform, atom_ref_transform
-from xequinet.nn import XPaiNN
-from xequinet.utils import NetConfig, unit_conversion, set_default_unit, get_default_unit
+from xequinet.nn import resolve_model
+from xequinet.utils import NetConfig, unit_conversion, set_default_unit, get_default_unit, ModelWrapper
 from xequinet.utils.qc import ELEMENTS_LIST
 
 
 def test_scalar(model, test_loader, device, outfile):
-    model.eval()
     sum_loss, num_mol = 0.0, 0
     with torch.no_grad():
         for data in test_loader:
             data = data.to(device)
-            pred = model(data.at_no, data.pos, data.edge_index, data.batch)
+            pred = model(data)
             if hasattr(data, "base_y"):
                 pred += data.base_y
             real = data.y
@@ -42,12 +41,11 @@ def test_scalar(model, test_loader, device, outfile):
 
 
 def test_grad(model, test_loader, device, outfile):
-    model.eval()
     sum_lossE, sum_lossF, num_mol, num_atm = 0.0, 0.0, 0, 0
     for data in test_loader:
         data = data.to(device)
         data.pos.requires_grad = True
-        predE, predF = model(data.at_no, data.pos, data.edge_index, data.batch)
+        predE, predF = model(data)
         with torch.no_grad():
             if hasattr(data, "base_y"):
                 predE += data.base_y
@@ -138,8 +136,9 @@ def main():
         config.output_mode = "grad"
     
     # build model
-    model = XPaiNN(config).to(device)
+    model = resolve_model(config).to(device)
     model.load_state_dict(ckpt["model"])
+    model.eval()
 
     # test
     output_file = f"{config.run_name}_test.log"
@@ -149,9 +148,9 @@ def main():
         wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
     if config.output_mode == "grad":
-        test_grad(model, test_loader, device, output_file)
+        test_grad(ModelWrapper(model, config.model), test_loader, device, output_file)
     else:
-        test_scalar(model, test_loader, device, output_file)
+        test_scalar(ModelWrapper(model, config.model), test_loader, device, output_file)
 
 
 if __name__ == "__main__":

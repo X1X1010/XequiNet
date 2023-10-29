@@ -4,7 +4,6 @@ import math
 
 import torch
 import torch.nn as nn
-import torch_geometric.utils
 from torch_scatter import scatter
 from e3nn import o3
 
@@ -60,7 +59,7 @@ class ScalarOut(nn.Module):
         Returns:
             `res`: Scalar output.
         """
-        atom_out: torch.Tensor = self.out_mlp(x_scalar) + self.node_bias
+        atom_out = self.out_mlp(x_scalar) + self.node_bias
         res = scatter(atom_out, batch_index, dim=0)
         return res + self.graph_bias
 
@@ -112,7 +111,7 @@ class NegGradOut(nn.Module):
             `res`: Scalar output.
             `neg_grad`: Negative gradient.
         """
-        atom_out: torch.Tensor = self.out_mlp(x_scalar) + self.node_bias
+        atom_out = self.out_mlp(x_scalar) + self.node_bias
         res =  scatter(atom_out, batch_index, dim=0)
         grad = torch.autograd.grad(
             [atom_out.sum(),],
@@ -335,66 +334,37 @@ class SpatialOut(nn.Module):
         return res
 
 
-class CoulombOut(nn.Module):
+class PBCScalarOut(ScalarOut):
     def __init__(
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
+        out_dim: int = 1,
         actfn: str = "silu",
         node_bias: float = 0.0,
         graph_bias: float = 0.0,
     ):
-        """
-        Args:
-            `node_dim`: Node dimension.
-            `actfn`: Activation function type.
-            `node_bias`: Bias for atomic wise output.
-            `graph_bias`: Bias for graphic output.
-        """
-        super().__init__()
-        self.node_dim = node_dim
-        self.hidden_dim = hidden_dim
-        self.energy_mlp = nn.Sequential(
-            nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
-            nn.Linear(self.hidden_dim, 1),
-        )
-        nn.init.zeros_(self.energy_mlp[0].bias)
-        nn.init.zeros_(self.energy_mlp[2].bias)
-        self.charge_mlp = nn.Sequential(
-            nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
-            nn.Linear(self.hidden_dim, 1),
-        )
-        nn.init.zeros_(self.charge_mlp[0].bias)
-        nn.init.zeros_(self.charge_mlp[2].bias)
-        self.register_buffer("node_bias", torch.tensor(node_bias))
-        self.register_buffer("graph_bias", torch.tensor(graph_bias))
+        super().__init__(node_dim, hidden_dim, out_dim,
+                         actfn, node_bias, graph_bias)
 
     def forward(
         self,
         x_scalar: torch.Tensor,
-        edge_index: torch.Tensor,
-        dist: torch.Tensor,
-        mol_charge: torch.Tensor,
+        x_spherical: torch.Tensor,
+        coord: torch.Tensor,
         batch_index: torch.LongTensor,
+        at_filter: torch.BoolTensor,
     ) -> torch.Tensor:
         """
         Args:
             `x_scalar`: Scalar features.
             `x_spherical`: Spherical features. (Unused in this module)
             `at_no`: Atomic numbers.
-            `coord`: Atomic coordinates.
+            `coord`: Atomic coordinates. (Unused in this module)
             `batch_index`: Batch index.
         Returns:
-            `res`: Energy output with Coulomb interaction.
+            `res`: Scalar output.
         """
-        atom_energy_out = self.energy_mlp(x_scalar) + self.node_bias
-        atom_charge_out = torch_geometric.utils.softmax(
-            src=self.charge_mlp(x_scalar),
-            index=batch_index,
-        ) * mol_charge.index_select(0, batch_index)
-        coulomb = atom_charge_out[edge_index[0]] * atom_charge_out[edge_index[1]] / dist
-        coulomb_out = scatter(0.5 * coulomb, edge_index[0], dim=0)
-        res = scatter(coulomb_out + atom_energy_out, batch_index, dim=0)
+        atom_out = self.out_mlp(x_scalar[at_filter]) + self.node_bias
+        res = scatter(atom_out, batch_index, dim=0)
         return res + self.graph_bias

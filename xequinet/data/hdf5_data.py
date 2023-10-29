@@ -7,7 +7,6 @@ import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.data import Dataset as DiskDataset
-from torch_cluster import radius_graph
 
 from ..utils import (
     unit_conversion, get_default_unit, get_centroid,
@@ -15,6 +14,7 @@ from ..utils import (
 
 
 def process_h5(f_h5: h5py.File, mode: str, cutoff: float, max_edges: int, prop_dict: dict):
+    from torch_cluster import radius_graph
     len_unit = get_default_unit()[1]
     # loop over samples
     for mol_name in f_h5[mode].keys():
@@ -31,8 +31,55 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, max_edges: int, prop_d
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
             for p_attr, p_name in prop_dict.items():
                 p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                if p_val.dim() != 2:
-                    p_val = p_val.view(1, -1)
+                if p_attr == "y" or p_attr == "base_y":
+                    if p_val.dim() == 0:
+                        p_val = p_val.unsqueeze(0)
+                    p_val = p_val.unsqueeze(0)
+                setattr(data, p_attr, p_val)
+            yield data
+
+
+def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
+    import ase
+    import ase.neighborlist
+    len_unit = get_default_unit()[1]
+    # loop over samples
+    for pbc_name in f_h5[mode].keys():
+        pbc_grp = f_h5[mode][pbc_name]
+        at_no = torch.LongTensor(pbc_grp['atomic_numbers'][()])
+        try:
+            coords = torch.Tensor(pbc_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+            lattice = torch.Tensor(pbc_grp["lattice_A"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Angstrom", len_unit)
+            lattice *= unit_conversion("Angstrom", len_unit)
+        except:
+            coords = torch.Tensor(pbc_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+            lattice = torch.Tensor(pbc_grp["lattice_bohr"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Bohr", len_unit)
+            lattice *= unit_conversion("Bohr", len_unit)
+        # filter out atoms
+        if "atom_filter" in pbc_grp.keys():
+            at_filter = torch.BoolTensor(pbc_grp["atom_filter"][()])
+        else:
+            at_filter = torch.BoolTensor([True for _ in range(at_no.shape[0])])
+        # set periodic boundary condition
+        if "pbc" in pbc_grp.keys():
+            pbc = pbc_grp["pbc"][()]
+        else:
+            pbc = False
+        # loop over configurations
+        for icfm, coord in enumerate(coords):
+            atoms = ase.Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)
+            idx_i, idx_j, shifts = ase.neighborlist.neighbor_list("ijS", a=atoms, cutoff=cutoff)
+            shifts *= lattice
+            edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long)
+            data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, at_filter=at_filter)
+            for p_attr, p_name in prop_dict.items():
+                p_val = torch.Tensor(pbc_grp[p_name][()][icfm])
+                if p_attr == "y" or p_attr == "base_y":
+                    if p_val.dim() == 0:
+                        p_val = p_val.unsqueeze(0)
+                    p_val = p_val.unsqueeze(0)
                 setattr(data, p_attr, p_val)
             yield data
 
@@ -45,18 +92,20 @@ class H5Dataset(Dataset):
         self,
         root: str,
         data_files: Union[str, Iterable[str]],
-        data_name: Optional[str] = None,
-        mode: str = "train",
-        cutoff: float = 5.0,
-        max_size: Optional[int] = None,
-        max_edges: Optional[int] = None,
-        mem_process: bool = True,
-        transform: Optional[Callable] = None,
-        pre_transform: Optional[Callable] = None,
-        **prop_dict,
+        prop_dict: dict,
+        **kwargs,
     ):
         super().__init__()
-        assert mode in ["train", "valid", "test"]
+        self._mode: str = kwargs.get("mode", "train")
+        self._pbc: bool = kwargs.get("pbc", False)
+        self._cutoff: float = kwargs.get("cutoff", 5.0)
+        self._max_size: int = kwargs.get("max_size", 1e9)
+        self._max_edges: int = kwargs.get("max_edges", 100)
+        self._mem_process: bool = kwargs.get("mem_process", True)
+        self.transform: Callable = kwargs.get("transform", None)
+        self.pre_transform: Callable = kwargs.get("pre_transform", None)
+
+        assert self._mode in ["train", "valid", "test"]
         assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
         if isinstance(data_files, str):
             self._raw_paths = [os.path.join(root, "raw", data_files)]
@@ -64,13 +113,7 @@ class H5Dataset(Dataset):
             self._raw_paths = [os.path.join(root, "raw", f) for f in data_files]
         else:
             raise TypeError("data_files must be a string or iterable of strings")
-        self._mode = mode
-        self._cutoff = cutoff
-        self._max_edges = max_edges if max_edges is not None else 100
-        self._max_size = max_size if max_size is not None else 1e9
-        self._mem_process = mem_process
-        self.transform = transform
-        self.pre_transform = pre_transform
+        
         self._prop_dict = prop_dict
         self.data_list = []
         _, self.len_unit = get_default_unit()
@@ -92,7 +135,10 @@ class H5Dataset(Dataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
+            if self._pbc:
+                data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict)
+            else:
+                data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
             for data in data_iter:
                 if self.pre_transform is not None:
                     data = self.pre_transform(data)
@@ -105,7 +151,8 @@ class H5Dataset(Dataset):
             if self._mem_process:
                 f_disk.close(); io_mem.close()
             f_h5.close()
-            if ct >= self._max_size: break
+            if ct >= self._max_size:
+                break
 
     def __len__(self):
         return len(self.data_list)
@@ -125,17 +172,19 @@ class H5MemDataset(InMemoryDataset):
         self,
         root: str,
         data_files: Union[str, Iterable[str]],
-        data_name: Optional[str] = None,
-        mode: str = "train",
-        cutoff: float = 5.0,
-        max_size: Optional[int] = None,
-        max_edges: Optional[int] = None,
-        mem_process: bool = True,
-        transform: Optional[Callable] = None,
-        pre_transform: Optional[Callable] = None,
-        **prop_dict,
+        prop_dict: dict,
+        **kwargs,
     ):
-        assert mode in ["train", "valid", "test"]
+        self._mode: str = kwargs.get("mode", "train")
+        self._pbc: bool = kwargs.get("pbc", False)
+        self._cutoff: float = kwargs.get("cutoff", 5.0)
+        self._max_size: int = kwargs.get("max_size", 1e9)
+        self._max_edges: int = kwargs.get("max_edges", 100)
+        self._mem_process: bool = kwargs.get("mem_process", True)
+        self.transform: Callable = kwargs.get("transform", None)
+        self.pre_transform: Callable = kwargs.get("pre_transform", None)
+
+        assert self._mode in ["train", "valid", "test"]
         assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
         if isinstance(data_files, str):
             self._raw_files = [data_files]
@@ -143,20 +192,13 @@ class H5MemDataset(InMemoryDataset):
             self._raw_files = data_files
         else:
             raise TypeError("data_files must be a string or iterable of strings")
-        suffix = f"{mode}.pt" if max_size is None else f"{mode}_{max_size}.pt"
-        if data_name is None:
-            # the processed file are named after the first raw file
-            self._processed_file = f"{self._raw_files[0].split('.')[0]}_{suffix}"
-        else:
-            self._processed_file = f"{data_name}_{suffix}"
-        self._mode = mode
-        self._cutoff = cutoff
-        self._max_edges = max_edges if max_edges is not None else 100
-        self._max_size = max_size if max_size is not None else 1e9
-        self._mem_process = mem_process
+        
+        suffix = f"{self._mode}_{self._max_size}.pt" if "max_size" in kwargs else f"{self._mode}.pt"
+        self._data_name: str = kwargs.get("data_name", f"{self._raw_files[0].split('.')[0]}")
+        self._processed_file = f"{self._data_name}_{suffix}"
         self._prop_dict = prop_dict
         _, self.len_unit = get_default_unit()
-        super().__init__(root, transform=transform, pre_transform=pre_transform)
+        super().__init__(root, transform=self.transform, pre_transform=self.pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0])
     
     @property
@@ -184,7 +226,10 @@ class H5MemDataset(InMemoryDataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
+            if self._pbc:
+                data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict)
+            else:
+                data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
             for data in data_iter:
                 data_list.append(data)
                 ct += 1
@@ -212,17 +257,19 @@ class H5DiskDataset(DiskDataset):
         self,
         root: str,
         data_files: Union[str, Iterable[str]],
-        data_name: Optional[str] = None,
-        mode: str = "train",
-        cutoff: float = 5.0,
-        max_size: Optional[int] = None,
-        max_edges: Optional[int] = None,
-        mem_process: bool = True,
-        transform: Optional[Callable] = None,
-        pre_transform: Optional[Callable] = None,
-        **prop_dict,
+        prop_dict: dict,
+        **kwargs,
     ):
-        assert mode in ["train", "valid", "test"]
+        self._mode: str = kwargs.get("mode", "train")
+        self._pbc: bool = kwargs.get("pbc", False)
+        self._cutoff: float = kwargs.get("cutoff", 5.0)
+        self._max_size: int = kwargs.get("max_size", 1e9)
+        self._max_edges: int = kwargs.get("max_edges", 100)
+        self._mem_process: bool = kwargs.get("mem_process", True)
+        self.transform: Callable = kwargs.get("transform", None)
+        self.pre_transform: Callable = kwargs.get("pre_transform", None)
+        
+        assert self._mode in ["train", "valid", "test"]
         assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
         if isinstance(data_files, str):
             self._raw_files = [data_files]
@@ -230,20 +277,14 @@ class H5DiskDataset(DiskDataset):
             self._raw_files = data_files
         else:
             raise TypeError("data_files must be a string or iterable of strings")
-        suffix = f"{mode}" if max_size is None else f"{mode}_{max_size}"
-        if data_name is None:
-            self._processed_folder = f"{self._raw_files[0].split('.')[0]}_{suffix}"
-        else:
-            self._processed_folder = f"{data_name}_{suffix}"
-        self._mode = mode
-        self._cutoff = cutoff
-        self._max_edges = max_edges if max_edges is not None else 100
-        self._max_size = max_size if max_size is not None else 1e9
-        self._mem_process = mem_process
+        
+        suffix = f"{self._mode}_{self._max_size}" if "max_size" in kwargs else f"{self._mode}"
+        self._data_name: str = kwargs.get("data_name", f"{self._raw_files[0].split('.')[0]}")
+        self._processed_folder = f"{self._data_name}_{suffix}"
         self._prop_dict = prop_dict
         self._num_data = None
         _, self.len_unit = get_default_unit()
-        super().__init__(root, transform=transform, pre_transform=pre_transform)
+        super().__init__(root, transform=self.transform, pre_transform=self.pre_transform)
     
     @property
     def raw_file_names(self) -> Iterable[str]:
@@ -270,7 +311,10 @@ class H5DiskDataset(DiskDataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
+            if self._pbc:
+                data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict)
+            else:
+                data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
             for data in data_iter:
                 if self.pre_transform is not None:
                     data = self.pre_transform(data)
@@ -346,11 +390,14 @@ def atom_ref_transform(
     new_data = data.clone()
 
     if hasattr(new_data, "y"):
-        ref_sum = atom_sp[new_data.at_no].sum() if atom_sp is not None else 0.0
+        at_no = new_data.at_no
+        if hasattr(new_data, "at_filter"):
+            at_no = at_no[new_data.at_filter]
+        ref_sum = atom_sp[at_no].sum() if atom_sp is not None else 0.0
         new_data.y -= ref_sum
         new_data.y = new_data.y.to(torch.get_default_dtype())
         if hasattr(new_data, "base_y"):
-            bref_sum = batom_sp[new_data.at_no].sum() if batom_sp is not None else 0.0
+            bref_sum = batom_sp[at_no].sum() if batom_sp is not None else 0.0
             new_data.base_y -= bref_sum
             new_data.base_y = new_data.base_y.to(torch.get_default_dtype())
     # change the dtype of force by the way

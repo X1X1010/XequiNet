@@ -11,11 +11,12 @@ class NetConfig(BaseModel):
         extra = Extra.allow
     
     # non-essential
-    run_name: str = "xpainn"                       # name of the run
+    run_name: str = "my_task"                      # name of the run
 
     # configurations about the model
+    model: str = "xpainn"                          # whether to use the periodic boundary condition
     embed_basis: str = "gfn2-xtb"                  # embedding basis type
-    aux_basis: str = "aux28"                       # auxiliary basis type
+    aux_basis: str = "aux56"                       # auxiliary basis type
     node_dim: int = 128                            # node irreps for the input
     edge_irreps: str = "128x0e + 64x1e + 32x2e"    # edge irreps for the input
     hidden_dim: int = 64                           # hidden dimension for the output
@@ -52,8 +53,8 @@ class NetConfig(BaseModel):
     blabel_unit: str = None                        # unit of the input base label
     force_unit: str = None                         # unit of the input force
     bforce_unit: str = None                        # unit of the input base force
-    max_mol: int = None                            # maximum number of the training molecules
-    vmax_mol: int = None                           # maximum number of the validation molecules
+    max_mol: int = 1e9                             # maximum number of the training molecules
+    vmax_mol: int = 1e9                            # maximum number of the validation molecules
     batch_size: int = 64                           # training batch size
     vbatch_size: int = 64                          # validation batch size
 
@@ -88,7 +89,7 @@ class NetConfig(BaseModel):
 
     def model_hyper_params(self):
         hyper_params = self.dict(include={
-            "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
+            "pbc", "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
             "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "max_edges", "action_blocks",
             "activation", "norm_type", "output_mode", "output_dim",
             "atom_ref", "batom_ref", "default_property_unit", "default_length_unit",

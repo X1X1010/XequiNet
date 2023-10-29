@@ -9,12 +9,13 @@ from .rbf import (
     GaussianSmearing, SphericalBesselj0,
 )
 from .xpainn import (
-    XEmbedding, XPainnMessage, XPainnUpdate,
+    XEmbedding, XPainnMessage, XPainnUpdate, PBCEmbedding
 )
 from .output import (
     ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut,
+    PBCScalarOut,
 )
-from .model import XPaiNN
+from .model import XPaiNN, PBCPaiNN, resolve_model
 
 __all__ = [
     "Invariant", "Gate", "ElementShifts", "CGCoupler",
@@ -23,6 +24,8 @@ __all__ = [
     "CosineCutoff", "PolynomialCutoff",
     "GaussianSmearing", "SphericalBesselj0",
     "XEmbedding", "XPainnMessage", "XPainnUpdate",
+    "PBCEmbedding",
     "ScalarOut", "NegGradOut", "VectorOut", "PolarOut", "SpatialOut",
-    "XPaiNN",
+    "PBCScalarOut",
+    "XPaiNN", "PBCPaiNN", "resolve_model",
 ]

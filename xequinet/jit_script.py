@@ -1,3 +1,4 @@
+from typing import Tuple
 import argparse
 
 import torch
@@ -11,13 +12,12 @@ from xequinet.utils import (
     get_atomic_energy,
 )
 
+
 class JitModel(XPaiNN):
     def __init__(self, config: NetConfig):
         super().__init__(config)
         self.prop_unit, self.len_unit = get_default_unit()
-        atom_sp = get_atomic_energy(config.atom_ref)
-        if config.batom_ref is not None:
-            atom_sp -= get_atomic_energy(config.batom_ref)
+        atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
         self.prop_unit_conv = unit_conversion(self.prop_unit, "AU")
@@ -29,7 +29,7 @@ class JitModel(XPaiNN):
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         batch: torch.LongTensor,
-    ):
+    ) -> torch.Tensor:
         pos = pos * self.len_unit_conv
         edge_index = radius_graph(pos, r=self.cutoff, batch=batch, max_num_neighbors=self.max_edges)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
@@ -44,26 +44,17 @@ class JitModel(XPaiNN):
         return result
     
 
-class JitGradModel(XPaiNN):
+class JitGradModel(JitModel):
     def __init__(self, config: NetConfig):
         super().__init__(config)
-        self.prop_unit, self.len_unit = get_default_unit()
-        atom_sp = get_atomic_energy(config.atom_ref)
-        if config.batom_ref is not None:
-            atom_sp -= get_atomic_energy(config.batom_ref)
-        self.register_buffer("atom_sp", atom_sp)
-        self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
-        self.prop_unit_conv = unit_conversion(self.prop_unit, "AU")
         self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "AU")
-        self.cutoff = config.cutoff
-        self.max_edges = config.max_edges
 
     def forward(
         self,
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         batch: torch.LongTensor,
-    ):
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         pos = pos * self.len_unit_conv
         edge_index = radius_graph(pos, r=self.cutoff, batch=batch, max_num_neighbors=self.max_edges)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)

@@ -15,10 +15,12 @@ from .functional import (
     resolve_optimizer,
     resolve_lr_scheduler,
     resolve_warmup_scheduler,
+    ModelWrapper,
 )
 from .config import NetConfig
 from .logger import ZeroLogger
 from .qc import get_default_unit
+
 
 class loss2file:
     def __init__(self, loss: float, ptfile: str):
@@ -98,7 +100,7 @@ class Trainer:
             `dist_sampler`: distributed sampler
             `log`: logger
         """
-        self.model = model
+        self.model = ModelWrapper(model, config.model)
         self.config = config
         self.device = device
         self.train_loader = train_loader
@@ -146,12 +148,13 @@ class Trainer:
         # exponential moving average
         self.ema_model = None
         if config.ema_decay is not None:
-            self.ema_model = AveragedModel(
+            ema_model = AveragedModel(
                 self.model.module,
                 avg_fn=lambda avg_param, param, num_avg: \
                     config.ema_decay * avg_param + (1 - config.ema_decay) * param,
                 device=device,
             )
+            self.ema_model = ModelWrapper(ema_model, config.model)
         # loss recording, model saving and logging
         self.meter = AverageMeter(device=device)
         self.best_l2fs: List[loss2file] = [
@@ -198,7 +201,8 @@ class Trainer:
             self.meter.reset()
             data = data.to(self.device)
             # forward propagation
-            pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+            # pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+            pred = self.model(data)
             real = data.y - data.base_y if hasattr(data, "base_y") else data.y
             loss = self.lossfn(pred, real)
             # backward propagation
@@ -238,7 +242,8 @@ class Trainer:
         with torch.no_grad():
             for data in self.valid_loader:
                 data = data.to(self.device)
-                pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+                # pred = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+                pred = self.model(data)
                 real = data.y - data.base_y if hasattr(data, "base_y") else data.y
                 l1loss = F.l1_loss(pred, real, reduction="sum")
                 self.meter.update(l1loss.item(), real.numel())
@@ -260,8 +265,8 @@ class Trainer:
         with torch.no_grad():
             for data in self.valid_loader:
                 data = data.to(self.device)
-                output_index = data.fc_edge_index if hasattr(data, "fc_edge_index") else data.batch
-                pred = self.model(data.at_no, data.pos, data.edge_index, output_index)
+                # pred = self.ema_model(data.at_no, data.pos, data.edge_index, output_index)
+                pred = self.ema_model(data)
                 real = data.y - data.base_y if hasattr(data, "base_y") else data.y
                 l1loss = F.l1_loss(pred, real, reduction="sum")
                 self.meter.update(l1loss.item(), real.numel())
@@ -359,7 +364,8 @@ class GradTrainer(Trainer):
             data = data.to(self.device)
             # forward propagation
             data.pos.requires_grad_(True)
-            predE, predF = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+            # predE, predF = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+            predE, predF = self.model(data)
             realE, realF = data.y, data.force
             if hasattr(data, "base_y") and hasattr(data, "base_force"):
                 realE -= data.base_y
@@ -406,7 +412,8 @@ class GradTrainer(Trainer):
         for data in self.valid_loader:
             data = data.to(self.device)
             data.pos.requires_grad_(True)
-            predE, predF = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+            # predE, predF = self.model(data.at_no, data.pos, data.edge_index, data.batch)
+            predE, predF = self.model(data)
             with torch.no_grad():
                 realE, realF = data.y, data.force
                 if hasattr(data, "base_y") and hasattr(data, "base_force"):
@@ -434,7 +441,8 @@ class GradTrainer(Trainer):
         for data in self.valid_loader:
             data = data.to(self.device)
             data.pos.requires_grad_(True)
-            predE, predF = self.ema_model(data.at_no, data.pos, data.edge_index, data.batch)
+            # predE, predF = self.ema_model(data.at_no, data.pos, data.edge_index, data.batch)
+            predE, predF = self.ema_model(data)
             with torch.no_grad():
                 realE, realF = data.y, data.force
                 if hasattr(data, "base_y") and hasattr(data, "base_force"):

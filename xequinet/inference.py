@@ -2,35 +2,29 @@ import argparse
 
 import torch
 
-from xequinet.nn import XPaiNN
+from xequinet.nn import resolve_model
 from xequinet.utils import (
     NetConfig,
     set_default_unit, get_default_unit, unit_conversion,
-    get_atomic_energy
+    get_atomic_energy,
+    ModelWrapper,
 )
 from xequinet.utils.qc import ELEMENTS_LIST
 from xequinet.data import XYZDataset
 from xequinet.interface import mopac_calculation, xtb_calculation
 
 
-def calc_atom_ref(at_no, atom_ref, batom_ref, device):
-    atom_energy = get_atomic_energy(atom_ref).to(device)[at_no].sum()
-    if batom_ref is not None:
-        atom_energy -= get_atomic_energy(batom_ref)[at_no].sum()
-    return atom_energy.item()
-
 
 def predict_scalar(
     model, dataset, device, output_file,
-    atom_ref=None, batom_ref=None, base_method=None,
+    atom_sp, base_method=None,
 ):
-    model.eval()
     with torch.no_grad():
         for data in dataset:
             data = data.to(device)
-            batch = torch.zeros_like(data.at_no, dtype=torch.int64)
-            pred = model(data.at_no, data.pos, data.edge_index, batch).double()
-            atom_energy = calc_atom_ref(data.at_no, atom_ref, batom_ref, device)
+            data.batch = torch.zeros_like(data.at_no, dtype=torch.int64)
+            pred = model(data).double()
+            atom_energy = atom_sp[data.at_no].sum().to(device)
             pred += atom_energy
             if base_method in ["PM7", "PM6"]:
                 pred += mopac_calculation(
@@ -57,16 +51,15 @@ def predict_scalar(
 
 def predict_grad(
     model, dataset, device, output_file,
-    atom_ref=None, batom_ref=None, base_method=None,
+    atom_sp, base_method=None,
 ):
-    model.eval()
     for data in dataset:
         data = data.to(device)
-        batch = torch.zeros_like(data.at_no, dtype=torch.int64, device=device)
+        data.batch = torch.zeros_like(data.at_no, dtype=torch.int64, device=device)
         data.pos.requires_grad = True
-        predE, predF = model(data.at_no, data.pos, data.edge_index, batch)
+        predE, predF = model(data)
         predE = predE.double()
-        atom_energy = calc_atom_ref(data.at_no, atom_ref, batom_ref, device)
+        atom_energy = atom_sp[data.at_no].sum().to(device)
         predE += atom_energy
         if base_method in ["pm7", "pm6"]:
             baseE, baseF = mopac_calculation(
@@ -143,20 +136,24 @@ def main():
         config.max_edges = args.max_edges
 
     # build model
-    model = XPaiNN(config).to(device)
+    model = resolve_model(config).to(device)
     model.load_state_dict(ckpt["model"], strict=False)
+    model.eval()
 
     # load input data
     dataset = XYZDataset(xyz_file=args.inp, cutoff=config.cutoff, max_edges=config.max_edges)
     outp = f"{args.inp.split('/')[-1].split('.')[0]}.log"
 
+    # get atom reference
+    atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
+
     with open(outp, 'w') as wf:
         wf.write("XequiNet prediction\n")
         wf.write(f"Coordinates in Angstrom, Properties in Atomic Unit\n")
     if config.output_mode == "grad":
-        predict_grad(model, dataset, device, outp, config.atom_ref, config.batom_ref, args.base_method)
+        predict_grad(ModelWrapper(model, config.model), dataset, device, outp, atom_sp, args.base_method)
     else:
-        predict_scalar(model, dataset, device, outp, config.atom_ref, config.batom_ref, args.base_method)
+        predict_scalar(ModelWrapper(model, config.model), dataset, device, outp, atom_sp, args.base_method)
 
 
 if __name__ == "__main__":

@@ -61,7 +61,8 @@ class XEmbedding(nn.Module):
             `edge_index`: Edge index.
         Returns:
             `x_scalar`: Scalar features.
-            `rbf`: Radial basis functions.
+            `rbf`: Values under radial basis functions.
+            `fcut`: Values under cutoff function.
             `rsh`: Real spherical harmonics.
         """
         # calculate distance and relative position
@@ -237,3 +238,54 @@ class XPainnUpdate(nn.Module):
         d_scalar = a_sv * inner_prod + a_ss
 
         return x_scalar + d_scalar, x_spherical + d_spherical
+
+
+class PBCEmbedding(XEmbedding):
+    def __init__(
+        self,
+        node_dim: int = 128,
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        embed_basis: str = "gfn2-xtb",
+        aux_basis: str = "aux28",
+        num_basis: int = 20,
+        rbf_kernel: str = "bessel",
+        cutoff: float = 5.0,
+        cutoff_fn: str = "polynomial",
+    ):
+        super().__init__(
+            node_dim, edge_irreps, embed_basis, aux_basis,
+            num_basis, rbf_kernel, cutoff, cutoff_fn,
+        )
+
+    def forward(
+        self,
+        at_no: torch.LongTensor,
+        pos: torch.Tensor,
+        shifts: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            `x`: Atomic features.
+            `pos`: Atomic coordinates.
+            `edge_index`: Edge index.
+            `shifts`: Shift vectors.
+        Returns:
+            `x_scalar`: Scalar features.
+            `rbf`: Values under radial basis functions.
+            `fcut`: Values under cutoff function.
+            `rsh`: Real spherical harmonics.
+        """
+        # calculate distance and relative position
+        vec = pos[edge_index[0]] - pos[edge_index[1]] - shifts
+        vec = vec[:, [1, 2, 0]]  # [x, y, z] -> [y, z, x]
+        dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
+        # node linear
+        x = self.int2c1e(at_no)
+        x_scalar = self.node_lin(x)
+        # calculate radial basis function
+        rbf = self.rbf(dist)
+        fcut = self.cutoff_fn(dist)
+        # calculate spherical harmonics
+        rsh = self.sph_harm(vec)  # unit vector, normalized by component
+        return x_scalar, rbf, fcut, rsh

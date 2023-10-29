@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
-from xequinet.nn import XPaiNN
+from xequinet.nn import resolve_model
 from xequinet.utils import (
     NetConfig, ZeroLogger,
     set_default_unit, get_atomic_energy,
@@ -108,13 +108,13 @@ def main():
             root=config.data_root, data_files=config.data_files, data_name=config.processed_name,
             mode="train", cutoff=config.cutoff, max_size=config.max_mol, max_edges=config.max_edges,
             mem_process=config.mem_process, transform=transform, pre_transform=pre_transform,
-            **prop_dict,
+            prop_dict=prop_dict,
         )
         valid_dataset = Dataset(
             root=config.data_root, data_files=config.data_files, data_name=config.processed_name,
             mode="valid", cutoff=config.cutoff, max_size=config.vmax_mol, max_edges=config.max_edges,
             mem_process=config.mem_process, transform=transform, pre_transform=pre_transform,
-            **prop_dict,
+            prop_dict=prop_dict,
         )
     # set dataloader
     train_sampler = DistributedSampler(train_dataset, world_size, local_rank, shuffle=True)
@@ -147,7 +147,7 @@ def main():
 
     # -------------------  build model ------------------- #
     # initialize model
-    model = XPaiNN(config)
+    model = resolve_model(config)
     log.s.info(model)
     model.to(device)
 
