@@ -2,11 +2,13 @@ from typing import Tuple, Union
 
 import torch
 import torch.nn as nn
-from torch_geometric.data import Data
 
 from .xpainn import (
     XEmbedding, PBCEmbedding,
     XPainnMessage, XPainnUpdate,
+)
+from .painn import (
+    Embedding, PainnMessage, PainnUpdate,
 )
 from .output import (
     ScalarOut, NegGradOut, VectorOut, PolarOut,
@@ -189,10 +191,58 @@ class PBCPaiNN(nn.Module):
         return result
 
 
+class PaiNN(nn.Module):
+    def __init__(self, config: NetConfig):
+        super().__init__()
+        self.embed = Embedding(
+            node_dim=config.node_dim,
+            num_basis=config.num_basis,
+            embed_basis=config.embed_basis,
+            aux_basis=config.aux_basis,
+            rbf_kernel=config.rbf_kernel,
+            cutoff=config.cutoff,
+            cutoff_fn=config.cutoff_fn,
+        )
+        self.message = nn.ModuleList([
+            PainnMessage(
+                node_dim=config.node_dim,
+                edge_dim=config.edge_dim,
+                num_basis=config.num_basis,
+                actfn=config.activation,
+            )
+            for _ in range(config.action_blocks)
+        ])
+        self.update = nn.ModuleList([
+            PainnUpdate(
+                node_dim=config.node_dim,
+                edge_dim=config.edge_dim,
+                actfn=config.activation,
+            )
+            for _ in range(config.action_blocks)
+        ])
+        self.out = resolve_output(config)
+
+    def forward(
+        self,
+        at_no: torch.LongTensor,
+        pos: torch.Tensor,
+        edge_index: torch.LongTensor,
+        batch_idx: torch.LongTensor,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        x_scalar, rbf, envelop, rsh = self.embed(at_no, pos, edge_index)
+        x_vector = torch.zeros((x_scalar.shape[0], 3, 128), device=x_scalar.device)
+        for msg, upd in zip(self.message, self.update):
+            x_scalar, x_vector = msg(x_scalar, x_vector, rbf, envelop, rsh, edge_index)
+            x_scalar, x_vector = upd(x_scalar, x_vector)
+        result = self.out(x_scalar, at_no, pos, batch_idx)
+        return result
+
+
 def resolve_model(config: NetConfig) -> nn.Module:
-    if config.model == "xpainn":
-        return XPaiNN(config)
-    elif config.model == "pbc":
+    if config.pbc:
         return PBCPaiNN(config)
     else:
-        raise NotImplementedError(f"model {config.model} is not implemented")
+        if config.original:
+            return PaiNN(config)
+        else:
+            return XPaiNN(config)

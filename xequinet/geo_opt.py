@@ -1,7 +1,7 @@
 import argparse
 import torch
-from torch_cluster import radius_graph
-from torch_scatter import scatter
+import torch_cluster
+import torch_scatter
 
 from pyscf import gto
 from pyscf.geomopt import geometric_solver, as_pyscf_method

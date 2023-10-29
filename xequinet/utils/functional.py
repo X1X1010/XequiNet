@@ -160,16 +160,15 @@ def resolve_warmup_scheduler(
 
 
 class ModelWrapper:
-    def __init__(self, model: nn.Module, model_type: str):
-        self.type = model_type.lower()
-        assert self.type in ["xpainn", "pbc"]
+    def __init__(self, model: nn.Module, pbc: bool):
         self.model = model
+        self.pbc = pbc
 
     def __call__(self, data):
-        if self.type == "pbc":
+        if self.pbc:
             return self.model(data.at_no, data.pos, data.shifts,
                               data.edge_index, data.batch, data.at_filter)
-        elif self.type == "xpainn":
+        else:
             return self.model(data.at_no, data.pos, data.edge_index, data.batch)
     
     def __getattr__(self, name):

@@ -151,9 +151,9 @@ def main():
         wf.write("XequiNet prediction\n")
         wf.write(f"Coordinates in Angstrom, Properties in Atomic Unit\n")
     if config.output_mode == "grad":
-        predict_grad(ModelWrapper(model, config.model), dataset, device, outp, atom_sp, args.base_method)
+        predict_grad(ModelWrapper(model, config.pbc), dataset, device, outp, atom_sp, args.base_method)
     else:
-        predict_scalar(ModelWrapper(model, config.model), dataset, device, outp, atom_sp, args.base_method)
+        predict_scalar(ModelWrapper(model, config.pbc), dataset, device, outp, atom_sp, args.base_method)
 
 
 if __name__ == "__main__":

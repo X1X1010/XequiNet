@@ -14,7 +14,7 @@ class NetConfig(BaseModel):
     run_name: str = "my_task"                      # name of the run
 
     # configurations about the model
-    model: str = "xpainn"                          # whether to use the periodic boundary condition
+    pbc: bool = False                              # whether to use the periodic boundary condition
     embed_basis: str = "gfn2-xtb"                  # embedding basis type
     aux_basis: str = "aux56"                       # auxiliary basis type
     node_dim: int = 128                            # node irreps for the input

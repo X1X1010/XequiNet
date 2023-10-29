@@ -4,9 +4,7 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter
 
-from ..utils import NetConfig
 from .o3layer import resolve_actfn, Int2c1eEmbedding
-from .output import ScalarOut
 from .rbf import resolve_cutoff, resolve_rbf
 
 
@@ -15,19 +13,21 @@ class Embedding(nn.Module):
         self,
         node_dim: int = 128,
         num_basis: int = 20,
+        embed_basis: str = "one-hot",
+        aux_basis: str = "aux56",
         rbf_kernel: str = "bessel",
         cutoff: float = 5.0,
         cutoff_fn: str = "cosine",
-        onehot: bool = True,
     ):
         super().__init__()
         self.node_dim = node_dim
-        if onehot:
+        if embed_basis == "one-hot":
             self.embedding = nn.Embedding(100, self.node_dim, padding_idx=0)
         else:
+            int2c1e = Int2c1eEmbedding(embed_basis, aux_basis)
             self.embedding = nn.Sequential(
-                Int2c1eEmbedding("gfn2-xtb", "aux56"),
-                nn.Linear(56, self.node_dim),
+                int2c1e,
+                nn.Linear(int2c1e.embed_dim, self.node_dim),
             )
         self.rbf = resolve_rbf(rbf_kernel, num_basis, cutoff)
         self.cutoff_fn = resolve_cutoff(cutoff_fn, cutoff)
@@ -47,8 +47,8 @@ class Embedding(nn.Module):
         rbf = self.rbf(dist)
         fcut = self.cutoff_fn(dist)
         # calculate spherical harmonics
-        rsh = vec / dist
-        return x_scalar, rbf, fcut, rsh
+        uvec = vec / dist
+        return x_scalar, rbf, fcut, uvec
 
 
 class PainnMessage(nn.Module):
@@ -82,13 +82,13 @@ class PainnMessage(nn.Module):
         x_scalar: torch.Tensor,
         x_vector: torch.Tensor,
         rbf: torch.Tensor,
-        envelope: torch.Tensor,
-        rsh: torch.Tensor,
+        fcut: torch.Tensor,
+        uvec: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         
         scalar_out = self.scalar_mlp(x_scalar)
-        filter_weight = self.rbf_lin(rbf) * envelope
+        filter_weight = self.rbf_lin(rbf) * fcut
         filter_out = scalar_out[edge_index[1]] * filter_weight
         
         message_scalar, gate_edge_vector, gate_state_vector = torch.split(
@@ -97,7 +97,7 @@ class PainnMessage(nn.Module):
             dim=-1,
         )
         message_vector = x_vector[edge_index[1]] * gate_state_vector.unsqueeze(1)
-        edge_vector = gate_edge_vector.unsqueeze(1) * rsh.unsqueeze(-1)
+        edge_vector = gate_edge_vector.unsqueeze(1) * uvec.unsqueeze(-1)
         message_vector = message_vector + edge_vector
 
         new_scalar = x_scalar + scatter(message_scalar, edge_index[0], dim=0)
@@ -155,33 +155,3 @@ class PainnUpdate(nn.Module):
         d_scalar = a_sv * inner_prod + a_ss
 
         return x_scalar + d_scalar, x_vector + d_vector
-
-
-class PaiNN(nn.Module):
-    def __init__(self, onehot=True):
-        super().__init__()
-        self.embed = Embedding(onehot=onehot)
-        self.message = nn.ModuleList([
-            PainnMessage()
-            for _ in range(3)
-        ])
-        self.update = nn.ModuleList([
-            PainnUpdate()
-            for _ in range(3)
-        ])
-        self.out = ScalarOut()
-    
-    def forward(
-        self,
-        at_no: torch.LongTensor,
-        pos: torch.Tensor,
-        edge_index: torch.LongTensor,
-        batch_idx: torch.LongTensor,
-    ) -> torch.Tensor:
-        x_scalar, rbf, envelop, rsh = self.embed(at_no, pos, edge_index)
-        x_vector = torch.zeros((x_scalar.shape[0], 3, 128), device=x_scalar.device)
-        for msg, upd in zip(self.message, self.update):
-            x_scalar, x_vector = msg(x_scalar, x_vector, rbf, envelop, rsh, edge_index)
-            x_scalar, x_vector = upd(x_scalar, x_vector)
-        result = self.out(x_scalar, at_no, pos, batch_idx)
-        return result

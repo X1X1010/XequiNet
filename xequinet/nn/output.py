@@ -362,9 +362,55 @@ class PBCScalarOut(ScalarOut):
             `at_no`: Atomic numbers.
             `coord`: Atomic coordinates. (Unused in this module)
             `batch_index`: Batch index.
+            `at_filter`: Atomic filter.
         Returns:
             `res`: Scalar output.
         """
         atom_out = self.out_mlp(x_scalar[at_filter]) + self.node_bias
         res = scatter(atom_out, batch_index, dim=0)
         return res + self.graph_bias
+
+
+class PBCNegGradOut(NegGradOut):
+    def __init__(
+        self,
+        node_dim: int = 128,
+        hidden_dim: int = 64,
+        actfn: str = "silu",
+        node_bias: float = 0.0,
+        graph_bias: float = 0.0,
+    ):
+        super().__init__(node_dim, hidden_dim, actfn, node_bias, graph_bias)
+
+    def forward(
+        self,
+        x_scalar: torch.Tensor,
+        x_spherical: torch.Tensor,
+        coord: torch.Tensor,
+        batch_index: torch.LongTensor,
+        at_filter: torch.BoolTensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            `x_scalar`: Scalar features.
+            `x_spherical`: Spherical features. (Unused in this module)
+            `at_no`: Atomic numbers.
+            `coord`: Atomic coordinates. (Unused in this module)
+            `batch_index`: Batch index.
+            `at_filter`: Atomic filter.
+        Returns:
+            `res`: Scalar output.
+            `neg_grad`: Negative gradient.
+        """
+        atom_out = self.out_mlp(x_scalar[at_filter]) + self.node_bias
+        res = scatter(atom_out, batch_index, dim=0)
+        grad = torch.autograd.grad(
+            [atom_out.sum(),],
+            [coord[at_filter],],
+            retain_graph=True,
+            create_graph=True,
+        )[0]
+        neg_grad = torch.zeros_like(coord[at_filter])      # because the output of `autograd.grad()` is `Tuple[Optional[torch.Tensor],...]` in jit script
+        if grad is not None:                               # which means the complier thinks that `neg_grad` may be `torch.Tensor` or `None`
+            neg_grad = neg_grad - grad                     # but neg_grad there are not allowed to be `None`
+        return res + self.graph_bias, neg_grad             # so we add this if statement to let the compiler make sure that `neg_grad` is not `None`

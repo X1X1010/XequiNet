@@ -14,12 +14,8 @@ from xequinet.utils import (
     NetConfig, ZeroLogger,
     set_default_unit, get_atomic_energy,
     distributed_zero_first, calculate_stats,
-    Trainer, GradTrainer,
 )
-from xequinet.data import(
-    H5Dataset, H5MemDataset, H5DiskDataset,
-    data_unit_transform, atom_ref_transform,
-)
+from xequinet.data import data_unit_transform, atom_ref_transform
 
 
 def main():
@@ -73,11 +69,14 @@ def main():
     # ------------------- load dataset ------------------- #
     # select dataset type
     if config.dataset_type == "normal":
-        Dataset = H5Dataset      # inherit from torch.utils.data.Dataset
+        # inherit from torch.utils.data.Dataset
+        from xequinet.data import H5Dataset as MyDataset
     elif config.dataset_type == "memory":
-        Dataset = H5MemDataset   # inherit from torch_geometric.data.InMemoryDataset
+        # inherit from torch_geometric.data.InMemoryDataset
+        from xequinet.data import H5MemDataset as MyDataset
     elif config.dataset_type == "disk":
-        Dataset = H5DiskDataset  # inherit from torch_geometric.data.Dataset
+        # inherit from torch_geometric.data.Dataset
+        from xequinet.data import H5DiskDataset as MyDataset
     else:
         raise ValueError(f"Unknown dataset type: {config.dataset_type}")
     
@@ -104,18 +103,15 @@ def main():
 
     # set dataset
     with distributed_zero_first(local_rank):
-        train_dataset = Dataset(
-            root=config.data_root, data_files=config.data_files, data_name=config.processed_name,
-            mode="train", cutoff=config.cutoff, max_size=config.max_mol, max_edges=config.max_edges,
-            mem_process=config.mem_process, transform=transform, pre_transform=pre_transform,
-            prop_dict=prop_dict,
-        )
-        valid_dataset = Dataset(
-            root=config.data_root, data_files=config.data_files, data_name=config.processed_name,
-            mode="valid", cutoff=config.cutoff, max_size=config.vmax_mol, max_edges=config.max_edges,
-            mem_process=config.mem_process, transform=transform, pre_transform=pre_transform,
-            prop_dict=prop_dict,
-        )
+        kwargs = {
+            "root": config.data_root, "data_files": config.data_files, "data_name": config.processed_name,
+            "prop_dict": prop_dict, "pbc": config.pbc, "cutoff": config.cutoff,
+            "max_edges": config.max_edges, "mem_process": config.mem_process,
+            "transform": transform, "pre_transform": pre_transform,
+        }
+        train_dataset = MyDataset(mode="train", max_size=config.max_mol, **kwargs)
+        valid_dataset = MyDataset(mode="valid", max_size=config.vmax_mol, **kwargs)
+    
     # set dataloader
     train_sampler = DistributedSampler(train_dataset, world_size, local_rank, shuffle=True)
     valid_sampler = DistributedSampler(valid_dataset, world_size, local_rank, shuffle=False)
@@ -169,10 +165,10 @@ def main():
     
     # -------------------  train model ------------------- #
     if config.output_mode == "grad":
-        NetTrainer = GradTrainer
+        from xequinet.utils import GradTrainer as MyTrainer
     else:
-        NetTrainer = Trainer
-    trainer = NetTrainer(ddp_model, config, device, train_loader, valid_loader, train_sampler, log)
+        from xequinet.utils import Trainer as MyTrainer
+    trainer = MyTrainer(ddp_model, config, device, train_loader, valid_loader, train_sampler, log)
     trainer.start()
     
 

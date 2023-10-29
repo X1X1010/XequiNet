@@ -2,7 +2,6 @@ from typing import Iterable, Tuple, Union
 
 import torch
 import torch.nn as nn
-from torch_scatter import scatter
 from e3nn import o3
 
 from .o3layer import (
@@ -18,11 +17,11 @@ class XEmbedding(nn.Module):
         node_dim: int = 128,
         edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         embed_basis: str = "gfn2-xtb",
-        aux_basis: str = "aux28",
+        aux_basis: str = "aux56",
         num_basis: int = 20,
         rbf_kernel: str = "bessel",
         cutoff: float = 5.0,
-        cutoff_fn: str = "polynomial",
+        cutoff_fn: str = "cosine",
     ):
         """
         Args:
@@ -246,11 +245,11 @@ class PBCEmbedding(XEmbedding):
         node_dim: int = 128,
         edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
         embed_basis: str = "gfn2-xtb",
-        aux_basis: str = "aux28",
+        aux_basis: str = "aux56",
         num_basis: int = 20,
         rbf_kernel: str = "bessel",
         cutoff: float = 5.0,
-        cutoff_fn: str = "polynomial",
+        cutoff_fn: str = "cosine",
     ):
         super().__init__(
             node_dim, edge_irreps, embed_basis, aux_basis,

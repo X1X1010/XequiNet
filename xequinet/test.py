@@ -148,9 +148,9 @@ def main():
         wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
     if config.output_mode == "grad":
-        test_grad(ModelWrapper(model, config.model), test_loader, device, output_file)
+        test_grad(ModelWrapper(model, config.pbc), test_loader, device, output_file)
     else:
-        test_scalar(ModelWrapper(model, config.model), test_loader, device, output_file)
+        test_scalar(ModelWrapper(model, config.pbc), test_loader, device, output_file)
 
 
 if __name__ == "__main__":

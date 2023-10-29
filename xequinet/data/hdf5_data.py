@@ -20,12 +20,14 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, max_edges: int, prop_d
     for mol_name in f_h5[mode].keys():
         mol_grp = f_h5[mode][mol_name]
         at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
-        try:
+        if "coordinates_A" in mol_grp.keys():
             coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
             coords *= unit_conversion("Angstrom", len_unit)
-        except:
+        elif "coordinates_bohr" in mol_grp.keys():
             coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
             coords *= unit_conversion("Bohr", len_unit)
+        else:
+            raise ValueError("Coordinates not found in the hdf5 file.")
         for icfm, coord in enumerate(coords):
             edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
@@ -47,16 +49,25 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
     for pbc_name in f_h5[mode].keys():
         pbc_grp = f_h5[mode][pbc_name]
         at_no = torch.LongTensor(pbc_grp['atomic_numbers'][()])
-        try:
-            coords = torch.Tensor(pbc_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+        if "lattice_A" in pbc_grp.keys():
             lattice = torch.Tensor(pbc_grp["lattice_A"][()]).to(torch.get_default_dtype())
-            coords *= unit_conversion("Angstrom", len_unit)
             lattice *= unit_conversion("Angstrom", len_unit)
-        except:
-            coords = torch.Tensor(pbc_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+        elif "lattice_bohr" in pbc_grp.keys():
             lattice = torch.Tensor(pbc_grp["lattice_bohr"][()]).to(torch.get_default_dtype())
-            coords *= unit_conversion("Bohr", len_unit)
             lattice *= unit_conversion("Bohr", len_unit)
+        else:
+            raise ValueError("Lattice not found in the hdf5 file.")
+        if "coordinates_A" in pbc_grp.keys():
+            coords = torch.Tensor(pbc_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Angstrom", len_unit)
+        elif "coordinates_bohr" in pbc_grp.keys():
+            coords = torch.Tensor(pbc_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Bohr", len_unit)
+        elif "coordinates_frac" in pbc_grp.keys():
+            coords = torch.Tensor(pbc_grp["coordinates_frac"][()]).to(torch.get_default_dtype())
+            coords = torch.einsum("ij, kj -> ik", coords, lattice)
+        else:
+            raise ValueError("Coordinates not found in the hdf5 file.")
         # filter out atoms
         if "atom_filter" in pbc_grp.keys():
             at_filter = torch.BoolTensor(pbc_grp["atom_filter"][()])
@@ -71,7 +82,7 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
         for icfm, coord in enumerate(coords):
             atoms = ase.Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)
             idx_i, idx_j, shifts = ase.neighborlist.neighbor_list("ijS", a=atoms, cutoff=cutoff)
-            shifts *= lattice
+            shifts = torch.einsum("ij, kj -> ik", shifts, lattice)
             edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long)
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, at_filter=at_filter)
             for p_attr, p_name in prop_dict.items():

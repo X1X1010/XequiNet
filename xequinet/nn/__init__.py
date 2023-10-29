@@ -11,11 +11,17 @@ from .rbf import (
 from .xpainn import (
     XEmbedding, XPainnMessage, XPainnUpdate, PBCEmbedding
 )
+from .painn import Embedding, PainnMessage, PainnUpdate
 from .output import (
     ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut,
-    PBCScalarOut,
+    PBCScalarOut, PBCNegGradOut,
 )
 from .model import XPaiNN, PBCPaiNN, resolve_model
+from .jit_model import (
+    JitXPaiNN, GradJitXPaiNN,
+    JitPBCPaiNN, GradJitPBCPaiNN,
+    resolve_jit_model
+)
 
 __all__ = [
     "Invariant", "Gate", "ElementShifts", "CGCoupler",
@@ -23,9 +29,12 @@ __all__ = [
     "resolve_norm", "resolve_o3norm", "resolve_actfn",
     "CosineCutoff", "PolynomialCutoff",
     "GaussianSmearing", "SphericalBesselj0",
-    "XEmbedding", "XPainnMessage", "XPainnUpdate",
-    "PBCEmbedding",
+    "XEmbedding", "XPainnMessage", "XPainnUpdate", "PBCEmbedding",
+    "Embedding", "PainnMessage", "PainnUpdate",
     "ScalarOut", "NegGradOut", "VectorOut", "PolarOut", "SpatialOut",
-    "PBCScalarOut",
+    "PBCScalarOut", "PBCNegGradOut",
     "XPaiNN", "PBCPaiNN", "resolve_model",
+    "JitXPaiNN", "GradJitXPaiNN",
+    "JitPBCPaiNN", "GradJitPBCPaiNN",
+    "resolve_jit_model",
 ]
