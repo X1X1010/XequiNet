@@ -65,7 +65,7 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
             coords *= unit_conversion("Bohr", len_unit)
         elif "coordinates_frac" in pbc_grp.keys():
             coords = torch.Tensor(pbc_grp["coordinates_frac"][()]).to(torch.get_default_dtype())
-            coords = torch.einsum("ij, kj -> ik", coords, lattice)
+            coords = torch.einsum("nij, kj -> nik", coords, lattice)
         else:
             raise ValueError("Coordinates not found in the hdf5 file.")
         # filter out atoms
@@ -82,11 +82,12 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
         for icfm, coord in enumerate(coords):
             atoms = ase.Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)
             idx_i, idx_j, shifts = ase.neighborlist.neighbor_list("ijS", a=atoms, cutoff=cutoff)
+            shifts = torch.Tensor(shifts).to(torch.get_default_dtype())
             shifts = torch.einsum("ij, kj -> ik", shifts, lattice)
             edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long)
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, at_filter=at_filter)
             for p_attr, p_name in prop_dict.items():
-                p_val = torch.Tensor(pbc_grp[p_name][()][icfm])
+                p_val = torch.tensor(pbc_grp[p_name][()][icfm])
                 if p_attr == "y" or p_attr == "base_y":
                     if p_val.dim() == 0:
                         p_val = p_val.unsqueeze(0)

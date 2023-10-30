@@ -238,12 +238,28 @@ def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
         atomic_energy[at_no] = torch.DoubleTensor(list(atom_ref.values()))
     else:
         atom_ref = atom_ref.lower()
-        if not (PRE_FOLDER / f"{atom_ref.replace('/', '_')}_sp.pt").exists():
+        sp_file_name = f"{atom_ref.replace('/', '_')}_sp.pt"
+        if not (PRE_FOLDER / sp_file_name).exists():
             gen_atom_sp(atom_ref)
-        atom_sp_dict = torch.load(PRE_FOLDER / f"{atom_ref.replace('/', '_')}_sp.pt")
+        atom_sp_dict = torch.load(PRE_FOLDER / sp_file_name)
         atomic_energy = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
+        periodic_table = """
+        H                                                  He
+        Li Be                               B  C  N  O  F  Ne
+        Na Mg                               Al Si P  S  Cl Ar
+        K  Ca Sc Ti V  Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr
+        Rb Sr Y  Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I  Xe
+        Cs Ba    Hf Ta W  Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn
+        
+              La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu
+        """
         for atom, energy in atom_sp_dict.items():
             atomic_energy[ELEMENTS_DICT[atom]] = energy
+            periodic_table.replace(f"{atom: <2}", "  ")
+        print(f"The file {sp_file_name} does not contain single point energy for following atoms:")
+        print(periodic_table)
+        print("If you need these atoms, please regenerate the file or add them manually.")
+    
     return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
 
 

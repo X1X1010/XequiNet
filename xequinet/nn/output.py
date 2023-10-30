@@ -367,7 +367,7 @@ class PBCScalarOut(ScalarOut):
             `res`: Scalar output.
         """
         atom_out = self.out_mlp(x_scalar[at_filter]) + self.node_bias
-        res = scatter(atom_out, batch_index, dim=0)
+        res = scatter(atom_out, batch_index[at_filter], dim=0)
         return res + self.graph_bias
 
 
@@ -403,7 +403,7 @@ class PBCNegGradOut(NegGradOut):
             `neg_grad`: Negative gradient.
         """
         atom_out = self.out_mlp(x_scalar[at_filter]) + self.node_bias
-        res = scatter(atom_out, batch_index, dim=0)
+        res = scatter(atom_out, batch_index[at_filter], dim=0)
         grad = torch.autograd.grad(
             [atom_out.sum(),],
             [coord[at_filter],],

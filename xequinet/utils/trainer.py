@@ -253,6 +253,7 @@ class Trainer:
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.model.module, mae)
+        self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
 
 
     def ema_validate(self):
@@ -275,6 +276,7 @@ class Trainer:
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.ema_model.module, mae)
+        self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
 
 
     def start(self):
