@@ -1,5 +1,5 @@
 ## XequiNet
-XequiNet is an equivariant graph neural network for predicting properties of chemical molecules.
+XequiNet is an equivariant graph neural network for predicting properties of chemical molecules or periodical systems.
 
 ## Requirements
 **The following versions of these packages are only recommended for use.**
@@ -96,7 +96,7 @@ Then simply run the following command according to your GPUs and port.
 ```
 torchrun --nproc_per_node=${n_gpu} --master_port=${port} --no-python xeqtrain --config config.json
 ```
-During training, `loss.log` and `run_name_0.pt` will be automatically generated, which records loss information and net parameters respectively.
+During training, `loss.log` , `run_name_k.pt` and `run_name_last.pt` will be automatically generated, which records loss information and net parameters respectively.
 
 ### Test
 Similarily, prepare the dataset and configuration file `config.json`. Run
@@ -124,13 +124,13 @@ H  -0.00000000    0.78397589    0.44324751
 ```
 Run
 ```
-xeqinfer --ckpt run_name_0.pt inf_mol.xyz
+xeqinfer --ckpt run_name_k.pt inf_mol.xyz
 ```
 the prediction result will be writen in `inf_mol.log`.
 
 ### JIT script
 Finally you can jit compile the model for cross platform tasks by running
 ```
-xeqjit --ckpt run_name_0.pt
+xeqjit --ckpt run_name_k.pt
 ```
-You will get a jit compiled model `run_name_0.jit`.
+You will get a jit compiled model `run_name_k.jit`.

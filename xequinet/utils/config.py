@@ -1,4 +1,4 @@
-from typing import Union, List
+from typing import Union, List, Optional
 from pydantic import BaseModel, Extra
 
 
@@ -53,8 +53,8 @@ class NetConfig(BaseModel):
     blabel_unit: str = None                        # unit of the input base label
     force_unit: str = None                         # unit of the input force
     bforce_unit: str = None                        # unit of the input base force
-    max_mol: int = 1e9                             # maximum number of the training molecules
-    vmax_mol: int = 1e9                            # maximum number of the validation molecules
+    max_mol: Optional[int] = 1e9                   # maximum number of the training molecules
+    vmax_mol: Optional[int] = 1e9                  # maximum number of the validation molecules
     batch_size: int = 64                           # training batch size
     vbatch_size: int = 64                          # validation batch size
 

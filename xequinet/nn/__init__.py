@@ -19,7 +19,6 @@ from .output import (
 from .model import XPaiNN, PBCPaiNN, resolve_model
 from .jit_model import (
     JitXPaiNN, GradJitXPaiNN,
-    JitPBCPaiNN, GradJitPBCPaiNN,
     resolve_jit_model
 )
 
@@ -35,6 +34,5 @@ __all__ = [
     "PBCScalarOut", "PBCNegGradOut",
     "XPaiNN", "PBCPaiNN", "resolve_model",
     "JitXPaiNN", "GradJitXPaiNN",
-    "JitPBCPaiNN", "GradJitPBCPaiNN",
     "resolve_jit_model",
 ]

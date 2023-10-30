@@ -49,14 +49,22 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
     for pbc_name in f_h5[mode].keys():
         pbc_grp = f_h5[mode][pbc_name]
         at_no = torch.LongTensor(pbc_grp['atomic_numbers'][()])
-        if "lattice_A" in pbc_grp.keys():
-            lattice = torch.Tensor(pbc_grp["lattice_A"][()]).to(torch.get_default_dtype())
-            lattice *= unit_conversion("Angstrom", len_unit)
-        elif "lattice_bohr" in pbc_grp.keys():
-            lattice = torch.Tensor(pbc_grp["lattice_bohr"][()]).to(torch.get_default_dtype())
-            lattice *= unit_conversion("Bohr", len_unit)
+        # set periodic boundary condition
+        if "pbc" in pbc_grp.keys():
+            pbc = pbc_grp["pbc"][()]
         else:
-            raise ValueError("Lattice not found in the hdf5 file.")
+            pbc = False
+        if pbc:
+            if "lattice_A" in pbc_grp.keys():
+                lattice = torch.Tensor(pbc_grp["lattice_A"][()]).to(torch.get_default_dtype())
+                lattice *= unit_conversion("Angstrom", len_unit)
+            elif "lattice_bohr" in pbc_grp.keys():
+                lattice = torch.Tensor(pbc_grp["lattice_bohr"][()]).to(torch.get_default_dtype())
+                lattice *= unit_conversion("Bohr", len_unit)
+            else:
+                raise ValueError("Lattice not found in the hdf5 file.")
+        else:
+            lattice = None
         if "coordinates_A" in pbc_grp.keys():
             coords = torch.Tensor(pbc_grp["coordinates_A"][()]).to(torch.get_default_dtype())
             coords *= unit_conversion("Angstrom", len_unit)
@@ -73,11 +81,6 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
             at_filter = torch.BoolTensor(pbc_grp["atom_filter"][()])
         else:
             at_filter = torch.BoolTensor([True for _ in range(at_no.shape[0])])
-        # set periodic boundary condition
-        if "pbc" in pbc_grp.keys():
-            pbc = pbc_grp["pbc"][()]
-        else:
-            pbc = False
         # loop over configurations
         for icfm, coord in enumerate(coords):
             atoms = ase.Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)

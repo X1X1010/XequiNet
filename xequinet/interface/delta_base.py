@@ -39,8 +39,8 @@ def xtb_calculation(
     assert len(atomic_numbers) == len(coordinates)
     prop_unit, len_unit = get_default_unit()
     at_no = np.array(atomic_numbers)
-    coord = np.array(coordinates) * unit_conversion(len_unit, "bohr")
-    uhf = (multiplicity > 1)
+    coord = np.array(coordinates) * unit_conversion(len_unit, "Bohr")
+    uhf = multiplicity - 1
     calc = xtb.Calculator(
         method=method,
         numbers=at_no,
@@ -50,7 +50,7 @@ def xtb_calculation(
     )
     with HiddenPrints():
         res = calc.singlepoint()
-    energy = res.get("energy") * unit_conversion("hartree", prop_unit)
+    energy = res.get("energy") * unit_conversion("Hartree", prop_unit)
     if calc_force:
         force = -res.get("gradient") * unit_conversion("AU", f"{prop_unit}/{len_unit}")
         return energy, force   
@@ -81,7 +81,7 @@ def mopac_calculation(
     assert len(atomic_numbers) == len(coordinates)
     prop_unit, len_unit = get_default_unit()
     at_no = np.array(atomic_numbers)
-    coord = np.array(coordinates) * unit_conversion(len_unit, "angstrom")
+    coord = np.array(coordinates) * unit_conversion(len_unit, "Angstrom")
     mopac = MOPAC(
         atoms=at_no,
         coordinates=coord,
@@ -98,20 +98,3 @@ def mopac_calculation(
     else:
         return energy    
 
-
-# if __name__ == "__main__":
-#     from xphormer.utils.qc import PM7_ATOM_ENERGY, GFN2_ATOM_ENERGY, CC_ATOM_ENERGY
-#     from pyscf import gto, dft
-#     at_no = [8, 1, 1]
-#     coord = [
-#         [0.0, 0.0, 0.11930800],
-#         [0.0, 0.75895300, -0.47723200],
-#         [0.0, -0.75895300, -0.47723200],
-#     ]
-#     energy1, force1 = xtb_calculation(at_no, coord, calc_force=True)
-#     energy2, force2 = mopac_calculation(at_no, coord, calc_force=True)
-#     energy1 -= sum([GFN2_ATOM_ENERGY[i].item() for i in at_no])
-#     energy2 -= sum([PM7_ATOM_ENERGY[i].item() for i in at_no])
-#     print(energy1, energy2)
-#     print(force1)
-#     print(force2)

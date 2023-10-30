@@ -4,7 +4,6 @@ from pathlib import Path
 
 from pyscf import gto
 import numpy as np
-# import scipy.special
 import torch
 
 
@@ -216,7 +215,7 @@ def get_embedding_tensor(embed_basis="gfn2-xtb", aux_basis="aux28") -> torch.Ten
     embed_dict = torch.load(PRE_FOLDER / f"{embed_basis}_{aux_basis}.pt")
     embed_tenor = torch.stack([embed_dict[atom] for atom in ELEMENTS_LIST[1:]])
     embed_tenor = torch.cat([torch.zeros(1, embed_tenor.shape[-1]), embed_tenor])
-    return embed_tenor.to(torch.get_default_dtype())
+    return embed_tenor.to(torch.get_default_dtype())[:55]
 
 
 def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
@@ -255,22 +254,12 @@ def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
         """
         for atom, energy in atom_sp_dict.items():
             atomic_energy[ELEMENTS_DICT[atom]] = energy
-            periodic_table.replace(f"{atom: <2}", "  ")
+            periodic_table = periodic_table.replace(f"{atom: <2}", "  ")
         print(f"The file {sp_file_name} does not contain single point energy for following atoms:")
         print(periodic_table)
         print("If you need these atoms, please regenerate the file or add them manually.")
     
     return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
-
-
-# def calc_cgto_norm(cgto: list):
-#     """cgto: [l, [exp1, coeff1], [exp2, coeff2], ...]"""
-#     intor = 0.
-#     l = cgto[0]
-#     for exp1, coeff1 in cgto[1:]:
-#         for exp2, coeff2 in cgto[1:]:
-#             intor += coeff1 * coeff2 * scipy.special.gamma(l + 0.5) / (2 * (exp1 + exp2)**(l + 0.5))
-#     return 1 / np.sqrt(intor)
 
 
 def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
