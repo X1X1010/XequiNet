@@ -242,7 +242,4 @@ def resolve_model(config: NetConfig) -> nn.Module:
     if config.pbc:
         return PBCPaiNN(config)
     else:
-        if config.original:
-            return PaiNN(config)
-        else:
-            return XPaiNN(config)
+        return XPaiNN(config)

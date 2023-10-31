@@ -12,10 +12,9 @@ from torch_geometric.loader import DataLoader
 from xequinet.nn import resolve_model
 from xequinet.utils import (
     NetConfig, ZeroLogger,
-    set_default_unit, get_atomic_energy,
-    distributed_zero_first, calculate_stats,
+    set_default_unit, calculate_stats,
 )
-from xequinet.data import data_unit_transform, atom_ref_transform
+from xequinet.data import create_dataset
 
 
 def main():
@@ -67,50 +66,8 @@ def main():
     torch.cuda.set_device(device)
 
     # ------------------- load dataset ------------------- #
-    # select dataset type
-    if config.dataset_type == "normal":
-        # inherit from torch.utils.data.Dataset
-        from xequinet.data import H5Dataset as MyDataset
-    elif config.dataset_type == "memory":
-        # inherit from torch_geometric.data.InMemoryDataset
-        from xequinet.data import H5MemDataset as MyDataset
-    elif config.dataset_type == "disk":
-        # inherit from torch_geometric.data.Dataset
-        from xequinet.data import H5DiskDataset as MyDataset
-    else:
-        raise ValueError(f"Unknown dataset type: {config.dataset_type}")
-    
-    # set property read from raw data
-    prop_dict = {}
-    if config.label_name is not None:
-        prop_dict["y"] = config.label_name
-    if config.blabel_name is not None:
-        prop_dict["base_y"] = config.blabel_name
-    if config.force_name is not None:
-        prop_dict["force"] = config.force_name
-    if config.bforce_name is not None:
-        prop_dict["base_force"] = config.bforce_name
-
-    # set transform function
-    pre_transform = lambda data: data_unit_transform(
-        data, config.label_unit, config.blabel_unit,
-        config.force_unit, config.bforce_unit,
-    )
-    with distributed_zero_first(local_rank):
-        atom_sp = get_atomic_energy(config.atom_ref)
-        batom_sp = get_atomic_energy(config.batom_ref)
-    transform = lambda data: atom_ref_transform(data, atom_sp, batom_sp)
-
-    # set dataset
-    with distributed_zero_first(local_rank):
-        kwargs = {
-            "root": config.data_root, "data_files": config.data_files, "data_name": config.processed_name,
-            "prop_dict": prop_dict, "pbc": config.pbc, "cutoff": config.cutoff,
-            "max_edges": config.max_edges, "mem_process": config.mem_process,
-            "transform": transform, "pre_transform": pre_transform,
-        }
-        train_dataset = MyDataset(mode="train", max_size=config.max_mol, **kwargs)
-        valid_dataset = MyDataset(mode="valid", max_size=config.vmax_mol, **kwargs)
+    train_dataset = create_dataset(config, "train", local_rank)
+    valid_dataset = create_dataset(config, "valid", local_rank)
     
     # set dataloader
     train_sampler = DistributedSampler(train_dataset, world_size, local_rank, shuffle=True)

@@ -24,8 +24,7 @@ def predict_scalar(
             data = data.to(device)
             data.batch = torch.zeros_like(data.at_no, dtype=torch.int64)
             pred = model(data).double()
-            atom_energy = atom_sp[data.at_no].sum().to(device)
-            pred += atom_energy
+            pred += atom_sp[data.at_no].sum().to(device)
             if base_method in ["PM7", "PM6"]:
                 pred += mopac_calculation(
                     atomic_numbers=data.at_no.numpy(),
@@ -59,8 +58,7 @@ def predict_grad(
         data.pos.requires_grad = True
         predE, predF = model(data)
         predE = predE.double()
-        atom_energy = atom_sp[data.at_no].sum().to(device)
-        predE += atom_energy
+        predE += atom_sp[data.at_no].sum().to(device)
         if base_method in ["pm7", "pm6"]:
             baseE, baseF = mopac_calculation(
                 atomic_numbers=data.at_no.numpy(),

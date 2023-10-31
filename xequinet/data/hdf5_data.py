@@ -9,7 +9,9 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.data import Dataset as DiskDataset
 
 from ..utils import (
-    unit_conversion, get_default_unit, get_centroid,
+    unit_conversion, get_default_unit, get_centroid, get_atomic_energy,
+    distributed_zero_first,
+    NetConfig,
 )
 
 
@@ -54,7 +56,8 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
             pbc = pbc_grp["pbc"][()]
         else:
             pbc = False
-        if pbc:
+        pbc_condition = pbc if isinstance(pbc, bool) else any(pbc)
+        if pbc_condition:
             if "lattice_A" in pbc_grp.keys():
                 lattice = torch.Tensor(pbc_grp["lattice_A"][()]).to(torch.get_default_dtype())
                 lattice *= unit_conversion("Angstrom", len_unit)
@@ -396,8 +399,8 @@ def data_unit_transform(
 
 def atom_ref_transform(
     data: Data,
-    atom_sp: Optional[torch.Tensor] = None,
-    batom_sp: Optional[torch.Tensor] = None,
+    atom_sp: torch.Tensor,
+    batom_sp: torch.Tensor,
 ):
     """
     Create a deep copy of the data and subtract the atomic energy.
@@ -408,12 +411,10 @@ def atom_ref_transform(
         at_no = new_data.at_no
         if hasattr(new_data, "at_filter"):
             at_no = at_no[new_data.at_filter]
-        ref_sum = atom_sp[at_no].sum() if atom_sp is not None else 0.0
-        new_data.y -= ref_sum
+        new_data.y -= atom_sp[at_no].sum()
         new_data.y = new_data.y.to(torch.get_default_dtype())
         if hasattr(new_data, "base_y"):
-            bref_sum = batom_sp[at_no].sum() if batom_sp is not None else 0.0
-            new_data.base_y -= bref_sum
+            new_data.base_y -= batom_sp[at_no].sum()
             new_data.base_y = new_data.base_y.to(torch.get_default_dtype())
     # change the dtype of force by the way
     if hasattr(new_data, "force"):
@@ -434,3 +435,45 @@ def centroid_transform(
     centroid = get_centroid(new_data.at_no, new_data.pos)
     new_data.pos -= centroid
     return new_data
+
+
+def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = 0):
+    with distributed_zero_first(local_rank):
+        # set property read from raw data
+        prop_dict = {}
+        if config.label_name is not None:
+            prop_dict["y"] = config.label_name
+        if config.blabel_name is not None:
+            prop_dict["base_y"] = config.blabel_name
+        if config.force_name is not None:
+            prop_dict["force"] = config.force_name
+        if config.bforce_name is not None:
+            prop_dict["base_force"] = config.bforce_name
+
+        # set transform function
+        pre_transform = lambda data: data_unit_transform(
+            data=data, y_unit=config.label_unit, by_unit=config.blabel_unit,
+            force_unit=config.force_unit, bforce_unit=config.bforce_unit,
+        )
+        transform = lambda data: atom_ref_transform(
+            data=data,
+            atom_sp=get_atomic_energy(config.atom_ref),
+            batom_sp=get_atomic_energy(config.batom_ref)
+        )
+        kwargs = {
+            "mode": mode, "max_size": config.max_mol if mode == "train" else config.vmax_mol,
+            "root": config.data_root, "data_files": config.data_files, "data_name": config.processed_name,
+            "prop_dict": prop_dict, "pbc": config.pbc, "cutoff": config.cutoff,
+            "max_edges": config.max_edges, "mem_process": config.mem_process,
+            "transform": transform, "pre_transform": pre_transform,
+        }
+        if config.dataset_type == "normal":
+            dataset = H5Dataset(**kwargs)
+        elif config.dataset_type == "memory":
+            dataset = H5MemDataset(**kwargs)
+        elif config.dataset_type == "disk":
+            dataset = H5DiskDataset(**kwargs)
+        else:
+            raise ValueError(f"Unknown dataset type: {config.dataset_type}")
+        
+    return dataset
