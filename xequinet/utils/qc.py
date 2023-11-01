@@ -255,7 +255,7 @@ def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
         for atom, energy in atom_sp_dict.items():
             atomic_energy[ELEMENTS_DICT[atom]] = energy
             periodic_table = periodic_table.replace(f"{atom: <2}", "  ")
-        if not periodic_table.strip():  # if not all the elements are included
+        if periodic_table.strip():  # if not all the elements are included
             print(f"The file {sp_file_name} does not contain single point energy for following atoms:")
             print(periodic_table)
             print("If you need these atoms, please regenerate the file or add them manually.")

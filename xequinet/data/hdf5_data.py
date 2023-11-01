@@ -89,7 +89,8 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
             atoms = ase.Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)
             idx_i, idx_j, shifts = ase.neighborlist.neighbor_list("ijS", a=atoms, cutoff=cutoff)
             shifts = torch.Tensor(shifts).to(torch.get_default_dtype())
-            shifts = torch.einsum("ij, kj -> ik", shifts, lattice)
+            if lattice is not None:
+                shifts = torch.einsum("ij, kj -> ik", shifts, lattice)
             edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long)
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, at_filter=at_filter)
             for p_attr, p_name in prop_dict.items():
@@ -117,7 +118,7 @@ class H5Dataset(Dataset):
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
-        self._max_size: int = kwargs.get("max_size", 1e9)
+        self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
         self._mem_process: bool = kwargs.get("mem_process", True)
         self.transform: Callable = kwargs.get("transform", None)
@@ -132,6 +133,7 @@ class H5Dataset(Dataset):
         else:
             raise TypeError("data_files must be a string or iterable of strings")
         
+        self._max_size = int(1e9) if self._max_size is None else self._max_size
         self._prop_dict = prop_dict
         self.data_list = []
         _, self.len_unit = get_default_unit()
@@ -196,7 +198,7 @@ class H5MemDataset(InMemoryDataset):
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
-        self._max_size: int = kwargs.get("max_size", 1e9)
+        self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
         self._mem_process: bool = kwargs.get("mem_process", True)
         self.transform: Callable = kwargs.get("transform", None)
@@ -211,7 +213,8 @@ class H5MemDataset(InMemoryDataset):
         else:
             raise TypeError("data_files must be a string or iterable of strings")
         
-        suffix = f"{self._mode}_{self._max_size}.pt" if "max_size" in kwargs else f"{self._mode}.pt"
+        suffix = f"{self._mode}.pt" if self._max_size is None else f"{self._mode}_{self._max_size}.pt"
+        self._max_size = int(1e9) if self._max_size is None else self._max_size
         self._data_name: str = kwargs.get("data_name", f"{self._raw_files[0].split('.')[0]}")
         self._processed_file = f"{self._data_name}_{suffix}"
         self._prop_dict = prop_dict
@@ -281,7 +284,7 @@ class H5DiskDataset(DiskDataset):
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
-        self._max_size: int = kwargs.get("max_size", 1e9)
+        self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
         self._mem_process: bool = kwargs.get("mem_process", True)
         self.transform: Callable = kwargs.get("transform", None)
@@ -296,7 +299,8 @@ class H5DiskDataset(DiskDataset):
         else:
             raise TypeError("data_files must be a string or iterable of strings")
         
-        suffix = f"{self._mode}_{self._max_size}" if "max_size" in kwargs else f"{self._mode}"
+        suffix = f"{self._mode}" if self._max_size is None else f"{self._mode}_{self._max_size}"
+        self._max_size = int(1e9) if self._max_size is None else self._max_size
         self._data_name: str = kwargs.get("data_name", f"{self._raw_files[0].split('.')[0]}")
         self._processed_folder = f"{self._data_name}_{suffix}"
         self._prop_dict = prop_dict

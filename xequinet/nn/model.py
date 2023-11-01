@@ -11,7 +11,7 @@ from .painn import (
     Embedding, PainnMessage, PainnUpdate,
 )
 from .output import (
-    ScalarOut, NegGradOut, VectorOut, PolarOut,
+    ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut,
     PBCScalarOut,
 )
 from ..utils import NetConfig
@@ -46,6 +46,14 @@ def resolve_output(config: NetConfig):
             edge_irreps=config.edge_irreps,
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
+        )
+    elif config.output_mode == "spatial":
+        return SpatialOut(
+            node_dim=config.node_dim,
+            edge_irreps=config.edge_irreps,
+            hidden_dim=config.hidden_dim,
+            hidden_irreps=config.hidden_irreps,
+            actfn=config.activation,
         )
     else:
         raise NotImplementedError(f"output mode {config.output_mode} is not implemented")
