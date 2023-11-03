@@ -18,7 +18,7 @@ class JitXPaiNN(XPaiNN):
         atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
-        self.prop_unit_conv = unit_conversion(self.prop_unit, "kcal_per_mol")
+        self.prop_unit_conv = unit_conversion(self.prop_unit, "AU")
         self.cutoff = config.cutoff
         self.max_edges = config.max_edges
 
@@ -45,7 +45,7 @@ class JitXPaiNN(XPaiNN):
 class GradJitXPaiNN(JitXPaiNN):
     def __init__(self, config: NetConfig):
         super().__init__(config)
-        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "kcal_per_mol/Angstrom")
+        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "AU")
 
     def forward(
         self,

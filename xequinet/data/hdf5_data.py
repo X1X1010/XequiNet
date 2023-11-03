@@ -459,10 +459,12 @@ def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = 0):
             data=data, y_unit=config.label_unit, by_unit=config.blabel_unit,
             force_unit=config.force_unit, bforce_unit=config.bforce_unit,
         )
+        atom_sp = get_atomic_energy(config.atom_ref)
+        batom_sp = get_atomic_energy(config.batom_ref)
         transform = lambda data: atom_ref_transform(
             data=data,
-            atom_sp=get_atomic_energy(config.atom_ref),
-            batom_sp=get_atomic_energy(config.batom_ref)
+            atom_sp=atom_sp,
+            batom_sp=batom_sp,
         )
         kwargs = {
             "mode": mode, "max_size": config.max_mol if mode == "train" else config.vmax_mol,

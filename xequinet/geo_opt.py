@@ -82,7 +82,6 @@ def main():
                 f.write(f"Energy: {energy:10.10f}\n")
             else:
                 f.write(f"Warning!! Optimization not converged!!\n")
-            f.write(f"\n")
             for at_no, coord in zip(new_mol.atom_charges(), new_mol.atom_coords(unit="Angstrom")):
                 f.write(f"{ELEMENTS_LIST[at_no]} {coord[0]:10.6f} {coord[1]:10.6f} {coord[2]:10.6f}\n")
     
