@@ -1,4 +1,5 @@
 from typing import Optional, Union
+import warnings
 import re
 from pathlib import Path
 
@@ -157,7 +158,9 @@ def gen_atom_sp(atom_ref: str):
             energy = calc.singlepoint().get("energy")
             atom_sp_dict[ELEMENTS_LIST[at_no]] = energy
     else:
-        from pyscf import dft, scf, cc, dh
+        from pyscf import dft, scf, cc
+        if "xyg" in method or "xdh" in method:
+            from pyscf import dh
         method, basis = atom_ref.split("/")
         if "def2" in basis:
             ecp = basis
@@ -172,7 +175,7 @@ def gen_atom_sp(atom_ref: str):
                     mol.ecp = ecp
                 mol.build()
             except:
-                print(f"Unsupported atom {atom} for basis {basis}")
+                warnings.warn(f"Unsupported atom {atom} for basis {basis}")
                 continue
             print(f"Calculating single point of atom {atom}")
             if "xyg" in method or "xdh" in method:
@@ -256,9 +259,10 @@ def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
             atomic_energy[ELEMENTS_DICT[atom]] = energy
             periodic_table = periodic_table.replace(f"{atom: <2}", "  ")
         if periodic_table.strip():  # if not all the elements are included
-            print(f"The file {sp_file_name} does not contain single point energy for following atoms:")
-            print(periodic_table)
-            print("If you need these atoms, please regenerate the file or add them manually.")
+            warning_msg = f"The file {sp_file_name} does not contain single point energy for following atoms:\n"
+            warning_msg += f"{periodic_table.strip()}\n"
+            warning_msg += "If you need these atoms, please regenerate the file or add them manually."
+            warnings.warn(warning_msg)
     
     return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
 
@@ -272,4 +276,4 @@ def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
 
 
 if __name__ == "__main__":
-    gen_int2c1e("gfn2-xtb", "aux28")
+    gen_atom_sp("wb97m-v/def2-tzvppd")

@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 
-from xequinet.data import H5Dataset, data_unit_transform, atom_ref_transform
+from xequinet.data import create_dataset
 from xequinet.nn import resolve_model
 from xequinet.utils import NetConfig, unit_conversion, set_default_unit, get_default_unit, ModelWrapper
 from xequinet.utils.qc import ELEMENTS_LIST
@@ -89,6 +89,10 @@ def main():
         "--force", "-f", action="store_true",
         help="Whether testing force additionally when the output mode is 'scalar'",
     )
+    parser.add_argument(
+        "--no-force", "-nf", action="store_true",
+        help="Whether not testing force when the output mode is 'grad'",
+    )
     args = parser.parse_args()
 
     # set device
@@ -102,29 +106,7 @@ def main():
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
-    # set property read from raw data
-    prop_dict = {}
-    if config.label_name is not None:
-        prop_dict["y"] = config.label_name
-    if config.blabel_name is not None:
-        prop_dict["base_y"] = config.blabel_name
-    if config.force_name is not None:
-        prop_dict["force"] = config.force_name
-    if config.bforce_name is not None:
-        prop_dict["base_force"] = config.bforce_name
-
-    # set unit transform function
-    pre_transform = lambda data: data_unit_transform(
-        data, config.label_unit, config.blabel_unit, config.force_unit, config.bforce_unit,
-    )
-    transform = lambda data: atom_ref_transform(data, config.atom_ref, config.batom_ref)
-    # load dataset
-    test_dataset = H5Dataset(
-        config.data_root, config.data_files, config.processed_name,
-        "test", config.cutoff, config.vmax_mol,
-        config.mem_process, transform, pre_transform,
-        **prop_dict,
-    )
+    test_dataset = create_dataset(config, "test")
     test_loader = DataLoader(
         test_dataset, batch_size=config.vbatch_size, shuffle=False,
         num_workers=config.num_workers, pin_memory=True, drop_last=False,
@@ -134,6 +116,8 @@ def main():
     config.node_mean = 0.0; config.graph_mean = 0.0
     if args.force == True and config.output_mode == "scalar":
         config.output_mode = "grad"
+    if args.no_force == True and config.output_mode == "grad":
+        config.output_mode = "scalar"
     
     # build model
     model = resolve_model(config).to(device)

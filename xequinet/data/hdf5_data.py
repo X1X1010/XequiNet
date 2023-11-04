@@ -441,7 +441,7 @@ def centroid_transform(
     return new_data
 
 
-def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = 0):
+def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = -1):
     with distributed_zero_first(local_rank):
         # set property read from raw data
         prop_dict = {}

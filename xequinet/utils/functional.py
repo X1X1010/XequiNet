@@ -15,7 +15,10 @@ def distributed_zero_first(local_rank: int):
     Reference:
     https://github.com/xuanzhangyang/yolov5/blob/master/utils/torch_utils.py
     """
-    if local_rank not in [-1, 0]:
+    if local_rank == -1:
+        yield
+        return
+    if local_rank == 0:
        dist.barrier(device_ids=[local_rank])
     yield
     if local_rank == 0:
