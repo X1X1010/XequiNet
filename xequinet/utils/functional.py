@@ -9,16 +9,16 @@ import pytorch_warmup as warmup
 
 
 @contextmanager
-def distributed_zero_first(local_rank: int):
+def distributed_zero_first(local_rank: int = None):
     r"""
     Decorator to make all processes in distributed training wait for each local_master to do something.
     Reference:
     https://github.com/xuanzhangyang/yolov5/blob/master/utils/torch_utils.py
     """
-    if local_rank == -1:
+    if local_rank is None:
         yield
         return
-    if local_rank == 0:
+    if local_rank not in [-1, 0]:
        dist.barrier(device_ids=[local_rank])
     yield
     if local_rank == 0:
