@@ -10,8 +10,9 @@ from xequinet.utils import NetConfig, unit_conversion, set_default_unit, get_def
 from xequinet.utils.qc import ELEMENTS_LIST
 
 
-def test_scalar(model, test_loader, device, outfile):
-    sum_loss, num_mol = 0.0, 0
+def test_scalar(model, test_loader, device, outfile, output_dim=1):
+    sum_loss = torch.zeros(output_dim, device=device)
+    num_mol = 0
     with torch.no_grad():
         for data in test_loader:
             data = data.to(device)
@@ -20,7 +21,7 @@ def test_scalar(model, test_loader, device, outfile):
                 pred += data.base_y
             real = data.y
             l1loss = F.l1_loss(pred, real, reduce=False)
-            sum_loss += l1loss.sum().item()
+            sum_loss += l1loss.sum(dim=0)
             num_mol += len(data.y)
             with open(outfile, 'a') as wf:
                 for imol in range(len(data.y)):
@@ -37,7 +38,10 @@ def test_scalar(model, test_loader, device, outfile):
                     wf.write(" ".join([f"{l.item():10.7f}" for l in l1loss[imol]]))
                     wf.write("\n")
     with open(outfile, 'a') as wf:
-        wf.write(f"Test MAE: {sum_loss / num_mol:10.7f}\n")
+        avg_loss = sum_loss / num_mol
+        wf.write("Test MAE: ")
+        wf.write(" ".join([f"{l:10.7f}" for l in avg_loss]))
+        wf.write("\n")
 
 
 def test_grad(model, test_loader, device, outfile):
@@ -72,6 +76,60 @@ def test_grad(model, test_loader, device, outfile):
     with open(outfile, 'a') as wf:
         wf.write(f"Test MAE: Energy {sum_lossE / num_mol:10.7f}  Force {sum_lossF / (3*num_atm):10.7f}\n")
 
+
+def test_vector(model, test_loader, device, outfile):
+    sum_loss = torch.zeros(3, device=device)
+    num_mol = 0
+    with torch.no_grad():
+        for data in test_loader:
+            data = data.to(device)
+            pred = model(data)
+            real = data.y
+            l1loss = F.l1_loss(pred, real, reduce=False)
+            sum_loss += l1loss.sum(dim=0)
+            num_mol += len(data.y)
+            with open(outfile, 'a') as wf:
+                for imol in range(len(data.y)):
+                    idx = (data.batch == imol)
+                    at_no = data.at_no[idx]
+                    coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
+                    for a, c in zip(at_no, coord):
+                        wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
+                    wf.write(f"real: [{real[imol][0].item():10.7f} {real[imol][1].item():10.7f} {real[imol][2].item():10.7f}]  ")
+                    wf.write(f"pred: [{pred[imol][0].item():10.7f} {pred[imol][1].item():10.7f} {pred[imol][2].item():10.7f}]  ")
+                    wf.write(f"loss: [{l1loss[imol][0].item():10.7f} {l1loss[imol][1].item():10.7f} {l1loss[imol][2].item():10.7f}]\n")
+    with open(outfile, 'a') as wf:
+        wf.write(f"Test MAE: {sum_loss.sum() / num_mol / 3 :10.7f}\n")
+
+def test_polar(model, test_loader, device, outfile):
+    sum_loss = torch.zeros((3,3), device=device)
+    num_mol = 0
+    with torch.no_grad():
+        for data in test_loader:
+            data = data.to(device)
+            pred = model(data)
+            real = data.y
+            l1loss = F.l1_loss(pred, real, reduce=False)
+            sum_loss += l1loss.sum(dim=0)
+            num_mol += len(data.y)
+            with open(outfile, 'a') as wf:
+                for imol in range(len(data.y)):
+                    idx = (data.batch == imol)
+                    at_no = data.at_no[idx]
+                    coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
+                    for a, c in zip(at_no, coord):
+                        wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
+                    wf.write(f"real: {real[imol][0,0].item():10.7f} {real[imol][0,1].item():10.7f} {real[imol][0,2].item():10.7f}  ")
+                    wf.write(f"pred: {pred[imol][0,0].item():10.7f} {pred[imol][0,1].item():10.7f} {pred[imol][0,2].item():10.7f}  ")
+                    wf.write(f"loss: {l1loss[imol][0,0].item():10.7f} {l1loss[imol][0,1].item():10.7f} {l1loss[imol][0,2].item():10.7f}]\n")
+                    wf.write(f"      {real[imol][1,0].item():10.7f} {real[imol][1,1].item():10.7f} {real[imol][1,2].item():10.7f}  ")
+                    wf.write(f"      {pred[imol][1,0].item():10.7f} {pred[imol][1,1].item():10.7f} {pred[imol][1,2].item():10.7f}  ")
+                    wf.write(f"      {l1loss[imol][1,0].item():10.7f} {l1loss[imol][1,1].item():10.7f} {l1loss[imol][1,2].item():10.7f}]\n")
+                    wf.write(f"      {real[imol][2,0].item():10.7f} {real[imol][2,1].item():10.7f} {real[imol][2,2].item():10.7f}  ")
+                    wf.write(f"      {pred[imol][2,0].item():10.7f} {pred[imol][2,1].item():10.7f} {pred[imol][2,2].item():10.7f}  ")
+                    wf.write(f"      {l1loss[imol][2,0].item():10.7f} {l1loss[imol][2,1].item():10.7f} {l1loss[imol][2,2].item():10.7f}]\n")
+    with open(outfile, 'a') as wf:
+        wf.write(f"Test MAE: {sum_loss.sum() / num_mol / 9 :10.7f}\n")
 
 
 def main():
@@ -133,8 +191,12 @@ def main():
 
     if config.output_mode == "grad":
         test_grad(ModelWrapper(model, config.pbc), test_loader, device, output_file)
+    elif config.output_mode == "vector" and config.output_dim == 3:
+        test_vector(ModelWrapper(model, config.pbc), test_loader, device, output_file)
+    elif config.output_mode == "polar" and config.output_dim == 9:
+        test_polar(ModelWrapper(model, config.pbc), test_loader, device, output_file)
     else:
-        test_scalar(ModelWrapper(model, config.pbc), test_loader, device, output_file)
+        test_scalar(ModelWrapper(model, config.pbc), test_loader, device, output_file, config.output_dim)
 
 
 if __name__ == "__main__":

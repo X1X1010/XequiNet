@@ -215,7 +215,8 @@ class H5MemDataset(InMemoryDataset):
         
         suffix = f"{self._mode}.pt" if self._max_size is None else f"{self._mode}_{self._max_size}.pt"
         self._max_size = int(1e9) if self._max_size is None else self._max_size
-        self._data_name: str = kwargs.get("data_name", f"{self._raw_files[0].split('.')[0]}")
+        data_name = kwargs.get("data_name", None)
+        self._data_name: str = f"{self._raw_files[0].split('.')[0]}" if data_name is None else data_name
         self._processed_file = f"{self._data_name}_{suffix}"
         self._prop_dict = prop_dict
         _, self.len_unit = get_default_unit()
@@ -301,7 +302,8 @@ class H5DiskDataset(DiskDataset):
         
         suffix = f"{self._mode}" if self._max_size is None else f"{self._mode}_{self._max_size}"
         self._max_size = int(1e9) if self._max_size is None else self._max_size
-        self._data_name: str = kwargs.get("data_name", f"{self._raw_files[0].split('.')[0]}")
+        data_name = kwargs.get("data_name", None)
+        self._data_name: str = f"{self._raw_files[0].split('.')[0]}" if data_name is None else data_name
         self._processed_folder = f"{self._data_name}_{suffix}"
         self._prop_dict = prop_dict
         self._num_data = None
