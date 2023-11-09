@@ -275,5 +275,13 @@ def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
     return centroid
 
 
+def load_basis(basisname, symbol):
+    if (BASIS_FOLDER / f"{basisname}.dat").exists():
+        bf = str(BASIS_FOLDER / f"{basisname}.dat")
+    else:
+        bf = basisname
+    return gto.basis.load(bf, symbol) 
+
+
 if __name__ == "__main__":
     gen_atom_sp("wb97m-v/def2-tzvppd")

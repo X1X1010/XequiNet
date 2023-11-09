@@ -13,6 +13,7 @@ from ..utils import (
     distributed_zero_first,
     NetConfig,
 )
+from ..utils.qc import ELEMENTS_LIST
 
 
 def process_h5(f_h5: h5py.File, mode: str, cutoff: float, max_edges: int, prop_dict: dict):
@@ -100,6 +101,41 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
                         p_val = p_val.unsqueeze(0)
                     p_val = p_val.unsqueeze(0)
                 setattr(data, p_attr, p_val)
+            yield data
+
+
+def process_math5(f_h5:h5py.File, mode:str, cutoff:float, max_edges:int, **kwargs):
+    from torch_cluster import radius_graph
+    from ..utils import Mat2GraphLabel 
+    len_unit = get_default_unit()[1]
+    mat2graph = Mat2GraphLabel(kwargs.get("irreps_out"), kwargs.get("possible_elements"), kwargs.get("basisname"))
+    full_edge_index:bool = kwargs.get("full_edge_index", False)
+    # loop over samples
+    for mol_name in f_h5[mode].keys():
+        mol_grp = f_h5[mode][mol_name]
+        at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
+        if "coordinates_A" in mol_grp.keys():
+            coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Angstrom", len_unit)
+        elif "coordinates_bohr" in mol_grp.keys():
+            coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Bohr", len_unit)
+        else:
+            raise ValueError("Coordinates not found in the hdf5 file.")
+        for icfm, coord in enumerate(coords):
+            edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
+            data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+            matrice_target = torch.from_numpy(
+                mol_grp[kwargs.get("label_name")][()][icfm].copy()
+            ).to(torch.get_default_dtype())
+            atm_symbols = [ELEMENTS_LIST[atm] for atm in at_no]
+            if full_edge_index:
+                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols, edge_index)
+            else:
+                # fully connected 
+                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols)
+            setattr(data, "node_label", mole_node_label)
+            setattr(data, "edge_label", mole_edge_label)
             yield data
 
 

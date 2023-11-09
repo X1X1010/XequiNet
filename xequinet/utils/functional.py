@@ -91,7 +91,7 @@ def resolve_lr_scheduler(
     max_epochs: int = 500,
     steps_per_epoch: int = 1,
     **kwargs,
-) -> lr_scheduler.LRScheduler:
+) -> lr_scheduler._LRScheduler:
     """Helper function to return a learning rate scheduler"""
     sched_type = sched_type.lower()
     if sched_type == "cosine_annealing":

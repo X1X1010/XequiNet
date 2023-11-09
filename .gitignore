@@ -4,6 +4,7 @@ docs
 debug
 experiment
 xequinet/deprecated
+test_case
 */__pycache__
 **/__pycache__
 submission
