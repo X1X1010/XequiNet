@@ -368,8 +368,9 @@ class GradTrainer(Trainer):
             if hasattr(data, "base_y") and hasattr(data, "base_force"):
                 realE -= data.base_y
                 realF -= data.base_force
-            loss = (1 - self.config.force_weight) * self.lossfn(predE, realE) \
-                 + self.config.force_weight * self.lossfn(predF, realF)
+            lossE = self.lossfn(predE, realE)
+            lossF = self.lossfn(predF, realF)
+            loss = (1 - self.config.force_weight) * lossE + self.config.force_weight * lossF
             # backward propagation
             self.optimizer.zero_grad()
             # with torch.autograd.detect_anomaly():

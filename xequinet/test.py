@@ -171,7 +171,6 @@ def main():
     )
     
     # adjust some configurations
-    config.node_mean = 0.0; config.graph_mean = 0.0
     if args.force == True and config.output_mode == "scalar":
         config.output_mode = "grad"
     if args.no_force == True and config.output_mode == "grad":
@@ -179,7 +178,7 @@ def main():
     
     # build model
     model = resolve_model(config).to(device)
-    model.load_state_dict(ckpt["model"])
+    model.load_state_dict(ckpt["model"], strict=False)
     model.eval()
 
     # test

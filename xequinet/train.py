@@ -10,10 +10,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
 from xequinet.nn import resolve_model
-from xequinet.utils import (
-    NetConfig, ZeroLogger,
-    set_default_unit, calculate_stats,
-)
+from xequinet.utils import NetConfig, ZeroLogger, set_default_unit
 from xequinet.data import create_dataset
 
 
@@ -80,23 +77,6 @@ def main():
         valid_dataset, batch_size=config.vbatch_size // world_size, sampler=valid_sampler,
         num_workers=0, pin_memory=True, drop_last=False,
     )
-
-    # calculate element shifts and set to config
-    config.node_mean = 0.0
-    config.graph_mean = 0.0
-    if isinstance(config.add_mean, float):
-        if config.divided_by_atoms:
-            config.node_mean = config.add_mean
-        else:
-            config.graph_mean = config.add_mean
-    elif config.add_mean == True:
-        mean, std = calculate_stats(train_loader, config.divided_by_atoms)
-        log.s.info(f"Mean : {mean:.4f} {config.default_property_unit}")
-        log.s.info(f"Std. : {std:.4f} {config.default_property_unit}")
-        if config.divided_by_atoms:
-            config.node_mean = mean
-        else:
-            config.graph_mean = mean
 
     # -------------------  build model ------------------- #
     # initialize model

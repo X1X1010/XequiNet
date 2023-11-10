@@ -33,8 +33,6 @@ class NetConfig(BaseModel):
     output_dim: int = 1                            # output dimension of multi-task (only for `scalar` mode)
     atom_ref: Union[str, dict] = None              # atomic reference (only for `scalar` mode)
     batom_ref: Union[str, dict] = None             # base atomic reference (only for `scalar` mode)
-    add_mean: Union[bool, float] = False           # whether to add the mean atomic energy to the output (only for `scalar` mode)
-    divided_by_atoms: bool = True                  # whether to be divided by the number of atoms when calculating the mean
     default_length_unit: str = "Angstrom"          # unit of the input coordinates
     default_property_unit: str = "eV"              # unit of the input properties
     default_dtype: str = "float32"                 # default data type

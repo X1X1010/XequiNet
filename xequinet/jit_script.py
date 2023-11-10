@@ -32,7 +32,6 @@ def main():
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
     # adjust some configurations
-    config.node_mean = 0.0; config.graph_mean = 0.0
     if args.force and config.output_mode == "scalar":
         config.output_mode = "grad"
     
