@@ -27,14 +27,14 @@ def predict_scalar(
             pred += atom_sp[data.at_no].sum()
             if base_method in ["PM7", "PM6"]:
                 pred += mopac_calculation(
-                    atomic_numbers=data.at_no.numpy(),
-                    coordinates=data.pos.numpy(),
+                    atomic_numbers=data.at_no.cpu().numpy(),
+                    coordinates=data.pos.cpu().numpy(),
                     method=base_method,
                 )
             elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
                 pred += xtb_calculation(
-                    atomic_numbers=data.at_no.numpy(),
-                    coordinates=data.pos.numpy(),
+                    atomic_numbers=data.at_no.cpu().numpy(),
+                    coordinates=data.pos.cpu().numpy(),
                     method=base_method,
                 )
             pred *= unit_conversion(get_default_unit()[0], "AU")
@@ -61,16 +61,16 @@ def predict_grad(
         predE += atom_sp[data.at_no].sum()
         if base_method in ["pm7", "pm6"]:
             baseE, baseF = mopac_calculation(
-                atomic_numbers=data.at_no.numpy(),
-                coordinates=data.pos.numpy(),
+                atomic_numbers=data.at_no.cpu().numpy(),
+                coordinates=data.pos.cpu().numpy(),
                 method=base_method,
                 calc_force=True,
             )
             predE += baseE; predF += baseF
         elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
             baseE, baseF = xtb_calculation(
-                atomic_numbers=data.at_no.numpy(),
-                coordinates=data.pos.numpy(),
+                atomic_numbers=data.at_no.cpu().numpy(),
+                coordinates=data.pos.cpu().numpy(),
                 method=base_method,
                 calc_force=True,
             )

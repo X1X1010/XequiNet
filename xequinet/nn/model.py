@@ -241,6 +241,8 @@ class PaiNN(nn.Module):
 
 
 def resolve_model(config: NetConfig) -> nn.Module:
+    if hasattr(config, "original") and config.original:
+        return PaiNN(config)
     if config.pbc:
         return PBCPaiNN(config)
     else:

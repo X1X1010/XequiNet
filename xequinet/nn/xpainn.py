@@ -36,11 +36,10 @@ class XEmbedding(nn.Module):
         super().__init__()
         self.node_dim = node_dim
         self.edge_irreps = o3.Irreps(edge_irreps)
+        self.edge_num_irreps = self.edge_irreps.num_irreps
         # self.embedding = nn.Embedding(100, self.node_dim)
         self.int2c1e = Int2c1eEmbedding(embed_basis, aux_basis)
-        self.embed_dim = self.int2c1e.embed_dim
-        self.edge_num_irreps = self.edge_irreps.num_irreps
-        self.node_lin = nn.Linear(self.embed_dim, self.node_dim)
+        self.node_lin = nn.Linear(self.int2c1e.embed_dim, self.node_dim)
         nn.init.zeros_(self.node_lin.bias)
         self.sph_harm = o3.SphericalHarmonics(self.edge_irreps, normalize=True, normalization="component")
         self.rbf = resolve_rbf(rbf_kernel, num_basis, cutoff)
@@ -69,7 +68,7 @@ class XEmbedding(nn.Module):
         vec = pos[edge_index[0]] - pos[edge_index[1]]
         dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
         # node linear
-        # x = self.embedding(at_no)
+        # x_scalar = self.embedding(at_no)
         x = self.int2c1e(at_no)
         x_scalar = self.node_lin(x)
         # calculate radial basis function
