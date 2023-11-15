@@ -181,7 +181,7 @@ class Trainer:
             "optimizer": self.optimizer.state_dict(),
             "lr_scheduler": self.lr_scheduler.state_dict(),
             "warmup_scheduler": self.warmup_scheduler.state_dict(),
-            "config": self.config.dict(),
+            "config": self.config.model_hyper_params(),
         }
         torch.save(state, ckpt_file)
 

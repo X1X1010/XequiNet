@@ -18,9 +18,9 @@ class NetConfig(BaseModel):
     embed_basis: str = "gfn2-xtb"                  # embedding basis type
     aux_basis: str = "aux56"                       # auxiliary basis type
     node_dim: int = 128                            # node irreps for the input
-    edge_irreps: str = "128x0e + 64x1e + 32x2e"    # edge irreps for the input
+    edge_irreps: str = "128x0e + 64x1o + 32x2e"    # edge irreps for the input
     hidden_dim: int = 64                           # hidden dimension for the output
-    hidden_irreps: str = "64x0e + 32x1e + 16x2e"   # hidden irreps for the output
+    hidden_irreps: str = "64x0e + 32x1o + 16x2e"   # hidden irreps for the output
     rbf_kernel: str = "bessel"                     # radial basis function type
     num_basis: int = 20                            # number of the radial basis functions
     cutoff: float = 5.0                            # cutoff distance for the neighbor atoms
@@ -33,6 +33,7 @@ class NetConfig(BaseModel):
     output_dim: int = 1                            # output dimension of multi-task (only for `scalar` mode)
     atom_ref: Union[str, dict] = None              # atomic reference (only for `scalar` mode)
     batom_ref: Union[str, dict] = None             # base atomic reference (only for `scalar` mode)
+    node_average: Union[bool, float] = False       # whether to add the node average to the output (only for `scalar` mode)
     default_length_unit: str = "Angstrom"          # unit of the input coordinates
     default_property_unit: str = "eV"              # unit of the input properties
     default_dtype: str = "float32"                 # default data type
@@ -65,7 +66,7 @@ class NetConfig(BaseModel):
     max_lr: float = 5e-4                           # maximum learning rate
     min_lr: float = 0.0                            # minimum learning rate
     lossfn: str = "smoothl1"                       # loss function type
-    force_weight: float = 100.0                    # weight of the force loss
+    force_weight: float = 0.99                     # weight of the force loss
     grad_clip: float = None                        # gradient clip
     optimizer: str = "adamW"                       # optimizer type
     optim_kwargs: dict = {}                        # kwargs for the optimizer
@@ -89,7 +90,7 @@ class NetConfig(BaseModel):
             "pbc", "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
             "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "max_edges", "action_blocks",
             "activation", "norm_type", "output_mode", "output_dim",
-            "atom_ref", "batom_ref", "default_property_unit", "default_length_unit",
+            "atom_ref", "batom_ref", "node_average", "default_property_unit", "default_length_unit",
             "default_dtype",
         })
         return hyper_params

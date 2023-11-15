@@ -15,7 +15,7 @@ class XEmbedding(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         embed_basis: str = "gfn2-xtb",
         aux_basis: str = "aux56",
         num_basis: int = 20,
@@ -85,7 +85,7 @@ class XPainnMessage(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         num_basis: int = 20,
         actfn: str = "silu",
         norm_type: str = "layer",
@@ -168,7 +168,7 @@ class XPainnUpdate(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         actfn: str = "silu",
         norm_type: str = "layer",
     ):
@@ -242,7 +242,7 @@ class PBCEmbedding(XEmbedding):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         embed_basis: str = "gfn2-xtb",
         aux_basis: str = "aux56",
         num_basis: int = 20,

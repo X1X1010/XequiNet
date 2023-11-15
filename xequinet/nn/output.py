@@ -17,6 +17,7 @@ class ScalarOut(nn.Module):
         hidden_dim: int = 64,
         out_dim: int = 1,
         actfn: str = "silu",
+        node_bias: float = 0.0,
     ):
         """
         Args:
@@ -24,7 +25,6 @@ class ScalarOut(nn.Module):
             `out_dim`: Output dimension.
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
-            `graph_bias`: Bias for graphic output.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -36,7 +36,7 @@ class ScalarOut(nn.Module):
             nn.Linear(self.hidden_dim, self.out_dim),
         )
         nn.init.zeros_(self.out_mlp[0].bias)
-        nn.init.zeros_(self.out_mlp[2].bias)
+        nn.init.constant_(self.out_mlp[2].bias, node_bias)
     
     def forward(
         self,
@@ -66,13 +66,13 @@ class NegGradOut(nn.Module):
         node_dim: int = 128,
         hidden_dim: int = 64,
         actfn: str = "silu",
+        node_bias: float = 0.0,
     ):
         """
         Args:
             `node_dim`: Node dimension.
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
-            `graph_bias`: Bias for graphic output.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -83,7 +83,7 @@ class NegGradOut(nn.Module):
             nn.Linear(self.hidden_dim, 1),
         )
         nn.init.zeros_(self.out_mlp[0].bias)
-        nn.init.zeros_(self.out_mlp[2].bias)
+        nn.init.constant_(self.out_mlp[2].bias, node_bias)
 
     def forward(
         self,
@@ -121,9 +121,9 @@ class VectorOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
-        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
+        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1o",
         output_dim: int = 3,
         actfn: str = "silu",
     ):
@@ -151,7 +151,7 @@ class VectorOut(nn.Module):
         self.spherical_out_mlp = nn.Sequential(
             o3.Linear(self.edge_irreps, self.hidden_irreps),
             Gate(self.hidden_irreps),
-            o3.Linear(self.hidden_irreps, "1x1e"),
+            o3.Linear(self.hidden_irreps, "1x1o"),
         )
         if output_dim != 3 and output_dim != 1:
             raise ValueError(f"output dimension must be either 1 or 3, but got {output_dim}")
@@ -186,9 +186,9 @@ class PolarOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
-        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
+        hidden_irreps: Union[str, o3.Irreps, Iterable] = "64x0e + 16x2e",
         output_dim: int = 9,
         actfn: str = "silu",
     ):
@@ -272,9 +272,9 @@ class SpatialOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1e + 32x2e",
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
-        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1e",
+        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1o",
         actfn: str = "silu",
     ):
         """
@@ -300,7 +300,7 @@ class SpatialOut(nn.Module):
         self.spherical_out_mlp = nn.Sequential(
             o3.Linear(self.edge_irreps, self.hidden_irreps),
             Gate(self.hidden_irreps),
-            o3.Linear(self.hidden_irreps, "1x1e"),
+            o3.Linear(self.hidden_irreps, "1x1o"),
         )
 
     def forward(
@@ -333,8 +333,9 @@ class PBCScalarOut(ScalarOut):
         hidden_dim: int = 64,
         out_dim: int = 1,
         actfn: str = "silu",
+        node_bias: float = 0.0,
     ):
-        super().__init__(node_dim, hidden_dim, out_dim, actfn)
+        super().__init__(node_dim, hidden_dim, out_dim, actfn, node_bias)
 
     def forward(
         self,
@@ -355,7 +356,7 @@ class PBCScalarOut(ScalarOut):
         Returns:
             `res`: Scalar output.
         """
-        atom_out = self.out_mlp(x_scalar[at_filter])
+        atom_out = self.out_mlp(x_scalar[at_filter]) + self.node_bias
         res = scatter(atom_out, batch_index[at_filter], dim=0)
         return res
 
@@ -367,9 +368,8 @@ class PBCNegGradOut(NegGradOut):
         hidden_dim: int = 64,
         actfn: str = "silu",
         node_bias: float = 0.0,
-        graph_bias: float = 0.0,
     ):
-        super().__init__(node_dim, hidden_dim, actfn, node_bias, graph_bias)
+        super().__init__(node_dim, hidden_dim, actfn, node_bias)
 
     def forward(
         self,
@@ -391,7 +391,7 @@ class PBCNegGradOut(NegGradOut):
             `res`: Scalar output.
             `neg_grad`: Negative gradient.
         """
-        atom_out = self.out_mlp(x_scalar[at_filter])
+        atom_out = self.out_mlp(x_scalar[at_filter]) + self.node_bias
         res = scatter(atom_out, batch_index[at_filter], dim=0)
         grad = torch.autograd.grad(
             [atom_out.sum(),],

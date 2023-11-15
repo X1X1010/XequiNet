@@ -10,7 +10,10 @@ from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
 from xequinet.nn import resolve_model
-from xequinet.utils import NetConfig, ZeroLogger, set_default_unit
+from xequinet.utils import (
+    NetConfig, ZeroLogger, set_default_unit,
+    calculate_stats, distributed_zero_first,
+)
 from xequinet.data import create_dataset
 
 
@@ -77,6 +80,17 @@ def main():
         valid_dataset, batch_size=config.vbatch_size // world_size, sampler=valid_sampler,
         num_workers=0, pin_memory=True, drop_last=False,
     )
+
+    # calculate the mean and std of the training dataset
+    with distributed_zero_first(local_rank):
+        if isinstance(config.node_average, bool):
+            if config.node_average:
+                mean, std = calculate_stats(train_loader)
+                log.s.info(f"Mean: {mean:4.2f} {config.default_property_unit}")
+                log.s.info(f"Std : {std:4.2f} {config.default_property_unit}")
+                config.node_average = mean
+            else:
+                config.node_average = 0.0
 
     # -------------------  build model ------------------- #
     # initialize model
