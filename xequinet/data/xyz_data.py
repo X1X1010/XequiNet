@@ -3,7 +3,6 @@ from typing import Optional, Callable
 import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
-from torch_cluster import radius_graph
 
 from ..utils import get_default_unit, unit_conversion
 from ..utils.qc import ELEMENTS_DICT
@@ -35,7 +34,6 @@ class XYZDataset(Dataset):
         xyz_file: str,
         cutoff: float = 5.0,
         max_size: Optional[int] = None,
-        max_edges: Optional[int] = None,
         transform: Optional[Callable] = None,
     ):
         """
@@ -53,7 +51,6 @@ class XYZDataset(Dataset):
         self.data_list = []
         _, self.len_unit = get_default_unit()
         self._cutoff = cutoff * unit_conversion("Angstrom", self.len_unit)
-        self._max_edges = max_edges if max_edges is not None else 100
         self.process()
 
     def process(self):
@@ -75,8 +72,7 @@ class XYZDataset(Dataset):
                 at_no = torch.LongTensor(at_no)
                 coord = torch.Tensor(coord).to(torch.get_default_dtype())
                 coord *= unit_conversion("Angstrom", self.len_unit)
-                edge_index = radius_graph(coord, r=self._cutoff, max_num_neighbors=self._max_edges)
-                data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+                data = Data(at_no=at_no, pos=coord)
                 self.data_list.append(data)
                 ct += 1
                 # break if max_size is reached
