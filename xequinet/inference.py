@@ -1,7 +1,6 @@
 import argparse
 
 import torch
-from torch_scatter import scatter
 from torch_cluster import radius_graph
 from torch_geometric.loader import DataLoader
 
@@ -32,28 +31,29 @@ def predict_scalar(
         for data in dataloader:
             data = data.to(device)
             data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
-            pred = model(data).double()
-            pred += scatter(atom_sp[data.at_no], data.batch, dim=0)
-            if base_method in ["PM7", "PM6"]:
-                pred += mopac_calculation(
-                    atomic_numbers=data.at_no.cpu().numpy(),
-                    coordinates=data.pos.cpu().numpy(),
-                    method=base_method,
-                )
-            elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
-                pred += xtb_calculation(
-                    atomic_numbers=data.at_no.cpu().numpy(),
-                    coordinates=data.pos.cpu().numpy(),
-                    method=base_method,
-                )
-            pred *= unit_conversion(get_default_unit()[0], "AU")
-            with open(output_file, 'a') as wf:
-                for i in range(len(data)):
-                    coord = data.pos[data.batch == i]
-                    for a, c in zip(data.at_no, coord):
+            pred = model(data).double().index_add(0, data.batch, atom_sp[data.at_no])
+            for i in range(len(data)):
+                at_no = data.at_no[data.batch == i]
+                coord = data.pos[data.batch == i]
+                scalar = pred[i]
+                if base_method in ["pm7", "pm6"]:
+                    scalar += mopac_calculation(
+                        atomic_numbers=at_no.cpu().numpy(),
+                        coordinates=coord.cpu().numpy(),
+                        method=base_method,
+                    )
+                elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
+                    scalar += xtb_calculation(
+                        atomic_numbers=at_no.cpu().numpy(),
+                        coordinates=coord.cpu().numpy(),
+                        method=base_method,
+                    )
+                scalar *= unit_conversion(get_default_unit()[0], "AU")
+                with open(output_file, 'a') as wf:
+                    for a, c in zip(at_no, coord):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
                     wf.write("target property:")
-                    for prop in pred[i]:
+                    for prop in scalar:
                         wf.write(f"  {prop.item():10.7f}")
                     wf.write("\n")
 
@@ -73,34 +73,35 @@ def predict_grad(
         data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
         data.pos.requires_grad = True
         predE, predF = model(data)
-        predE = predE.double()
-        predE += scatter(atom_sp[data.at_no], data.batch, dim=0)
-        if base_method in ["pm7", "pm6"]:
-            baseE, baseF = mopac_calculation(
-                atomic_numbers=data.at_no.cpu().numpy(),
-                coordinates=data.pos.cpu().numpy(),
-                method=base_method,
-                calc_force=True,
-            )
-            predE += baseE; predF += baseF
-        elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
-            baseE, baseF = xtb_calculation(
-                atomic_numbers=data.at_no.cpu().numpy(),
-                coordinates=data.pos.cpu().numpy(),
-                method=base_method,
-                calc_force=True,
-            )
-            predE += baseE; predF += baseF
-        predE *= unit_conversion(get_default_unit()[0], "AU")
-        predF *= unit_conversion(f"{get_default_unit()[0]}/{get_default_unit()[1]}", "AU")
-        with open(output_file, 'a') as wf:
-            for i in range(len(data)):
-                coord = data.pos[data.batch == i]
-                force = predF[data.batch == i]
-                for a, c, f in zip(data.at_no, coord, force):
+        predE = predE.double().index_add(0, data.batch, atom_sp[data.at_no])
+        for i in range(len(data)):
+            at_no = data.at_no[data.batch == i]
+            coord = data.pos[data.batch == i]
+            energy = predE[i]
+            force = predF[data.batch == i]
+            if base_method in ["pm7", "pm6"]:
+                baseE, baseF = mopac_calculation(
+                    atomic_numbers=at_no.cpu().numpy(),
+                    coordinates=coord.cpu().numpy(),
+                    method=base_method,
+                    calc_force=True,
+                )
+                energy += baseE; force += baseF
+            elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
+                baseE, baseF = xtb_calculation(
+                    atomic_numbers=at_no.cpu().numpy(),
+                    coordinates=coord.cpu().numpy(),
+                    method=base_method,
+                    calc_force=True,
+                )
+                energy += baseE; force += baseF
+            energy *= unit_conversion(get_default_unit()[0], "AU")
+            force *= unit_conversion(f"{get_default_unit()[0]}/{get_default_unit()[1]}", "AU")
+            with open(output_file, 'a') as wf:
+                for a, c, f in zip(at_no, coord, force):
                     wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}")
                     wf.write(f" {f[0].item():10.7f} {f[1].item():10.7f} {f[2].item():10.7f}\n")
-                wf.write(f"Energy: {predE[i].item():10.7f}\n")
+                wf.write(f"Energy: {energy.item():10.7f}\n")
 
 
 def predict_vector(
@@ -119,9 +120,10 @@ def predict_vector(
             pred *= unit_conversion(get_default_unit()[0], "AU")
             with open(output_file, 'a') as wf:
                 for i in range(len(data)):
+                    at_no = data.at_no[data.batch == i]
                     coord = data.pos[data.batch == i]
                     vector = pred[i]
-                    for a, c in zip(data.at_no, coord):
+                    for a, c in zip(at_no, coord):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
                     wf.write("vector property:")
                     wf.write(f"    X  {vector[0].item():10.7f}  Y  {vector[1].item():10.7f}  Z  {vector[2].item():10.7f}\n")
@@ -143,9 +145,10 @@ def predict_polar(
             pred *= unit_conversion(get_default_unit()[0], "AU")
             with open(output_file, 'a') as wf:
                 for i in range(len(data)):
+                    at_no = data.at_no[data.batch == i]
                     coord = data.pos[data.batch == i]
                     polar = pred[i]
-                    for a, c in zip(data.at_no, coord):
+                    for a, c in zip(at_no, coord):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
                     wf.write("polar property:")
                     wf.write(f"    XX  {polar[0,0].item():10.7f}  XY  {polar[0,1].item():10.7f}  XZ  {polar[0,2].item():10.7f}\n")
@@ -175,7 +178,7 @@ def main():
         help="Whether not testing force when the output mode is 'grad'",
     )
     parser.add_argument(
-        "--base-method", "-bm", type=str, default=None, choices=["pm7", "gfn2-xtb"],
+        "--base-method", "-bm", type=str, default=None,
         help="Base semiempirical method for delta learning."
     )
     parser.add_argument(

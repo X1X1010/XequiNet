@@ -25,9 +25,8 @@ def test_scalar(model, test_loader, device, outfile, output_dim=1):
             num_mol += len(data.y)
             with open(outfile, 'a') as wf:
                 for imol in range(len(data.y)):
-                    idx = (data.batch == imol)
-                    at_no = data.at_no[idx]
-                    coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
+                    at_no = data.at_no[data.batch == imol]
+                    coord = data.pos[data.batch == imol] * unit_conversion(get_default_unit()[1], "Angstrom")
                     for a, c in zip(at_no, coord):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
                     wf.write("real: ")
@@ -90,9 +89,8 @@ def test_vector(model, test_loader, device, outfile):
             num_mol += len(data.y)
             with open(outfile, 'a') as wf:
                 for imol in range(len(data.y)):
-                    idx = (data.batch == imol)
-                    at_no = data.at_no[idx]
-                    coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
+                    at_no = data.at_no[data.batch == imol]
+                    coord = data.pos[data.batch == imol] * unit_conversion(get_default_unit()[1], "Angstrom")
                     for a, c in zip(at_no, coord):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
                     wf.write(f"real: [{real[imol][0].item():10.7f} {real[imol][1].item():10.7f} {real[imol][2].item():10.7f}]  ")
@@ -114,20 +112,19 @@ def test_polar(model, test_loader, device, outfile):
             num_mol += len(data.y)
             with open(outfile, 'a') as wf:
                 for imol in range(len(data.y)):
-                    idx = (data.batch == imol)
-                    at_no = data.at_no[idx]
-                    coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
+                    at_no = data.at_no[data.batch == imol]
+                    coord = data.pos[data.batch == imol] * unit_conversion(get_default_unit()[1], "Angstrom")
                     for a, c in zip(at_no, coord):
                         wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
                     wf.write(f"real: {real[imol][0,0].item():10.7f} {real[imol][0,1].item():10.7f} {real[imol][0,2].item():10.7f}  ")
                     wf.write(f"pred: {pred[imol][0,0].item():10.7f} {pred[imol][0,1].item():10.7f} {pred[imol][0,2].item():10.7f}  ")
-                    wf.write(f"loss: {l1loss[imol][0,0].item():10.7f} {l1loss[imol][0,1].item():10.7f} {l1loss[imol][0,2].item():10.7f}]\n")
+                    wf.write(f"loss: {l1loss[imol][0,0].item():10.7f} {l1loss[imol][0,1].item():10.7f} {l1loss[imol][0,2].item():10.7f}\n")
                     wf.write(f"      {real[imol][1,0].item():10.7f} {real[imol][1,1].item():10.7f} {real[imol][1,2].item():10.7f}  ")
                     wf.write(f"      {pred[imol][1,0].item():10.7f} {pred[imol][1,1].item():10.7f} {pred[imol][1,2].item():10.7f}  ")
-                    wf.write(f"      {l1loss[imol][1,0].item():10.7f} {l1loss[imol][1,1].item():10.7f} {l1loss[imol][1,2].item():10.7f}]\n")
+                    wf.write(f"      {l1loss[imol][1,0].item():10.7f} {l1loss[imol][1,1].item():10.7f} {l1loss[imol][1,2].item():10.7f}\n")
                     wf.write(f"      {real[imol][2,0].item():10.7f} {real[imol][2,1].item():10.7f} {real[imol][2,2].item():10.7f}  ")
                     wf.write(f"      {pred[imol][2,0].item():10.7f} {pred[imol][2,1].item():10.7f} {pred[imol][2,2].item():10.7f}  ")
-                    wf.write(f"      {l1loss[imol][2,0].item():10.7f} {l1loss[imol][2,1].item():10.7f} {l1loss[imol][2,2].item():10.7f}]\n")
+                    wf.write(f"      {l1loss[imol][2,0].item():10.7f} {l1loss[imol][2,1].item():10.7f} {l1loss[imol][2,2].item():10.7f}\n")
     with open(outfile, 'a') as wf:
         wf.write(f"Test MAE: {sum_loss.sum() / num_mol / 9 :10.7f}\n")
 
