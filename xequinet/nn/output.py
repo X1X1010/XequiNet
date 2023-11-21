@@ -272,24 +272,18 @@ class SpatialOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
-        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1o",
         actfn: str = "silu",
     ):
         """
         Args:
             `node_dim`: Node dimension.
-            `edge_irreps`: Edge irreps.
             `hidden_dim`: Hidden dimension.
-            `hidden_irreps`: Hidden irreps.
             `actfn`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
-        self.edge_irreps = o3.Irreps(edge_irreps)
         self.hidden_dim = hidden_dim
-        self.hidden_irreps = o3.Irreps(hidden_irreps)
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
@@ -297,11 +291,6 @@ class SpatialOut(nn.Module):
         )
         nn.init.zeros_(self.scalar_out_mlp[0].bias)
         nn.init.zeros_(self.scalar_out_mlp[2].bias)
-        self.spherical_out_mlp = nn.Sequential(
-            o3.Linear(self.edge_irreps, self.hidden_irreps),
-            Gate(self.hidden_irreps),
-            o3.Linear(self.hidden_irreps, "1x1o"),
-        )
 
     def forward(
         self,
@@ -319,10 +308,9 @@ class SpatialOut(nn.Module):
         Returns:
             `res`: Spatial output.
         """
-        spherical_out = self.spherical_out_mlp(x_spherical)
         scalar_out = self.scalar_out_mlp(x_scalar)
-        atom_out = torch.square(spherical_out).sum(dim=1) * scalar_out
-        res = scatter(atom_out, batch_index, dim=0)
+        spatial = torch.square(coord).sum(dim=1, keepdim=True)
+        res = scatter(scalar_out * spatial, batch_index, dim=0)
         return res
 
 

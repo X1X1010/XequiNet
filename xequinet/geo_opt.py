@@ -7,9 +7,10 @@ from pyscf import gto
 from pyscf.geomopt import geometric_solver, as_pyscf_method
 
 from xequinet.utils.qc import ELEMENTS_LIST
+import tblite.interface as xtb
 
 
-def read_xyz(xyz_file):
+def read_xyz(xyz_file: str) -> str:
     with open(xyz_file, 'r') as f:
         mol_tokens = []
         while True:
@@ -25,14 +26,29 @@ def read_xyz(xyz_file):
     return mol_tokens
 
 
-def xeq_method(mol, model, device):
+def xeq_method(mol: gto.Mole, model: torch.nn.Module, device: torch.device, base_method: str = None) -> tuple:
     """Xequinet method for energy and gradient calculation."""
     at_no = torch.tensor(mol.atom_charges(), dtype=torch.long, device=device)
     coord = torch.tensor(mol.atom_coords(unit="Angstrom"), dtype=torch.get_default_dtype(), device=device)
     coord.requires_grad = True
     batch = torch.zeros_like(at_no, dtype=torch.long, device=device)
     energy, force = model(at_no, coord, batch)
-    return energy.item(), -force.detach().cpu().numpy()
+    energy = energy.item()
+    force = force.detach().cpu().numpy()
+    if base_method is not None:
+        m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
+        calc = xtb.Calculator(
+            method=m_dict[base_method.lower()],
+            numbers=mol.atom_charges(),
+            positions=mol.atom_coords(unit="Bohr"),
+            charge=mol.charge,
+            uhf=mol.spin,
+        )
+        res = calc.singlepoint()
+        energy += res.get("energy")
+        force -= res.get("gradient")
+
+    return energy, -force
     
 
 def main():
@@ -43,7 +59,7 @@ def main():
         help="Path to the checkpoint file. (XXX.jit)",
     )
     parser.add_argument(
-        "--base-method", "-bm", type=str, default=None, choices=["pm7", "gfn2-xtb"],
+        "--base-method", "-bm", type=str, default=None,
         help="Base method for energy and force calculation.",
     )
     parser.add_argument(
@@ -70,7 +86,7 @@ def main():
             atom=mol_token,
             unit="Angstrom",
         )
-        fake_method = as_pyscf_method(mol, lambda mol: xeq_method(mol, model, device))
+        fake_method = as_pyscf_method(mol, lambda mol: xeq_method(mol, model, device, args.base_method))
         conv, new_mol = geometric_solver.kernel(fake_method, maxsteps=args.max_steps)
         
         # write optimized geometry
@@ -78,7 +94,7 @@ def main():
         with open(wfile, 'a') as f:
             f.write(f"{mol.natm}\n")
             if conv:
-                energy, _ = xeq_method(mol, model, device)
+                energy, _ = xeq_method(mol, model, device, args.base_method)
                 f.write(f"Energy: {energy:10.10f}\n")
             else:
                 f.write(f"Warning!! Optimization not converged!!\n")

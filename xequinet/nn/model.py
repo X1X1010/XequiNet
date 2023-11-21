@@ -48,9 +48,7 @@ def resolve_output(config: NetConfig):
     elif config.output_mode == "spatial":
         return SpatialOut(
             node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
             hidden_dim=config.hidden_dim,
-            hidden_irreps=config.hidden_irreps,
             actfn=config.activation,
         )
     else:
