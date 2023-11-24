@@ -94,7 +94,7 @@ def main():
         with open(wfile, 'a') as f:
             f.write(f"{mol.natm}\n")
             if conv:
-                energy, _ = xeq_method(mol, model, device, args.base_method)
+                energy, _ = xeq_method(new_mol, model, device, args.base_method)
                 f.write(f"Energy: {energy:10.10f}\n")
             else:
                 f.write(f"Warning!! Optimization not converged!!\n")

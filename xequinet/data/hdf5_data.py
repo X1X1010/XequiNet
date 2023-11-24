@@ -464,7 +464,7 @@ def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = Non
         atom_sp = get_atomic_energy(config.atom_ref)
         batom_sp = get_atomic_energy(config.batom_ref)
         transform = lambda data: atom_ref_transform(
-            data=centroid_transform(data),
+            data=data,
             atom_sp=atom_sp,
             batom_sp=batom_sp,
         )
