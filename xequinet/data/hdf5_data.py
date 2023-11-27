@@ -118,7 +118,6 @@ class H5Dataset(Dataset):
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
-        self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
         self._mem_process: bool = kwargs.get("mem_process", True)
         self.transform: Callable = kwargs.get("transform", None)
@@ -133,14 +132,12 @@ class H5Dataset(Dataset):
         else:
             raise TypeError("data_files must be a string or iterable of strings")
         
-        self._max_size = int(1e9) if self._max_size is None else self._max_size
         self._prop_dict = prop_dict
         self.data_list = []
         _, self.len_unit = get_default_unit()
         self.process()
 
     def process(self):
-        ct = 0  # count of data
         for raw_path in self._raw_paths:
             # read by memory io-buffer or by disk directly
             if self._mem_process:
@@ -163,16 +160,10 @@ class H5Dataset(Dataset):
                 if self.pre_transform is not None:
                     data = self.pre_transform(data)
                 self.data_list.append(data)
-                ct += 1
-                # break if max size is reached
-                if ct >= self._max_size:
-                    break
             # close the file
             if self._mem_process:
                 f_disk.close(); io_mem.close()
             f_h5.close()
-            if ct >= self._max_size:
-                break
 
     def __len__(self):
         return len(self.data_list)
@@ -198,7 +189,6 @@ class H5MemDataset(InMemoryDataset):
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
-        self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
         self._mem_process: bool = kwargs.get("mem_process", True)
         self.transform: Callable = kwargs.get("transform", None)
@@ -213,11 +203,9 @@ class H5MemDataset(InMemoryDataset):
         else:
             raise TypeError("data_files must be a string or iterable of strings")
         
-        suffix = f"{self._mode}.pt" if self._max_size is None else f"{self._mode}_{self._max_size}.pt"
-        self._max_size = int(1e9) if self._max_size is None else self._max_size
         data_name = kwargs.get("data_name", None)
         self._data_name: str = f"{self._raw_files[0].split('.')[0]}" if data_name is None else data_name
-        self._processed_file = f"{self._data_name}_{suffix}"
+        self._processed_file = f"{self._data_name}_{self._mode}.pt"
         self._prop_dict = prop_dict
         _, self.len_unit = get_default_unit()
         super().__init__(root, transform=self.transform, pre_transform=self.pre_transform)
@@ -233,7 +221,6 @@ class H5MemDataset(InMemoryDataset):
 
     def process(self):
         data_list = []
-        ct = 0  # count of data
         for raw_path in self.raw_paths:
             # read by memory io-buffer or by disk directly
             if self._mem_process:
@@ -254,16 +241,10 @@ class H5MemDataset(InMemoryDataset):
                 data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
             for data in data_iter:
                 data_list.append(data)
-                ct += 1
-                # break if max_size is reached
-                if ct >= self._max_size:
-                    break
             # close the file
             if self._mem_process:
                 f_disk.close(); io_mem.close()
             f_h5.close()
-            if ct >= self._max_size:
-                break
         if self.pre_transform is not None:
             data_list = [self.pre_transform(data) for data in data_list]
         # save the processed data
@@ -285,7 +266,6 @@ class H5DiskDataset(DiskDataset):
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
-        self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
         self._mem_process: bool = kwargs.get("mem_process", True)
         self.transform: Callable = kwargs.get("transform", None)
@@ -300,11 +280,9 @@ class H5DiskDataset(DiskDataset):
         else:
             raise TypeError("data_files must be a string or iterable of strings")
         
-        suffix = f"{self._mode}" if self._max_size is None else f"{self._mode}_{self._max_size}"
-        self._max_size = int(1e9) if self._max_size is None else self._max_size
         data_name = kwargs.get("data_name", None)
         self._data_name: str = f"{self._raw_files[0].split('.')[0]}" if data_name is None else data_name
-        self._processed_folder = f"{self._data_name}_{suffix}"
+        self._processed_folder = f"{self._data_name}_{self._mode}"
         self._prop_dict = prop_dict
         self._num_data = None
         _, self.len_unit = get_default_unit()
@@ -346,15 +324,10 @@ class H5DiskDataset(DiskDataset):
                 os.makedirs(os.path.join(data_dir, f"{idx // 10000:04d}"), exist_ok=True)
                 torch.save(data, os.path.join(data_dir, f"{idx // 10000:04d}", f"{idx:08d}.pt"))
                 idx += 1
-                # break if max_size is reached
-                if idx >= self._max_size:
-                    break
             # close hdf5 file
             if self._mem_process:
                 f_disk.close(); io_mem.close()
             f_h5.close()
-            if idx >= self._max_size:
-                break
         self._num_data = idx
     
     def len(self):
@@ -469,9 +442,9 @@ def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = Non
             batom_sp=batom_sp,
         )
         kwargs = {
-            "mode": mode, "max_size": config.max_mol if mode == "train" else config.vmax_mol,
-            "root": config.data_root, "data_files": config.data_files, "data_name": config.processed_name,
-            "prop_dict": prop_dict, "pbc": config.pbc, "cutoff": config.cutoff,
+            "mode": mode, "root": config.data_root, "data_files": config.data_files,
+            "data_name": config.processed_name, "prop_dict": prop_dict,
+            "pbc": config.pbc, "cutoff": config.cutoff,
             "max_edges": config.max_edges, "mem_process": config.mem_process,
             "transform": transform, "pre_transform": pre_transform,
         }

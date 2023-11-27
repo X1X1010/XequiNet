@@ -52,8 +52,6 @@ class NetConfig(BaseModel):
     blabel_unit: str = None                        # unit of the input base label
     force_unit: str = None                         # unit of the input force
     bforce_unit: str = None                        # unit of the input base force
-    max_mol: int = None                            # maximum number of the training molecules
-    vmax_mol: int = None                           # maximum number of the validation molecules
     batch_size: int = 64                           # training batch size
     vbatch_size: int = 64                          # validation batch size
 

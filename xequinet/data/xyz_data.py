@@ -33,7 +33,6 @@ class XYZDataset(Dataset):
         self,
         xyz_file: str,
         cutoff: float = 5.0,
-        max_size: Optional[int] = None,
         transform: Optional[Callable] = None,
     ):
         """
@@ -41,12 +40,10 @@ class XYZDataset(Dataset):
             `xyz_file`: Path of .xyz file.
             `embed_basis`: Basis set used for embedding.
             `cutoff`: Cutoff radius for neighbor list.
-            `max_size`: Maximum number of atoms in a molecule.
             `transform`: Transform applied to the data.
         """
         super().__init__()
         self._file = xyz_file
-        self._max_size = max_size if max_size is not None else 1e9
         self._transform = transform
         self.data_list = []
         _, self.len_unit = get_default_unit()
@@ -54,7 +51,6 @@ class XYZDataset(Dataset):
         self.process()
 
     def process(self):
-        ct = 0  # count of data
         with open(self._file, "r") as f:
             while True:
                 line = f.readline().strip()
@@ -74,9 +70,6 @@ class XYZDataset(Dataset):
                 coord *= unit_conversion("Angstrom", self.len_unit)
                 data = Data(at_no=at_no, pos=coord)
                 self.data_list.append(data)
-                ct += 1
-                # break if max_size is reached
-                if ct > self._max_size: break
            
 
     def __len__(self):
