@@ -9,19 +9,19 @@ from ..utils.qc import ELEMENTS_DICT
 
 
 """
-                  Standard XYZ file
-number of atoms  >>>  5
-comment line     >>>  methane
-atom1 x y z      >>>  C   0.00000000    0.00000000    0.00000000
-atom2 x y z      >>>  H   0.00000000    0.00000000    1.06999996
-...              >>>  H  -0.00000000   -1.00880563   -0.35666665
-                 >>>  H  -0.87365130    0.50440282   -0.35666665
-                 >>>  H   0.87365130    0.50440282   -0.35666665
-number of atoms  >>>  3
-comment line     >>>  water
-atom1 x y z      >>>  O   0.00000000   -0.00000000   -0.11081188
-atom2 x y z      >>>  H   0.00000000   -0.78397589    0.44324751
-...              >>>  H  -0.00000000    0.78397589    0.44324751
+                        Standard XYZ file
+number of atoms         >>>  5
+charge & multiplicity   >>>  0 1
+atom1 x y z             >>>  C   0.00000000    0.00000000    0.00000000
+atom2 x y z             >>>  H   0.00000000    0.00000000    1.06999996
+...                     >>>  H  -0.00000000   -1.00880563   -0.35666665
+                        >>>  H  -0.87365130    0.50440282   -0.35666665
+                        >>>  H   0.87365130    0.50440282   -0.35666665
+number of atoms         >>>  3
+charge & multiplicity   >>>  0 1
+atom1 x y z             >>>  O   0.00000000   -0.00000000   -0.11081188
+atom2 x y z             >>>  H   0.00000000   -0.78397589    0.44324751
+...                     >>>  H  -0.00000000    0.78397589    0.44324751
 """
 
 
@@ -50,13 +50,15 @@ class XYZDataset(Dataset):
         self._cutoff = cutoff * unit_conversion("Angstrom", self.len_unit)
         self.process()
 
+
     def process(self):
         with open(self._file, "r") as f:
             while True:
                 line = f.readline().strip()
                 if not line: break
                 n_atoms = int(line)
-                comment = f.readline()
+                line = f.readline().strip()
+                charge, multi = list(map(float, line.split()))
                 at_no, coord = [], []
                 for _ in range(n_atoms):
                     line = f.readline().strip().split()
@@ -68,7 +70,9 @@ class XYZDataset(Dataset):
                 at_no = torch.LongTensor(at_no)
                 coord = torch.Tensor(coord).to(torch.get_default_dtype())
                 coord *= unit_conversion("Angstrom", self.len_unit)
-                data = Data(at_no=at_no, pos=coord)
+                charge = torch.Tensor([charge]).to(torch.get_default_dtype())
+                spin = torch.Tensor([multi - 1]).to(torch.get_default_dtype())
+                data = Data(at_no=at_no, pos=coord, charge=charge, spin=spin)
                 self.data_list.append(data)
            
 

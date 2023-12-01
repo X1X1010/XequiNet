@@ -1,7 +1,9 @@
+import math
 from typing import Iterable, Tuple, Union
 
 import torch
 import torch.nn as nn
+from torch_geometric.utils import softmax
 from e3nn import o3
 
 from .o3layer import (
@@ -236,6 +238,42 @@ class XPainnUpdate(nn.Module):
         d_scalar = a_sv * inner_prod + a_ss
 
         return x_scalar + d_scalar, x_spherical + d_spherical
+
+
+class ElectronicFuse(nn.Module):
+    def __init__(
+        self,
+        node_dim: int = 128,
+    ):
+        super().__init__()
+        self.node_dim = node_dim
+        self.sqrt_dim = math.sqrt(node_dim)
+        self.q_linear = nn.Linear(node_dim, node_dim)
+        nn.init.zeros_(self.q_linear.bias)
+        self.k_linear = nn.Linear(1, node_dim)
+        nn.init.zeros_(self.k_linear.bias)
+        self.v_linear = nn.Linear(1, node_dim, bias=False)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        ele: torch.Tensor,
+        batch: torch.LongTensor,
+    ):
+        """
+        Args:
+            `x`: Node features.
+            `ele`: Electronic features.
+        Returns:
+            Atomic features.
+        """
+        batch_ele = ele.index_select(0, batch).unsqueeze(-1)
+        q = self.q_linear(x)
+        k = self.k_linear(batch_ele)
+        v = self.v_linear(batch_ele)
+        dot = torch.sum(q * k, dim=1, keepdim=True) / self.sqrt_dim
+        attn = softmax(dot, batch, dim=0)
+        return attn * v
 
 
 class PBCEmbedding(XEmbedding):

@@ -169,10 +169,11 @@ class ModelWrapper:
 
     def __call__(self, data):
         if self.pbc:
-            return self.model(data.at_no, data.pos, data.shifts,
-                              data.edge_index, data.batch, data.at_filter)
+            return self.model(data.at_no, data.pos, data.shifts, data.edge_index,
+                              data.charge, data.spin, data.batch)
         else:
-            return self.model(data.at_no, data.pos, data.edge_index, data.batch)
+            return self.model(data.at_no, data.pos, data.edge_index,
+                              data.charge, data.spin, data.batch)
     
     def __getattr__(self, name):
         return getattr(self.model, name)

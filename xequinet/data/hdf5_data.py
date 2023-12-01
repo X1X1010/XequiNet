@@ -30,9 +30,13 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, max_edges: int, prop_d
             coords *= unit_conversion("Bohr", len_unit)
         else:
             raise ValueError("Coordinates not found in the hdf5 file.")
+        charge = float(mol_grp["charge"][()]) if "charge" in mol_grp.keys() else 0.0
+        spin = float(mol_grp["multiplicity"][()] - 1) if "multiplicity" in mol_grp.keys() else 0.0
+        charge = torch.Tensor([charge]).to(torch.get_default_dtype())
+        spin = torch.Tensor([spin]).to(torch.get_default_dtype())
         for icfm, coord in enumerate(coords):
             edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
-            data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+            data = Data(at_no=at_no, pos=coord, edge_index=edge_index, charge=charge, spin=spin)
             for p_attr, p_name in prop_dict.items():
                 p_val = torch.tensor(mol_grp[p_name][()][icfm])
                 if p_attr == "y" or p_attr == "base_y":
@@ -79,11 +83,10 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
             coords = torch.einsum("nij, kj -> nik", coords, lattice)
         else:
             raise ValueError("Coordinates not found in the hdf5 file.")
-        # filter out atoms
-        if "atom_filter" in pbc_grp.keys():
-            at_filter = torch.BoolTensor(pbc_grp["atom_filter"][()])
-        else:
-            at_filter = torch.BoolTensor([True for _ in range(at_no.shape[0])])
+        charge = float(pbc_grp["charge"][()]) if "charge" in pbc_grp.keys() else 0.0
+        spin = float(pbc_grp["multiplicity"][()] - 1) if "multiplicity" in pbc_grp.keys() else 0.0
+        charge = torch.Tensor([charge]).to(torch.get_default_dtype())
+        spin = torch.Tensor([spin]).to(torch.get_default_dtype())
         # loop over configurations
         for icfm, coord in enumerate(coords):
             atoms = ase.Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)
@@ -92,7 +95,7 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
             if lattice is not None:
                 shifts = torch.einsum("ij, kj -> ik", shifts, lattice)
             edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long)
-            data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, at_filter=at_filter)
+            data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, charge=charge, spin=spin)
             for p_attr, p_name in prop_dict.items():
                 p_val = torch.tensor(pbc_grp[p_name][()][icfm])
                 if p_attr == "y" or p_attr == "base_y":
@@ -388,8 +391,6 @@ def atom_ref_transform(
 
     if hasattr(new_data, "y"):
         at_no = new_data.at_no
-        if hasattr(new_data, "at_filter"):
-            at_no = at_no[new_data.at_filter]
         new_data.y -= atom_sp[at_no].sum()
         new_data.y = new_data.y.to(torch.get_default_dtype())
         if hasattr(new_data, "base_y"):
