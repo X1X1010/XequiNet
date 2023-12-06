@@ -515,7 +515,8 @@ class QCMatTrainer(Trainer):
             # forward propagation
             res = self.model(data.at_no, data.pos, data.edge_index, data.fc_edge_index)
             pred_pad_node, pred_pad_edge = res[0], res[1]
-            batch_mask_node, batch_mask_edge = res[2], res[3]
+            # batch_mask_node, batch_mask_edge = res[2], res[3]
+            batch_mask_node, batch_mask_edge = data.onsite_mask, data.offsite_mask
             pred_node, pred_edge = pred_pad_node[batch_mask_node], pred_pad_edge[batch_mask_edge]
             real_node, real_edge = data.node_label[batch_mask_node], data.edge_label[batch_mask_edge]
             batch_pred = torch.cat([pred_node, pred_edge], dim=0)
@@ -567,7 +568,8 @@ class QCMatTrainer(Trainer):
                 # TODO: AMP
                 res = self.model(data.at_no, data.pos, data.edge_index, data.fc_edge_index)
                 pred_pad_node, pred_pad_edge = res[0], res[1]
-                batch_mask_node, batch_mask_edge = res[2], res[3]
+                # batch_mask_node, batch_mask_edge = res[2], res[3]
+                batch_mask_node, batch_mask_edge = data.onsite_mask, data.offsite_mask
                 pred_node, pred_edge = pred_pad_node[batch_mask_node], pred_pad_edge[batch_mask_edge]
                 real_node, real_edge = data.node_label[batch_mask_node], data.edge_label[batch_mask_edge] 
                 batch_pred = torch.cat([pred_node, pred_edge], dim=0)
@@ -596,7 +598,8 @@ class QCMatTrainer(Trainer):
                 # TODO: AMP
                 res = self.ema_model(data.at_no, data.pos, data.edge_index, data.fc_edge_index)
                 pred_pad_node, pred_pad_edge = res[0], res[1]
-                batch_mask_node, batch_mask_edge = res[2], res[3]
+                # batch_mask_node, batch_mask_edge = res[2], res[3]
+                batch_mask_node, batch_mask_edge = data.onsite_mask, data.offsite_mask
                 pred_node, pred_edge = pred_pad_node[batch_mask_node], pred_pad_edge[batch_mask_edge]
                 real_node, real_edge = data.node_label[batch_mask_node], data.edge_label[batch_mask_edge]
                 batch_pred = torch.cat([pred_node, pred_edge], dim=0)

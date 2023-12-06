@@ -106,9 +106,10 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
 
 def process_math5(f_h5:h5py.File, mode:str, cutoff:float, max_edges:int, **kwargs):
     from torch_cluster import radius_graph
-    from ..utils import Mat2GraphLabel 
+    from ..utils import Mat2GraphLabel, TwoBodyBlockMask 
     len_unit = get_default_unit()[1]
     mat2graph = Mat2GraphLabel(kwargs.get("irreps_out"), kwargs.get("possible_elements"), kwargs.get("basisname"))
+    genmask = TwoBodyBlockMask(kwargs.get("irreps_out"), kwargs.get("possible_elements"), kwargs.get("basisname"))
     full_edge_index:bool = kwargs.get("full_edge_index", False)
     # loop over samples
     for mol_name in f_h5[mode].keys():
@@ -131,11 +132,16 @@ def process_math5(f_h5:h5py.File, mode:str, cutoff:float, max_edges:int, **kwarg
             atm_symbols = [ELEMENTS_LIST[atm] for atm in at_no]
             if full_edge_index:
                 mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols, edge_index)
+                mole_node_mask, mole_edge_mask = genmask(at_no, edge_index)
             else:
                 # fully connected 
                 mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols)
+                mole_node_mask, mole_edge_mask = genmask(at_no, data.fc_edge_index)
+            
             setattr(data, "node_label", mole_node_label)
             setattr(data, "edge_label", mole_edge_label)
+            setattr(data, "onsite_mask", mole_node_mask)
+            setattr(data, "offsite_mask", mole_edge_mask)
             yield data
 
 
