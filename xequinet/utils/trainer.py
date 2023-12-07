@@ -100,7 +100,7 @@ class Trainer:
             `dist_sampler`: distributed sampler
             `log`: logger
         """
-        self.model = ModelWrapper(model, config.pbc)
+        self.model = ModelWrapper(model, config.version)
         self.config = config
         self.device = device
         self.train_loader = train_loader
@@ -154,7 +154,7 @@ class Trainer:
                     config.ema_decay * avg_param + (1 - config.ema_decay) * param,
                 device=device,
             )
-            self.ema_model = ModelWrapper(ema_model, config.pbc)
+            self.ema_model = ModelWrapper(ema_model, config.version)
         # loss recording, model saving and logging
         self.meter = AverageMeter(device=device)
         self.best_l2fs: List[loss2file] = [
@@ -167,7 +167,7 @@ class Trainer:
     def _load_params(self, ckpt_file: str):
         state = torch.load(ckpt_file, map_location=self.device)
         self.model.module.load_state_dict(state["model"], strict=False)
-        if self.config.resumption:
+        if self.config.resume:
             self.optimizer.load_state_dict(state["optimizer"])
             self.lr_scheduler.load_state_dict(state["lr_scheduler"])
             self.warmup_scheduler.load_state_dict(state["warmup_scheduler"])

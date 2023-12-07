@@ -58,7 +58,10 @@ class XYZDataset(Dataset):
                 if not line: break
                 n_atoms = int(line)
                 line = f.readline().strip()
-                charge, multi = list(map(float, line.split()))
+                try:
+                    charge, multi = list(map(float, line.split()))
+                except:
+                    charge, multi = 0.0, 1.0
                 at_no, coord = [], []
                 for _ in range(n_atoms):
                     line = f.readline().strip().split()

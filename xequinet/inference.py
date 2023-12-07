@@ -226,7 +226,7 @@ def main():
         wf.write(f"Coordinates in Angstrom, Properties in Atomic Unit\n")
     if config.output_mode == "scalar":
         predict_scalar(
-            model=ModelWrapper(model, config.pbc),
+            model=ModelWrapper(model, config.version),
             cutoff=config.cutoff,
             max_edges=config.max_edges,
             dataloader=dataloader,
@@ -237,7 +237,7 @@ def main():
         )
     elif config.output_mode == "grad":
         predict_grad(
-            model=ModelWrapper(model, config.pbc),
+            model=ModelWrapper(model, config.version),
             cutoff=config.cutoff,
             max_edges=config.max_edges,
             dataloader=dataloader,
@@ -248,7 +248,7 @@ def main():
         )
     elif config.output_mode == "vector":
         predict_vector(
-            model=ModelWrapper(model, config.pbc),
+            model=ModelWrapper(model, config.version),
             cutoff=config.cutoff,
             max_edges=config.max_edges,
             dataloader=dataloader,
@@ -257,7 +257,7 @@ def main():
         )
     elif config.output_mode == "polar":
         predict_polar(
-            model=ModelWrapper(model, config.pbc),
+            model=ModelWrapper(model, config.version),
             cutoff=config.cutoff,
             max_edges=config.max_edges,
             dataloader=dataloader,

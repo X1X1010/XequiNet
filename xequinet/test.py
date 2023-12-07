@@ -186,13 +186,13 @@ def main():
         wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
     if config.output_mode == "grad":
-        test_grad(ModelWrapper(model, config.pbc), test_loader, device, output_file)
+        test_grad(ModelWrapper(model, config.version), test_loader, device, output_file)
     elif config.output_mode == "vector" and config.output_dim == 3:
-        test_vector(ModelWrapper(model, config.pbc), test_loader, device, output_file)
+        test_vector(ModelWrapper(model, config.version), test_loader, device, output_file)
     elif config.output_mode == "polar" and config.output_dim == 9:
-        test_polar(ModelWrapper(model, config.pbc), test_loader, device, output_file)
+        test_polar(ModelWrapper(model, config.version), test_loader, device, output_file)
     else:
-        test_scalar(ModelWrapper(model, config.pbc), test_loader, device, output_file, config.output_dim)
+        test_scalar(ModelWrapper(model, config.version), test_loader, device, output_file, config.output_dim)
 
 
 if __name__ == "__main__":

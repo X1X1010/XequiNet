@@ -86,8 +86,8 @@ def main():
         if isinstance(config.node_average, bool):
             if config.node_average:
                 mean, std = calculate_stats(train_loader)
-                log.s.info(f"Mean: {mean:4.2f} {config.default_property_unit}")
-                log.s.info(f"Std : {std:4.2f} {config.default_property_unit}")
+                log.s.info(f"Mean: {mean:6.4f} {config.default_property_unit}")
+                log.s.info(f"Std : {std:6.4f} {config.default_property_unit}")
                 config.node_average = mean
             else:
                 config.node_average = 0.0

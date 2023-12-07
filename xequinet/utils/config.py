@@ -14,7 +14,7 @@ class NetConfig(BaseModel):
     run_name: str = "my_task"                      # name of the run
 
     # configurations about the model
-    pbc: bool = False                              # whether to use the periodic boundary condition
+    version: str = "xpainn"                        # model version
     embed_basis: str = "gfn2-xtb"                  # embedding basis type
     aux_basis: str = "aux56"                       # auxiliary basis type
     node_dim: int = 128                            # node irreps for the input
@@ -57,7 +57,7 @@ class NetConfig(BaseModel):
 
     # configurations about the training
     ckpt_file: str = None                          # checkpoint file to load
-    resumption: bool = False                       # whether to resume the training
+    resume: bool = False                           # whether to resume the training
     warmup_scheduler: str = "linear"               # warmup scheduler type
     warmup_epochs: int = 10                        # number of the warmup epochs
     max_epochs: int = 300                          # maximum number of the training epochs

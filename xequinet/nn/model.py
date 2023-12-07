@@ -70,14 +70,6 @@ class XPaiNN(nn.Module):
             cutoff=config.cutoff,
             cutoff_fn=config.cutoff_fn,
         )
-        self.charge_fuse = nn.ModuleList([
-            ElectronicFuse(node_dim=config.node_dim)
-            for _ in range(config.action_blocks)
-        ])
-        self.spin_fuse = nn.ModuleList([
-            ElectronicFuse(node_dim=config.node_dim)
-            for _ in range(config.action_blocks)
-        ])
         self.message = nn.ModuleList([
             XPainnMessage(
                 node_dim=config.node_dim,
@@ -99,6 +91,43 @@ class XPaiNN(nn.Module):
         ])
         self.out = resolve_output(config)
     
+    def forward(
+        self,
+        at_no: torch.LongTensor,
+        pos: torch.Tensor,
+        edge_index: torch.LongTensor,
+        batch: torch.LongTensor,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Args:
+            `at_no`: Atomic numbers.
+            `pos`: Atomic coordinates.
+            `edge_index`: Edge index.
+            `batch`: Batch index.
+        Returns:
+            `result`: Output.
+        """
+        x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
+        x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
+        for msg, upd in zip(self.message, self.update):
+            x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
+            x_scalar, x_vector = upd(x_scalar, x_vector)
+        result = self.out(x_scalar, x_vector, pos, batch)
+        return result
+
+
+class XPaiNNEle(XPaiNN):
+    def __init__(self, config: NetConfig):
+        super().__init__(config)
+        self.charge_fuse = nn.ModuleList([
+            ElectronicFuse(node_dim=config.node_dim)
+            for _ in range(config.action_blocks)
+        ])
+        self.spin_fuse = nn.ModuleList([
+            ElectronicFuse(node_dim=config.node_dim)
+            for _ in range(config.action_blocks)
+        ])
+
     def forward(
         self,
         at_no: torch.LongTensor,
@@ -253,9 +282,13 @@ class PaiNN(nn.Module):
 
 
 def resolve_model(config: NetConfig) -> nn.Module:
-    if hasattr(config, "original") and config.original:
-        return PaiNN(config)
-    if config.pbc:
-        return PBCPaiNN(config)
-    else:
+    if config.version.lower() == "xpainn":
         return XPaiNN(config)
+    elif config.version.lower() == "xpainn-ele":
+        return XPaiNNEle(config)
+    elif config.version.lower() == "xpainn-pbc":
+        return PBCPaiNN(config)
+    elif config.version.lower() == "painn":
+        return PaiNN(config)
+    else:
+        raise NotImplementedError(f"Unsupported model {config.version}")

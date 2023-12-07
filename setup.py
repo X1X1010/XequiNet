@@ -1,7 +1,7 @@
 from setuptools import setup
 setup(
     name = "XequiNet",
-    version = "0.1.3",
+    version = "0.2.0",
     packages = ["xequinet"],
     entry_points={
         'console_scripts': [

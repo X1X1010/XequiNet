@@ -445,7 +445,7 @@ def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = Non
         kwargs = {
             "mode": mode, "root": config.data_root, "data_files": config.data_files,
             "data_name": config.processed_name, "prop_dict": prop_dict,
-            "pbc": config.pbc, "cutoff": config.cutoff,
+            "pbc": "pbc" in config.version, "cutoff": config.cutoff,
             "max_edges": config.max_edges, "mem_process": config.mem_process,
             "transform": transform, "pre_transform": pre_transform,
         }

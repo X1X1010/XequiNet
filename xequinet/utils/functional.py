@@ -163,16 +163,19 @@ def resolve_warmup_scheduler(
 
 
 class ModelWrapper:
-    def __init__(self, model: nn.Module, pbc: bool):
+    def __init__(self, model: nn.Module, version: str):
         self.model = model
-        self.pbc = pbc
+        self.version = version.lower()
+        assert self.version in ["xpainn", "painn", "xpainn-ele", "xpainn-pbc"]
 
     def __call__(self, data):
-        if self.pbc:
-            return self.model(data.at_no, data.pos, data.shifts, data.edge_index,
-                              data.charge, data.spin, data.batch)
-        else:
+        if self.version == "xpainn" or self.version == "painn":
+            return self.model(data.at_no, data.pos, data.edge_index, data.batch)
+        elif self.version == "xpainn-ele":
             return self.model(data.at_no, data.pos, data.edge_index,
+                              data.charge, data.spin, data.batch)
+        elif self.version == "xpainn-pbc":
+            return self.model(data.at_no, data.pos, data.shifts, data.edge_index,
                               data.charge, data.spin, data.batch)
     
     def __getattr__(self, name):
