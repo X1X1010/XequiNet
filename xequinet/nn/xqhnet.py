@@ -45,6 +45,138 @@ class XMatEmbedding(nn.Module):
         self.cutoff_fn = resolve_cutoff(cutoff_fn, cutoff)
 
 
+class SelfLayer(nn.Module):
+    """
+    """
+    def __init__(
+        self,
+        irreps_node:o3.Irreps,
+    ):
+        super().__init__()
+        self.irreps_node = irreps_node
+        self.irreps_tp_out, instructions = get_feasible_tp(
+            irreps_node, irreps_node, irreps_node, "uuu", True
+        )
+        self.tp_node = o3.TensorProduct(
+            self.irreps_node,
+            self.irreps_node,
+            self.irreps_tp_out,
+            instructions,
+            shared_weights=True, 
+            internal_weights=True,
+        )
+        self.linear_node_l = o3.Linear(
+            irreps_in=self.irreps_node,
+            irreps_out=self.irreps_node,
+            internal_weights=True,
+            shared_weights=True,
+            biases=True
+        )
+        self.linear_node_r = o3.Linear(
+            irreps_in=self.irreps_node,
+            irreps_out=self.irreps_node,
+            internal_weights=True,
+            shared_weights=True,
+            biases=True
+        )
+        self.linear_node_p = o3.Linear(
+            irreps_in=self.irreps_tp_out,
+            irreps_out=self.irreps_node,
+            internal_weights=True,
+            shared_weights=True,
+            biases=True
+        )
+        self.e3norm = EquivariantLayerNorm(irreps_node)
+    
+    def forward(self, x:torch.Tensor, old_fii:torch.Tensor=None) -> torch.Tensor:
+        xl = self.linear_node_l(x)
+        xr = self.linear_node_r(x) 
+        xtp = self.tp_node(xl, xr)
+        fii = self.linear_node_p(xtp)
+        fii = self.e3norm(fii) 
+        if old_fii is not None:
+            fii = fii + old_fii 
+        return fii
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+
+class PairLayer(nn.Module):
+    '''
+    '''
+    def __init__(
+        self, 
+        irreps_node:o3.Irreps,
+        edge_dim:int = 20,
+        actfn:str = "silu",
+    ):
+        super().__init__()
+        self.irreps_node = irreps_node
+        self._edge_dim = edge_dim 
+        self.actfn = resolve_actfn(actfn)
+
+        self.linear_node_pre = o3.Linear(
+            irreps_in=self.irreps_node,
+            irreps_out=self.irreps_node,
+            internal_weights=True,
+            shared_weights=True,
+            biases=True,
+        )
+        self.inner_dot = EquivariantDot(self.irreps_node) 
+        self.invariant = Invariant(self.irreps_node, squared=True)
+        self.irreps_tp_out, instructions = get_feasible_tp(
+            self.irreps_node, self.irreps_node, self.irreps_node, tp_mode="uuu", trainable=True
+        )
+        self.tp_node_pair = o3.TensorProduct(
+            self.irreps_node,
+            self.irreps_node,
+            self.irreps_tp_out,
+            instructions=instructions,
+            internal_weights=False,
+            shared_weights=False,
+        )
+        self.linear_edge_scalar = nn.Sequential(
+            nn.Linear(3*self.irreps_node.num_irreps, 512, bias=True),
+            self.actfn,
+            nn.Linear(512, self.tp_node_pair.weight_numel, bias=True)
+        )
+        self.linear_edge_rbf = nn.Sequential(
+            nn.Linear(self._edge_dim, 128, bias=True),
+            self.actfn,
+            nn.Linear(128, self.tp_node_pair.weight_numel, bias=True)
+        )
+        self.linear_node_post = o3.Linear(
+            irreps_in=self.irreps_tp_out,
+            irreps_out=self.irreps_node,
+            internal_weights=True,
+            shared_weights=True,
+            biases=True,
+        )
+        self.e3norm = EquivariantLayerNorm(irreps_node)
+
+    def forward(self, x:torch.Tensor, edge_attr:torch.Tensor, edge_index:torch.LongTensor, old_fij:torch.Tensor=None) -> torch.Tensor:
+        node_feat = x 
+        s0 = self.inner_dot(node_feat[edge_index[0], :], node_feat[edge_index[1], :]) 
+        x0 = self.invariant(node_feat) 
+        s0 = torch.cat([s0, x0[edge_index[0], :], x0[edge_index[1], :]], dim=-1) 
+        tp_weights = self.linear_edge_scalar(s0) * self.linear_edge_rbf(edge_attr) 
+
+        xi = x 
+        xj = self.linear_node_pre(x)
+
+        fij = self.tp_node_pair(xi[edge_index[0], :], xj[edge_index[1], :], tp_weights) 
+        fij = self.linear_node_post(fij)
+        fij = self.e3norm(fij)
+        if old_fij is not None:
+            fij = fij + old_fij 
+        return fij 
+    
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
 
 class Expansion(nn.Module):
     def __init__(
