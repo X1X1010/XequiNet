@@ -39,6 +39,16 @@ class NetConfig(BaseModel):
     default_property_unit: str = "eV"              # unit of the input properties
     default_dtype: str = "float32"                 # default data type
 
+    # additional configurations about matrice output 
+    irreps_out: str = "3x0e + 2x1e + 1x2e"         # output layout corresponding to target basis set, default as def2-svp for 2nd period elements
+    mat_hidden_dim: int = 64                       # hidden dimension of each irrep feature in network
+    mat_block_dim: int = 32                        # dimension of each irrep feature in output
+    max_l: int = 4                                 # maximum angular momentum allowed in network
+    num_mat_conv: int = 4                          # number of convolution blocks applied in matrice network where num_action_block stands for number of read-out modules
+    target_basisname: str = "def2svp"              # name of the basis set used for calculating label QC matrices
+    possible_elements: List[str] = ["H", "C", "N", "O"]
+    full_edge_index: bool = False                  # whether to build sparse matrice output correspond to distance-cutoff edges
+
     # configurations about the dataset
     dataset_type: str = "normal"                   # dataset type (`memory` is for the dataset in memory, `disk` is for the dataset on disk)
     data_root: str = None                          # root directory of the dataset

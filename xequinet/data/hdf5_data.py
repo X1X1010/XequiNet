@@ -1,6 +1,7 @@
 from typing import Union, Optional, Iterable, Callable
 import io
 import os
+from xml.dom import NotSupportedErr
 
 import h5py
 import torch
@@ -104,13 +105,13 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict):
             yield data
 
 
-def process_math5(f_h5:h5py.File, mode:str, cutoff:float, max_edges:int, **kwargs):
+def process_math5(f_h5:h5py.File, mode:str, cutoff:float, max_edges:int, config_dict):
     from torch_cluster import radius_graph
     from ..utils import Mat2GraphLabel, TwoBodyBlockMask 
     len_unit = get_default_unit()[1]
-    mat2graph = Mat2GraphLabel(kwargs.get("irreps_out"), kwargs.get("possible_elements"), kwargs.get("basisname"))
-    genmask = TwoBodyBlockMask(kwargs.get("irreps_out"), kwargs.get("possible_elements"), kwargs.get("basisname"))
-    full_edge_index:bool = kwargs.get("full_edge_index", False)
+    mat2graph = Mat2GraphLabel(config_dict["irreps_out"], config_dict["possible_elements"], config_dict["basisname"])
+    genmask = TwoBodyBlockMask(config_dict["irreps_out"], config_dict["possible_elements"], config_dict["basisname"])
+    full_edge_index:bool = config_dict["full_edge_index"] if "full_edge_index" in config_dict.keys() else False
     # loop over samples
     for mol_name in f_h5[mode].keys():
         mol_grp = f_h5[mode][mol_name]
@@ -127,7 +128,7 @@ def process_math5(f_h5:h5py.File, mode:str, cutoff:float, max_edges:int, **kwarg
             edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
             matrice_target = torch.from_numpy(
-                mol_grp[kwargs.get("label_name")][()][icfm].copy()
+                mol_grp[config_dict["label_name"]][()][icfm].copy()
             ).to(torch.get_default_dtype())
             atm_symbols = [ELEMENTS_LIST[atm] for atm in at_no]
             if full_edge_index:
@@ -159,6 +160,7 @@ class H5Dataset(Dataset):
         super().__init__()
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
+        self._mat: bool = kwargs.get("matrice", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
         self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
@@ -167,6 +169,7 @@ class H5Dataset(Dataset):
         self.pre_transform: Callable = kwargs.get("pre_transform", None)
 
         assert self._mode in ["train", "valid", "test"]
+        assert not (self._pbc and self._mat), "pbc and Mat mode can not be set simultaneously by now."
         assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
         if isinstance(data_files, str):
             self._raw_paths = [os.path.join(root, "raw", data_files)]
@@ -174,6 +177,15 @@ class H5Dataset(Dataset):
             self._raw_paths = [os.path.join(root, "raw", f) for f in data_files]
         else:
             raise TypeError("data_files must be a string or iterable of strings")
+        
+        if self._mat:
+            self._mat_config_dict = {
+                "label_name": prop_dict["y"],
+                "target_irreps": kwargs.get("irreps_out"), 
+                "possible_elements": kwargs.get("possible_elements"),
+                "basisname": kwargs.get("target_basisname"), 
+                "follow_edge_index": kwargs.get("follow_edge_index"),
+            }
         
         self._max_size = int(1e9) if self._max_size is None else self._max_size
         self._prop_dict = prop_dict
@@ -199,6 +211,8 @@ class H5Dataset(Dataset):
                 continue
             if self._pbc:
                 data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict)
+            elif self._mat:
+                data_iter = process_math5(f_h5, self._mode, self._cutoff, self._max_edges, self._mat_config_dict)
             else:
                 data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
             for data in data_iter:
@@ -239,6 +253,7 @@ class H5MemDataset(InMemoryDataset):
     ):
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
+        self._mat: bool = kwargs.get("matrice", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
         self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
@@ -247,6 +262,7 @@ class H5MemDataset(InMemoryDataset):
         self.pre_transform: Callable = kwargs.get("pre_transform", None)
 
         assert self._mode in ["train", "valid", "test"]
+        assert not (self._pbc and self._mat), "pbc and Mat mode can not be set simultaneously by now."
         assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
         if isinstance(data_files, str):
             self._raw_files = [data_files]
@@ -254,6 +270,15 @@ class H5MemDataset(InMemoryDataset):
             self._raw_files = data_files
         else:
             raise TypeError("data_files must be a string or iterable of strings")
+        
+        if self._mat:
+            self._mat_config_dict = {
+                "label_name": prop_dict["y"],
+                "target_irreps": kwargs.get("irreps_out"), 
+                "possible_elements": kwargs.get("possible_elements"),
+                "basisname": kwargs.get("target_basisname"), 
+                "follow_edge_index": kwargs.get("follow_edge_index"),
+            }
         
         suffix = f"{self._mode}.pt" if self._max_size is None else f"{self._mode}_{self._max_size}.pt"
         self._max_size = int(1e9) if self._max_size is None else self._max_size
@@ -291,6 +316,8 @@ class H5MemDataset(InMemoryDataset):
                 continue
             if self._pbc:
                 data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict)
+            elif self._mat:
+                data_iter = process_math5(f_h5, self._mode, self._cutoff, self._max_edges, self._mat_config_dict)
             else:
                 data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
             for data in data_iter:
@@ -325,6 +352,7 @@ class H5DiskDataset(DiskDataset):
     ):
         self._mode: str = kwargs.get("mode", "train")
         self._pbc: bool = kwargs.get("pbc", False)
+        self._mat: bool = kwargs.get("matrice", False)
         self._cutoff: float = kwargs.get("cutoff", 5.0)
         self._max_size: int = kwargs.get("max_size", None)
         self._max_edges: int = kwargs.get("max_edges", 100)
@@ -333,6 +361,7 @@ class H5DiskDataset(DiskDataset):
         self.pre_transform: Callable = kwargs.get("pre_transform", None)
         
         assert self._mode in ["train", "valid", "test"]
+        assert not (self._pbc and self._mat), "pbc and Mat mode can not be set simultaneously by now."
         assert {"y", "force", "base_y", "base_force"}.issuperset(prop_dict.keys())
         if isinstance(data_files, str):
             self._raw_files = [data_files]
@@ -340,6 +369,15 @@ class H5DiskDataset(DiskDataset):
             self._raw_files = data_files
         else:
             raise TypeError("data_files must be a string or iterable of strings")
+        
+        if self._mat:
+            self._mat_config_dict = {
+                "label_name": prop_dict["y"],
+                "target_irreps": kwargs.get("irreps_out"), 
+                "possible_elements": kwargs.get("possible_elements"),
+                "basisname": kwargs.get("target_basisname"), 
+                "follow_edge_index": kwargs.get("follow_edge_index"),
+            }
         
         suffix = f"{self._mode}" if self._max_size is None else f"{self._mode}_{self._max_size}"
         self._max_size = int(1e9) if self._max_size is None else self._max_size
@@ -377,6 +415,8 @@ class H5DiskDataset(DiskDataset):
                 continue
             if self._pbc:
                 data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict)
+            elif self._mat:
+                data_iter = process_math5(f_h5, self._mode, self._cutoff, self._max_edges, self._mat_config_dict)
             else:
                 data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict)
             for data in data_iter:
@@ -525,3 +565,47 @@ def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = Non
             raise ValueError(f"Unknown dataset type: {config.dataset_type}")
         
     return dataset
+
+
+def mat_data_unit_transform(data:Data, label_unit:Optional[str] = None) -> Data:
+    """
+    Create a deep copy of the data and transform the units of the copy.
+    """
+    new_data = data.clone()
+    prop_unit, _ = get_default_unit()
+    if hasattr(new_data, "node_label"):
+        new_data.node_label *= unit_conversion(label_unit, prop_unit)
+    if hasattr(new_data, "edge_label"):
+        new_data.edge_label *= unit_conversion(label_unit, prop_unit)
+    return new_data
+
+
+def create_mat_dataset(config:NetConfig, mode:str="train", local_rank:int=None):
+    with distributed_zero_first(local_rank):
+        # set property read from raw data
+        prop_dict = {}
+        if config.label_name is not None:
+            prop_dict["y"] = config.label_name
+        # set transform function
+        pre_transform = lambda data: mat_data_unit_transform(data, config.label_unit)
+        transform = None 
+        kwargs = {
+            "mode": mode, "max_size": config.max_mol if mode == "train" else config.vmax_mol,
+            "root": config.data_root, "data_files": config.data_files, "data_name": config.processed_name,
+            "prop_dict": prop_dict, "pbc": config.pbc, "matrice": True,
+            "target_irreps": config.irreps_out, "possible_elements": config.possible_elements,
+            "basisname": config.target_basisname, "full_edge_index": config.full_edge_index,
+            "cutoff": config.cutoff, "max_edges": config.max_edges, "mem_process": config.mem_process,
+            "transform": transform, "pre_transform": pre_transform,
+        }
+        if config.dataset_type == "normal":
+            dataset = H5Dataset(**kwargs)
+        elif config.dataset_type == "memory":
+            dataset = H5MemDataset(**kwargs)
+        elif config.dataset_type == "disk":
+            dataset = H5DiskDataset(**kwargs)
+        else:
+            raise ValueError(f"Unknown dataset type: {config.dataset_type}")
+        
+    return dataset
+        

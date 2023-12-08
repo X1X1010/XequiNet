@@ -8,3 +8,5 @@ test_case
 */__pycache__
 **/__pycache__
 submission
+xequinet/nn/QHNet.py
+xequinet/nn/xpainorb.py

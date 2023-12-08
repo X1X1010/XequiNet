@@ -16,7 +16,7 @@ from .output import (
     ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut,
     PBCScalarOut, PBCNegGradOut,
 )
-from .model import XPaiNN, PBCPaiNN, resolve_model
+from .model import XPaiNN, PBCPaiNN, XQHNet, resolve_model
 from .jit_model import (
     JitXPaiNN, GradJitXPaiNN,
     resolve_jit_model
@@ -32,7 +32,7 @@ __all__ = [
     "Embedding", "PainnMessage", "PainnUpdate",
     "ScalarOut", "NegGradOut", "VectorOut", "PolarOut", "SpatialOut",
     "PBCScalarOut", "PBCNegGradOut",
-    "XPaiNN", "PBCPaiNN", "resolve_model",
+    "XPaiNN", "PBCPaiNN", "XQHNet", "resolve_model",
     "JitXPaiNN", "GradJitXPaiNN",
     "resolve_jit_model",
 ]

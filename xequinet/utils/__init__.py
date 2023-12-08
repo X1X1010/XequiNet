@@ -1,4 +1,4 @@
-from .trainer import Trainer, GradTrainer
+from .trainer import Trainer, GradTrainer, QCMatTrainer
 from .config import NetConfig
 from .logger import ZeroLogger
 from .qc import (
@@ -17,7 +17,7 @@ from .qc_interface import(
 )
 
 __all__ = [
-    "Trainer", "GradTrainer",
+    "Trainer", "GradTrainer", "QCMatTrainer",
     "NetConfig", "ZeroLogger",
     "unit_conversion", "set_default_unit", "get_default_unit",
     "get_embedding_tensor", "get_atomic_energy", "get_centroid",
