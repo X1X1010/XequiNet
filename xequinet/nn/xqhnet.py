@@ -7,6 +7,7 @@ from typing import List, Union, Tuple, Iterable
 import torch 
 import torch.nn as nn 
 from e3nn import o3 
+from torch_scatter import scatter 
 
 from .rbf import resolve_rbf, resolve_cutoff
 from .o3layer import resolve_actfn, resolve_o3norm 
@@ -34,15 +35,123 @@ class XMatEmbedding(nn.Module):
         """
         super().__init__()
         self.node_dim = node_dim 
-        self.edge_irreps = o3.Irreps(edge_irreps)
+        self.edge_irreps = edge_irreps if isinstance(edge_irreps, o3.Irreps) else o3.Irreps(edge_irreps)
         self.int2c1e = Int2c1eEmbedding(embed_basis, aux_basis) 
         self.embed_dim = self.int2c1e.embed_dim 
-        self.edge_num_irreps = self.edge_irreps.num_irreps
+        # self.edge_num_irreps = self.edge_irreps.num_irreps
         self.node_lin = nn.Linear(self.embed_dim, self.node_dim)
         nn.init.zeros_(self.node_lin.bias)
-        # self.sph_harm = o3.SphericalHarmonics(self.edge_irreps, normalize=True, normalization="component")
-        self.rbf = resolve_rbf(rbf_kernel, num_basis, cutoff)
+        max_l = self.edge_irreps.lmax
+        self.irreps_rshs = o3.Irreps.spherical_harmonics(max_l)
+        self.rsh_conv = o3.SphericalHarmonics(self.irreps_rshs, normalize=True, normalization="component")
+        self.rbf_kernel = resolve_rbf(rbf_kernel, num_basis, cutoff)
         self.cutoff_fn = resolve_cutoff(cutoff_fn, cutoff)
+        self.rbf_kernel_full = resolve_rbf(rbf_kernel, num_basis, 1000.0)
+        self.cutoff_fn_full = resolve_cutoff(cutoff_fn, 1000.0)
+
+    def forward(
+        self, 
+        at_no:torch.LongTensor,
+        pos:torch.Tensor, 
+        edge_index:torch.Tensor, 
+        edge_index_full:torch.Tensor
+    ):
+        """
+        Args:
+        """
+        # calculate distance and relative position
+        pos = pos[:, [1, 2, 0]]  # [x, y, z] -> [y, z, x]
+        vec = pos[edge_index[0]] - pos[edge_index[1]]
+        dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
+        vec_full = pos[edge_index_full[0]] - pos[edge_index_full[1]] 
+        dist_full = torch.linalg.vector_norm(vec_full, dim=-1, keepdim=True)
+
+        x = self.int2c1e(at_no) 
+        node_0 = self.node_lin(x)
+
+        rbfs = self.rbf_kernel(dist)
+        fcut = self.cutoff_fn(dist) 
+        rbfs = rbfs * fcut 
+        rbfs_full = self.rbf_kernel_full(dist_full)
+        fcut_full = self.cutoff_fn_full(dist_full)
+        rbfs_full = rbfs_full * fcut_full 
+        rshs = self.rsh_conv(vec) 
+
+        return node_0, rbfs, rshs, rbfs_full
+        
+
+class NodewiseInteraction(nn.Module):
+    """
+    E(3) Graph Convoluton Module.
+    """
+    def __init__(
+        self, 
+        irreps_node_in: Union[str, o3.Irreps, Iterable],
+        irreps_node_out:Union[str, o3.Irreps, Iterable],
+        node_dim: int = 128,
+        edge_attr_dim: int = 20, 
+        actfn: str = "silu",
+    ):
+        super().__init__() 
+        self.irreps_node_in = irreps_node_in if isinstance(irreps_node_in, o3.Irreps) else o3.Irreps(irreps_node_in)
+        self.irreps_node_out = irreps_node_out if isinstance(irreps_node_out, o3.Irreps) else o3.Irreps(irreps_node_out)
+        max_l = irreps_node_out.lmax
+        self.irreps_rshs = o3.Irreps.spherical_harmonics(max_l)
+        self.residual_update = self.irreps_node_in == self.irreps_node_out
+        self.actfn = resolve_actfn(actfn)        
+        
+        self.inner_dot = EquivariantDot(self.irreps_node_in) 
+        # tensor product coupler
+        self.irreps_tp_out, instructions = get_feasible_tp(
+            self.irreps_node_in, self.irreps_rshs, self.irreps_node_out, tp_mode="uvu", trainable=True
+        )
+        self.tp_node = o3.TensorProduct(
+            self.irreps_node_in,
+            self.irreps_rshs,
+            self.irreps_tp_out,
+            instructions=instructions,
+            internal_weights=False,
+            shared_weights=False,
+            path_normalization="none"
+        )
+
+        self.lin_edge_scalar = nn.Sequential(
+            nn.Linear(self.irreps_node_in.num_irreps+node_dim, 128, bias=True),
+            self.actfn, 
+            nn.Linear(128, self.tp_node.weight_numel, bias=True)
+        )
+        self.lin_edge_rbf = nn.Sequential(
+            nn.Linear(edge_attr_dim, 128, bias=True),
+            self.actfn, 
+            nn.Linear(128, self.tp_node.weight_numel, bias=True) 
+        )
+        self.lin_node0 = o3.Linear(self.irreps_node_in, self.irreps_node_in, internal_weights=True, shared_weights=True, biases=True)
+        self.lin_node1 = o3.Linear(self.irreps_node_in, self.irreps_node_in, internal_weights=True, shared_weights=True, biases=True)
+        self.lin_node2 = o3.Linear(self.irreps_tp_out, self.irreps_node_out, internal_weights=True, shared_weights=True, biases=True) 
+        
+    def forward(
+        self, 
+        node_feat:torch.Tensor,  
+        edge_attr:torch.Tensor, 
+        edge_rshs:torch.Tensor, 
+        edge_index:torch.LongTensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        pre_x = self.lin_node0(node_feat)
+        s0 = self.inner_dot(pre_x[edge_index[0], :], pre_x[edge_index[1], :])[:, self.irreps_node_in.slices()[0].stop:]
+        s0 = torch.cat(
+            [
+                pre_x[edge_index[0]][:, self.irreps_node_in.slices()[0]], 
+                pre_x[edge_index[1]][:, self.irreps_node_in.slices()[0]], 
+                s0
+            ], dim=-1
+        )
+        x = self.lin_node1(node_feat) 
+        x_j = x[edge_index[1], :] 
+        tp_weights = self.lin_edge_scalar(s0) * self.lin_edge_rbf(edge_attr)
+        msg_j = self.tp_node(x_j, edge_rshs, tp_weights) 
+        accu_msg = scatter(msg_j, edge_index[0], dim=0, dim_size=node_feat.size(0))
+        out = node_feat + self.lin_node2(accu_msg) if self.residual_update else self.lin_node2(accu_msg)
+        return out
 
 
 class SelfLayer(nn.Module):
@@ -50,43 +159,45 @@ class SelfLayer(nn.Module):
     """
     def __init__(
         self,
-        irreps_node:o3.Irreps,
+        irreps_in:o3.Irreps,
+        irreps_hidden:o3.Irreps,
     ):
         super().__init__()
-        self.irreps_node = irreps_node
+        self.irreps_in = irreps_in
+        self.irreps_hidden = irreps_hidden
         self.irreps_tp_out, instructions = get_feasible_tp(
-            irreps_node, irreps_node, irreps_node, "uuu", True
+            irreps_hidden, irreps_hidden, irreps_hidden, "uuu", True
         )
         self.tp_node = o3.TensorProduct(
-            self.irreps_node,
-            self.irreps_node,
+            self.irreps_hidden,
+            self.irreps_hidden,
             self.irreps_tp_out,
             instructions,
             shared_weights=True, 
             internal_weights=True,
         )
         self.linear_node_l = o3.Linear(
-            irreps_in=self.irreps_node,
-            irreps_out=self.irreps_node,
+            irreps_in=self.irreps_in,
+            irreps_out=self.irreps_hidden,
             internal_weights=True,
             shared_weights=True,
             biases=True
         )
         self.linear_node_r = o3.Linear(
-            irreps_in=self.irreps_node,
-            irreps_out=self.irreps_node,
+            irreps_in=self.irreps_in,
+            irreps_out=self.irreps_hidden,
             internal_weights=True,
             shared_weights=True,
             biases=True
         )
         self.linear_node_p = o3.Linear(
             irreps_in=self.irreps_tp_out,
-            irreps_out=self.irreps_node,
+            irreps_out=self.irreps_hidden,
             internal_weights=True,
             shared_weights=True,
             biases=True
         )
-        self.e3norm = EquivariantLayerNorm(irreps_node)
+        self.e3norm = EquivariantLayerNorm(irreps_hidden)
     
     def forward(self, x:torch.Tensor, old_fii:torch.Tensor=None) -> torch.Tensor:
         xl = self.linear_node_l(x)
@@ -108,39 +219,41 @@ class PairLayer(nn.Module):
     '''
     def __init__(
         self, 
-        irreps_node:o3.Irreps,
+        irreps_in:o3.Irreps,
+        irreps_hidden:o3.Irreps,
         edge_dim:int = 20,
         actfn:str = "silu",
     ):
         super().__init__()
-        self.irreps_node = irreps_node
+        self.irreps_in = irreps_in
+        self.irreps_hidden = irreps_hidden
         self._edge_dim = edge_dim 
         self.actfn = resolve_actfn(actfn)
 
         self.linear_node_pre = o3.Linear(
-            irreps_in=self.irreps_node,
-            irreps_out=self.irreps_node,
+            irreps_in=self.irreps_in,
+            irreps_out=self.irreps_hidden,
             internal_weights=True,
             shared_weights=True,
             biases=True,
         )
-        self.inner_dot = EquivariantDot(self.irreps_node) 
-        self.invariant = Invariant(self.irreps_node, squared=True)
+        self.inner_dot = EquivariantDot(self.irreps_in) 
+        # self.invariant = Invariant(self.irreps_node, squared=True)
         self.irreps_tp_out, instructions = get_feasible_tp(
-            self.irreps_node, self.irreps_node, self.irreps_node, tp_mode="uuu", trainable=True
+            self.irreps_hidden, self.irreps_hidden, self.irreps_hidden, tp_mode="uuu", trainable=True
         )
         self.tp_node_pair = o3.TensorProduct(
-            self.irreps_node,
-            self.irreps_node,
+            self.irreps_hidden,
+            self.irreps_hidden,
             self.irreps_tp_out,
             instructions=instructions,
             internal_weights=False,
             shared_weights=False,
         )
         self.linear_edge_scalar = nn.Sequential(
-            nn.Linear(3*self.irreps_node.num_irreps, 512, bias=True),
+            nn.Linear(self.irreps_in[0][0] + self.irreps_in.num_irreps, 128, bias=True),
             self.actfn,
-            nn.Linear(512, self.tp_node_pair.weight_numel, bias=True)
+            nn.Linear(128, self.tp_node_pair.weight_numel, bias=True)
         )
         self.linear_edge_rbf = nn.Sequential(
             nn.Linear(self._edge_dim, 128, bias=True),
@@ -149,24 +262,26 @@ class PairLayer(nn.Module):
         )
         self.linear_node_post = o3.Linear(
             irreps_in=self.irreps_tp_out,
-            irreps_out=self.irreps_node,
+            irreps_out=self.irreps_hidden,
             internal_weights=True,
             shared_weights=True,
             biases=True,
         )
-        self.e3norm = EquivariantLayerNorm(irreps_node)
+        self.e3norm = EquivariantLayerNorm(irreps_hidden)
 
     def forward(self, x:torch.Tensor, edge_attr:torch.Tensor, edge_index:torch.LongTensor, old_fij:torch.Tensor=None) -> torch.Tensor:
         node_feat = x 
-        s0 = self.inner_dot(node_feat[edge_index[0], :], node_feat[edge_index[1], :]) 
-        x0 = self.invariant(node_feat) 
-        s0 = torch.cat([s0, x0[edge_index[0], :], x0[edge_index[1], :]], dim=-1) 
+        s0 = self.inner_dot(node_feat[edge_index[0], :], node_feat[edge_index[1], :])[:, self.irreps_in.slices()[0].stop:]
+        s0 = torch.cat(
+            [
+                x[edge_index[0]][:, self.irreps_in.slices()[0]], 
+                x[edge_index[1]][:, self.irreps_in.slices()[0]],
+                s0, 
+            ], dim=-1
+        ) 
         tp_weights = self.linear_edge_scalar(s0) * self.linear_edge_rbf(edge_attr) 
-
-        xi = x 
-        xj = self.linear_node_pre(x)
-
-        fij = self.tp_node_pair(xi[edge_index[0], :], xj[edge_index[1], :], tp_weights) 
+        x_prime = self.linear_node_pre(x)
+        fij = self.tp_node_pair(x_prime[edge_index[0], :], x_prime[edge_index[1], :], tp_weights) 
         fij = self.linear_node_post(fij)
         fij = self.e3norm(fij)
         if old_fij is not None:
@@ -176,6 +291,40 @@ class PairLayer(nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
+
+
+class MatTrans(nn.Module):
+    """
+    Module to read out convolution layer output.
+    """
+    def __init__(
+        self,
+        irreps_node:Union[str, o3.Irreps, Iterable] = "128x0e+128x1o+128x2e+128x3o+128x4e",
+        hidden_dim:int = 64,
+        edge_dim:int = 20,
+        actfn:str = "silu",
+    ):
+        super().__init__()
+        self.irreps_in = irreps_node if isinstance(irreps_node, o3.Irreps) else o3.Irreps(irreps_node)
+        max_l = self.irreps_in.lmax
+        self.irreps_hidden = o3.Irreps([(hidden_dim, (l, (-1)**l)) for l in range(max_l)]) 
+        # self.irreps_hidden = o3.Irreps([(hidden_dim, (l, 1)) for l in range(max_l+1)])
+        # self.irreps_rshs = o3.Irreps.spherical_harmonics(max_l)
+        # Building block 
+        self.node_self_layer = SelfLayer(self.irreps_in, self.irreps_hidden)
+        self.node_pair_layer = PairLayer(self.irreps_in, self.irreps_hidden, edge_dim, actfn)
+    
+    def forward(
+        self,
+        node_feat:torch.Tensor,
+        edge_attr:torch.Tensor,
+        edge_index:torch.LongTensor,
+        fii:torch.Tensor,
+        fij:torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        fii = self.node_self_layer(node_feat, fii)
+        fij = self.node_pair_layer(node_feat, edge_attr, edge_index, fij)
+        return fii, fij
 
 
 class Expansion(nn.Module):
@@ -321,12 +470,12 @@ class MatriceOut(nn.Module):
         self, 
         fii:torch.Tensor, 
         fij:torch.Tensor, 
-        node_scalar:torch.Tensor, 
+        node_embed:torch.Tensor, 
         edge_index:torch.LongTensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.BoolTensor, torch.BoolTensor]:
         _, src_indices = torch.sort(edge_index[1], stable=True)
-        node_embed_pair = torch.cat([node_scalar[edge_index[0],:], node_scalar[edge_index[1],:]], dim=-1)
-        diagnol_block = self.expand_ii(fii, node_scalar) 
+        node_embed_pair = torch.cat([node_embed[edge_index[0],:], node_embed[edge_index[1],:]], dim=-1)
+        diagnol_block = self.expand_ii(fii, node_embed) 
         off_diagnol_block = self.expand_ij(fij, node_embed_pair)
         # symmertrize 
         diagnol_block = 0.5 * (diagnol_block + diagnol_block.transpose(-1, -2))
