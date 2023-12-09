@@ -1,3 +1,4 @@
+from re import I
 from typing import Optional, Iterable, Union
 
 import torch
@@ -55,6 +56,43 @@ class Gate(nn.Module):
         x_activation = self.activation(x_invariant)
         x_out = self.scalar_mul(x, x_activation)
         return x_out
+
+
+# from QHNet
+class NormGate(torch.nn.Module):
+    """
+    NormGate activation module.
+    """
+    def __init__(self, irreps:o3.Irreps, actfn:str="silu"):
+        super().__init__()
+        self.irreps = irreps
+        self.norm = o3.Norm(self.irreps)
+        self.activation = resolve_actfn(actfn)
+
+        num_mul, num_mul_wo_0 = 0, 0
+        for mul, ir in self.irreps:
+            num_mul += mul
+            if ir.l != 0:
+                num_mul_wo_0 += mul
+
+        self.mul = o3.ElementwiseTensorProduct(
+            self.irreps[1:], o3.Irreps(f"{num_mul_wo_0}x0e"))
+        self.fc = nn.Sequential(
+            nn.Linear(num_mul, num_mul),
+            # nn.SiLU(),
+            self.activation,
+            nn.Linear(num_mul, num_mul)
+        )
+        self.num_mul = num_mul
+        self.num_mul_wo_0 = num_mul_wo_0
+
+    def forward(self, x):
+        norm_x = self.norm(x)[:, self.irreps.slices()[0].stop:]
+        f0 = torch.cat([x[:, self.irreps.slices()[0]], norm_x], dim=-1)
+        gates = self.fc(f0)
+        gated = self.mul(x[:, self.irreps.slices()[0].stop:], gates[:, self.irreps.slices()[0].stop:])
+        x = torch.cat([gates[:, self.irreps.slices()[0]], gated], dim=-1)
+        return x
 
 
 class ElementShifts(nn.Module):

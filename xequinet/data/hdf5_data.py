@@ -1,7 +1,6 @@
 from typing import Union, Optional, Iterable, Callable
 import io
 import os
-from xml.dom import NotSupportedErr
 
 import h5py
 import torch

@@ -344,7 +344,7 @@ class XPaiNorb(nn.Module):
         return result
 '''
 
-class XQHNet(nn.module):
+class xQHNet(nn.module):
     def __init__(self, config: NetConfig):
         super().__init__()
         assert config.num_mat_conv >= config.action_blocks
@@ -407,7 +407,7 @@ class XQHNet(nn.module):
         """
         node_feat, rbfs, rshs, full_rbfs = self.embed(at_no, pos, edge_index, edge_index_full)
         # x_vector = torch.zeros((x_scalar.shape[0], rshs.shape[1]), device=x_scalar.device)
-        node_0, node_sph_ten, node_sph_ten = node_feat, None, None 
+        node_0, node_sph_ten, edge_sph_ten = node_feat, None, None 
         # full_rbfs = self.edge_full_embed(pos, edge_index_full)
         for idx, matconv in enumerate(self.mat_conv):
             node_feat = matconv(node_feat, rbfs, rshs, edge_index)

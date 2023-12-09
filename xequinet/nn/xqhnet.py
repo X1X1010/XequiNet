@@ -12,7 +12,7 @@ from torch_scatter import scatter
 from .rbf import resolve_rbf, resolve_cutoff
 from .o3layer import resolve_actfn, resolve_o3norm 
 from .tensorproduct import prod, get_feasible_tp 
-from .o3layer import EquivariantDot, EquivariantLayerNorm, Invariant, Int2c1eEmbedding
+from .o3layer import EquivariantDot, EquivariantLayerNorm, Invariant, Int2c1eEmbedding, NormGate
 
 
 class XMatEmbedding(nn.Module):
@@ -98,8 +98,7 @@ class NodewiseInteraction(nn.Module):
         max_l = irreps_node_out.lmax
         self.irreps_rshs = o3.Irreps.spherical_harmonics(max_l)
         self.residual_update = self.irreps_node_in == self.irreps_node_out
-        self.actfn = resolve_actfn(actfn)        
-        
+        self.actfn = resolve_actfn(actfn)
         self.inner_dot = EquivariantDot(self.irreps_node_in) 
         # tensor product coupler
         self.irreps_tp_out, instructions = get_feasible_tp(
@@ -128,6 +127,8 @@ class NodewiseInteraction(nn.Module):
         self.lin_node0 = o3.Linear(self.irreps_node_in, self.irreps_node_in, internal_weights=True, shared_weights=True, biases=True)
         self.lin_node1 = o3.Linear(self.irreps_node_in, self.irreps_node_in, internal_weights=True, shared_weights=True, biases=True)
         self.lin_node2 = o3.Linear(self.irreps_tp_out, self.irreps_node_out, internal_weights=True, shared_weights=True, biases=True) 
+        self.normgate = NormGate(self.irreps_node_in, actfn)
+        self.e3norm = EquivariantLayerNorm(self.irreps_node_out) 
         
     def forward(
         self, 
@@ -145,12 +146,15 @@ class NodewiseInteraction(nn.Module):
                 s0
             ], dim=-1
         )
-        x = self.lin_node1(node_feat) 
+        x = self.normgate(node_feat)
+        x = self.lin_node1(x) 
         x_j = x[edge_index[1], :] 
         tp_weights = self.lin_edge_scalar(s0) * self.lin_edge_rbf(edge_attr)
         msg_j = self.tp_node(x_j, edge_rshs, tp_weights) 
         accu_msg = scatter(msg_j, edge_index[0], dim=0, dim_size=node_feat.size(0))
-        out = node_feat + self.lin_node2(accu_msg) if self.residual_update else self.lin_node2(accu_msg)
+        out = self.e3norm(self.lin_node2(accu_msg))
+        if self.residual_update:
+            out = node_feat + out
         return out
 
 
@@ -161,6 +165,7 @@ class SelfLayer(nn.Module):
         self,
         irreps_in:o3.Irreps,
         irreps_hidden:o3.Irreps,
+        actfn:str = "silu",
     ):
         super().__init__()
         self.irreps_in = irreps_in
@@ -197,11 +202,15 @@ class SelfLayer(nn.Module):
             shared_weights=True,
             biases=True
         )
+        self.normgate_l = NormGate(self.irreps_in, actfn)
+        self.normgate_r = NormGate(self.irreps_in, actfn)
         self.e3norm = EquivariantLayerNorm(irreps_hidden)
     
     def forward(self, x:torch.Tensor, old_fii:torch.Tensor=None) -> torch.Tensor:
-        xl = self.linear_node_l(x)
-        xr = self.linear_node_r(x) 
+        xl = self.normgate_l(x)
+        xl = self.linear_node_l(xl)
+        xr = self.normgate_r(x)
+        xr = self.linear_node_r(xr) 
         xtp = self.tp_node(xl, xr)
         fii = self.linear_node_p(xtp)
         fii = self.e3norm(fii) 
@@ -267,6 +276,7 @@ class PairLayer(nn.Module):
             shared_weights=True,
             biases=True,
         )
+        self.normgate_pre = NormGate(irreps_in, actfn) 
         self.e3norm = EquivariantLayerNorm(irreps_hidden)
 
     def forward(self, x:torch.Tensor, edge_attr:torch.Tensor, edge_index:torch.LongTensor, old_fij:torch.Tensor=None) -> torch.Tensor:
@@ -280,7 +290,8 @@ class PairLayer(nn.Module):
             ], dim=-1
         ) 
         tp_weights = self.linear_edge_scalar(s0) * self.linear_edge_rbf(edge_attr) 
-        x_prime = self.linear_node_pre(x)
+        x_prime = self.normgate_pre(x)
+        x_prime = self.linear_node_pre(x_prime)
         fij = self.tp_node_pair(x_prime[edge_index[0], :], x_prime[edge_index[1], :], tp_weights) 
         fij = self.linear_node_post(fij)
         fij = self.e3norm(fij)
@@ -307,7 +318,7 @@ class MatTrans(nn.Module):
         super().__init__()
         self.irreps_in = irreps_node if isinstance(irreps_node, o3.Irreps) else o3.Irreps(irreps_node)
         max_l = self.irreps_in.lmax
-        self.irreps_hidden = o3.Irreps([(hidden_dim, (l, (-1)**l)) for l in range(max_l)]) 
+        self.irreps_hidden = o3.Irreps([(hidden_dim, (l, (-1)**l)) for l in range(max_l+1)]) 
         # self.irreps_hidden = o3.Irreps([(hidden_dim, (l, 1)) for l in range(max_l+1)])
         # self.irreps_rshs = o3.Irreps.spherical_harmonics(max_l)
         # Building block 
