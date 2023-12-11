@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F 
-
+import numpy as np 
 
 
 def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float):
@@ -114,15 +114,15 @@ class ExponentialBernstein(nn.Module):
         self.alpha = alpha 
         self.dtype = torch.get_default_dtype()
         # buffers 
-        logfactorial = torch.zeros((num_basis), dtype=self.dtype) 
+        logfactorial = np.zeros((num_basis)) 
         for i in range(2, num_basis):
-            logfactorial[i] = logfactorial[i-1] + torch.log(i) 
-        v = torch.arange(0, num_basis).to(self.dtype)
+            logfactorial[i] = logfactorial[i-1] + np.log(i) 
+        v = np.arange(0, num_basis)
         n = (num_basis - 1) - v 
         logbinomial = logfactorial[-1] - logfactorial[v] - logfactorial[n]  
-        self.register_buffer('logc', logbinomial)
-        self.register_buffer('n', n)
-        self.register_buffer('v', v)
+        self.register_buffer('logc', torch.tensor(logbinomial, dtype=self.dtype))
+        self.register_buffer('n', torch.tensor(n, dtype=self.dtype))
+        self.register_buffer('v', torch.tensor(v, dtype=self.dtype))
         self.register_parameter('_alpha', nn.Parameter(torch.tensor(1.0, dtype=self.dtype))) 
         self.reset_parameters()
     

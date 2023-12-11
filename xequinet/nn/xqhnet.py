@@ -166,10 +166,12 @@ class SelfLayer(nn.Module):
         irreps_in:o3.Irreps,
         irreps_hidden:o3.Irreps,
         actfn:str = "silu",
+        residual_update:bool = True,
     ):
         super().__init__()
         self.irreps_in = irreps_in
         self.irreps_hidden = irreps_hidden
+        self.residual_update = residual_update
         self.irreps_tp_out, instructions = get_feasible_tp(
             irreps_hidden, irreps_hidden, irreps_hidden, "uuu", True
         )
@@ -204,16 +206,21 @@ class SelfLayer(nn.Module):
         )
         self.normgate_l = NormGate(self.irreps_in, actfn)
         self.normgate_r = NormGate(self.irreps_in, actfn)
-        self.e3norm = EquivariantLayerNorm(irreps_hidden)
+        self.normgate_p = NormGate(self.irreps_tp_out, actfn)
+        # self.e3norm = EquivariantLayerNorm(irreps_hidden)
     
     def forward(self, x:torch.Tensor, old_fii:torch.Tensor=None) -> torch.Tensor:
+        old_x = x 
         xl = self.normgate_l(x)
         xl = self.linear_node_l(xl)
         xr = self.normgate_r(x)
         xr = self.linear_node_r(xr) 
-        xtp = self.tp_node(xl, xr)
-        fii = self.linear_node_p(xtp)
-        fii = self.e3norm(fii) 
+        x = self.tp_node(xl, xr)
+        if self.residual_update:
+            x = x + old_x
+        x = self.normgate_p(x)
+        fii = self.linear_node_p(x)
+        # fii = self.e3norm(fii) 
         if old_fii is not None:
             fii = fii + old_fii 
         return fii
@@ -277,7 +284,8 @@ class PairLayer(nn.Module):
             biases=True,
         )
         self.normgate_pre = NormGate(irreps_in, actfn) 
-        self.e3norm = EquivariantLayerNorm(irreps_hidden)
+        self.normgate_post = NormGate(self.irreps_tp_out, actfn)
+        # self.e3norm = EquivariantLayerNorm(irreps_hidden)
 
     def forward(self, x:torch.Tensor, edge_attr:torch.Tensor, edge_index:torch.LongTensor, old_fij:torch.Tensor=None) -> torch.Tensor:
         node_feat = x 
@@ -293,8 +301,9 @@ class PairLayer(nn.Module):
         x_prime = self.normgate_pre(x)
         x_prime = self.linear_node_pre(x_prime)
         fij = self.tp_node_pair(x_prime[edge_index[0], :], x_prime[edge_index[1], :], tp_weights) 
+        fij = self.normgate_post(fij)
         fij = self.linear_node_post(fij)
-        fij = self.e3norm(fij)
+        # fij = self.e3norm(fij)
         if old_fij is not None:
             fij = fij + old_fij 
         return fij 
@@ -322,7 +331,7 @@ class MatTrans(nn.Module):
         # self.irreps_hidden = o3.Irreps([(hidden_dim, (l, 1)) for l in range(max_l+1)])
         # self.irreps_rshs = o3.Irreps.spherical_harmonics(max_l)
         # Building block 
-        self.node_self_layer = SelfLayer(self.irreps_in, self.irreps_hidden)
+        self.node_self_layer = SelfLayer(self.irreps_in, self.irreps_hidden, actfn)
         self.node_pair_layer = PairLayer(self.irreps_in, self.irreps_hidden, edge_dim, actfn)
     
     def forward(
