@@ -223,7 +223,9 @@ class Trainer:
                 l1loss = F.l1_loss(pred, real, reduction="sum")
                 self.meter.update(l1loss.item(), real.numel())
             # logging
-            if step % self.config.log_interval == 0 or step == len(self.train_loader):
+            if (self.epoch % self.config.log_epoch == 0 and
+                (step % self.config.log_step == 0 or
+                 step == len(self.train_loader))):
                 mae = self.meter.reduce()
                 self.log.f.info(
                     "Epoch: [{iepoch:>4}][{step:>4}/{nstep}]   lr: {lr:3e}   train MAE: {mae:10.7f}".format(
@@ -246,7 +248,8 @@ class Trainer:
                 l1loss = F.l1_loss(pred, real, reduction="sum")
                 self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
-        self.log.f.info(f"Validation MAE: {mae:10.7f}")
+        if self.epoch % self.config.log_epoch == 0:
+            self.log.f.info(f"Validation MAE: {mae:10.7f}")
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
@@ -269,7 +272,8 @@ class Trainer:
                 l1loss = F.l1_loss(pred, real, reduction="sum")
                 self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
-        self.log.f.info("EMA Valid MAE: {mae:10.7f}".format(mae=mae))
+        if self.epoch % self.config.log_epoch == 0:
+            self.log.f.info("EMA Valid MAE: {mae:10.7f}".format(mae=mae))
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
@@ -392,7 +396,9 @@ class GradTrainer(Trainer):
                 l1lossF = F.l1_loss(predF, realF, reduction="sum")
                 self.meter.update(l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel())
             # logging
-            if step % self.config.log_interval == 0 or step == len(self.train_loader):
+            if (self.epoch % self.config.log_epoch == 0 and
+                (step % self.config.log_step == 0 or
+                 step == len(self.train_loader))):
                 maeE, maeF = self.meter.reduce()
                 self.log.f.info(
                     "Epoch: [{iepoch:>4}][{step:4d}/{nstep}]   lr: {lr:3e}   train MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}".format(
@@ -421,7 +427,8 @@ class GradTrainer(Trainer):
                 l1lossF = F.l1_loss(predF, realF, reduction="sum")
                 self.meter.update(l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel())
         maeE, maeF = self.meter.reduce()
-        self.log.f.info(f"Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
+        if self.epoch % self.config.log_epoch == 0:
+            self.log.f.info(f"Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
         mae = (1 - self.config.force_weight) * maeE + self.config.force_weight * maeF
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
@@ -451,7 +458,8 @@ class GradTrainer(Trainer):
                 l1lossF = F.l1_loss(predF, realF, reduction="sum")
                 self.meter.update(l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel())
         maeE, maeF = self.meter.reduce()
-        self.log.f.info(f"EMA Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
+        if self.epoch % self.config.log_epoch == 0:
+            self.log.f.info(f"EMA Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
         mae = (1 - self.config.force_weight) * maeE + self.config.force_weight * maeF
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():

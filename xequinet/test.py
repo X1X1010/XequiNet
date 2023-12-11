@@ -1,16 +1,20 @@
 import argparse
 
 import torch
-import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 
 from xequinet.data import create_dataset
 from xequinet.nn import resolve_model
-from xequinet.utils import NetConfig, unit_conversion, set_default_unit, get_default_unit, ModelWrapper
-from xequinet.utils.qc import ELEMENTS_LIST
+from xequinet.utils import (
+    NetConfig,
+    unit_conversion, set_default_unit, get_default_unit,
+    ModelWrapper,
+    gen_3Dinfo_str,
+)
 
 
-def test_scalar(model, test_loader, device, outfile, output_dim=1):
+def test_scalar(model, test_loader, device, outfile, output_dim=1, verbose=0):
+    p_unit, l_unit = get_default_unit()
     sum_loss = torch.zeros(output_dim, device=device)
     num_mol = 0
     with torch.no_grad():
@@ -20,30 +24,33 @@ def test_scalar(model, test_loader, device, outfile, output_dim=1):
             if hasattr(data, "base_y"):
                 pred += data.base_y
             real = data.y
-            l1loss = F.l1_loss(pred, real, reduce=False)
-            sum_loss += l1loss.sum(dim=0)
+            error = real - pred
+            sum_loss += error.abs().sum(dim=0)
+            if verbose >= 1:
+                with open(outfile, 'a') as wf:
+                    for imol in range(len(data.y)):
+                        at_no = data.at_no[data.batch == imol]
+                        coord = data.pos[data.batch == imol] * unit_conversion(l_unit, "Angstrom")
+                        wf.write(f"mol {num_mol + imol + 1}\n")
+                        if verbose >= 2:  # print atom coordinates
+                            wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                        wf.write(f"Real:")
+                        wf.write("".join([f"{r.item():15.9f} " for r in real[imol]]))
+                        wf.write(f"    Predict:")
+                        wf.write("".join([f"{p.item():15.9f}" for p in pred[imol]]))
+                        wf.write(f"    Error:")
+                        wf.write("".join([f"{l.item():15.9f}" for l in error[imol]]))
+                        wf.write(f"    ({p_unit})\n\n")
             num_mol += len(data.y)
-            with open(outfile, 'a') as wf:
-                for imol in range(len(data.y)):
-                    at_no = data.at_no[data.batch == imol]
-                    coord = data.pos[data.batch == imol] * unit_conversion(get_default_unit()[1], "Angstrom")
-                    for a, c in zip(at_no, coord):
-                        wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
-                    wf.write("real: ")
-                    wf.write(" ".join([f"{r.item():10.7f}" for r in real[imol]]))
-                    wf.write("  pred: ")
-                    wf.write(" ".join([f"{p.item():10.7f}" for p in pred[imol]]))
-                    wf.write("  loss: ")
-                    wf.write(" ".join([f"{l.item():10.7f}" for l in l1loss[imol]]))
-                    wf.write("\n")
     with open(outfile, 'a') as wf:
         avg_loss = sum_loss / num_mol
-        wf.write("Test MAE: ")
-        wf.write(" ".join([f"{l:10.7f}" for l in avg_loss]))
-        wf.write("\n")
+        wf.write(f"Test MAE:")
+        wf.write("".join([f"{l:15.9f}" for l in avg_loss]))
+        wf.write(f"{p_unit}\n")
 
 
-def test_grad(model, test_loader, device, outfile):
+def test_grad(model, test_loader, device, outfile, verbose=0):
+    p_unit, l_unit = get_default_unit()
     sum_lossE, sum_lossF, num_mol, num_atm = 0.0, 0.0, 0, 0
     for data in test_loader:
         data = data.to(device)
@@ -55,28 +62,40 @@ def test_grad(model, test_loader, device, outfile):
             if hasattr(data, "base_force"):
                 predF += data.base_force
             realE, realF = data.y, data.force
-            l1lossE = F.l1_loss(predE, realE, reduce=False)
-            l1lossF = F.l1_loss(predF, realF, reduce=False)
-            sum_lossE += l1lossE.sum().item()
-            sum_lossF += l1lossF.sum().item()
+            errorE = realE - predE
+            errorF = realF - predF
+            sum_lossE += errorE.abs().sum()
+            sum_lossF += errorF.abs().sum()
+        if verbose >= 1:
+            with open(outfile, 'a') as wf:
+                for imol in range(len(data.y)):
+                    idx = (data.batch == imol)
+                    at_no = data.at_no[idx]
+                    coord = data.pos[idx] * unit_conversion(l_unit, "Angstrom")
+                    wf.write(f"mol {num_mol + imol + 1}\n")
+                    if verbose >= 2:  # print atom coordinates
+                        info_3ds = [coord, predF[idx], realF[idx], errorF[idx]]
+                        titles = [
+                            "Coordinates (Angstrom)",
+                            f"Predicted Forces ({p_unit}/{l_unit})",
+                            f"Real Forces ({p_unit}/{l_unit})",
+                            f"Error Forces ({p_unit}/{l_unit})"
+                        ]
+                        precisions = [6, 9, 9, 9]
+                        wf.write(gen_3Dinfo_str(at_no, info_3ds, titles, precisions))
+                    wf.write(f"Energy | Real: {realE[imol].item():15.9f}    ")
+                    wf.write(f"Predict: {predE[imol].item():15.9f}    ")
+                    wf.write(f"Error: {errorE[imol].item():15.9f}    {p_unit}\n")
+                    wf.write(f"Force  | MAE : {errorF[idx].abs().mean()} {p_unit}/{l_unit}\n\n")
             num_mol += data.y.numel()
             num_atm += data.at_no.numel()
-        with open(outfile, 'a') as wf:
-            for imol in range(len(data.y)):
-                idx = (data.batch == imol)
-                at_no = data.at_no[idx]
-                coord = data.pos[idx] * unit_conversion(get_default_unit()[1], "Angstrom")
-                for a, c, pF, rF, l in zip(at_no, coord, predF[idx], realF[idx], l1lossF[idx]):
-                    wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}  ")
-                    wf.write(f"real: {rF[0].item():10.7f} {rF[1].item():10.7f} {rF[2].item():10.7f}  ")
-                    wf.write(f"pred: {pF[0].item():10.7f} {pF[1].item():10.7f} {pF[2].item():10.7f}  ")
-                    wf.write(f"loss: {l[0].item():10.7f} {l[1].item():10.7f} {l[2].item():10.7f}\n")
-                wf.write(f"real: {realE[imol].item():10.7f}  pred: {predE[imol].item():10.7f}  loss: {l1lossE[imol].item():10.7f}\n")
     with open(outfile, 'a') as wf:
-        wf.write(f"Test MAE: Energy {sum_lossE / num_mol:10.7f}  Force {sum_lossF / (3*num_atm):10.7f}\n")
+        wf.write(f"Energy MAE : {sum_lossE / num_mol:15.9f}    {p_unit}")
+        wf.write(f"Force  MAE : {sum_lossF / (3*num_atm):15.9} {p_unit}/{l_unit}\n")
 
 
-def test_vector(model, test_loader, device, outfile):
+def test_vector(model, test_loader, device, outfile, verbose=0):
+    p_unit, l_unit = get_default_unit()
     sum_loss = torch.zeros(3, device=device)
     num_mol = 0
     with torch.no_grad():
@@ -84,22 +103,32 @@ def test_vector(model, test_loader, device, outfile):
             data = data.to(device)
             pred = model(data)
             real = data.y
-            l1loss = F.l1_loss(pred, real, reduce=False)
-            sum_loss += l1loss.sum(dim=0)
+            error = real - pred
+            sum_loss += error.abs().sum()
             num_mol += len(data.y)
-            with open(outfile, 'a') as wf:
-                for imol in range(len(data.y)):
-                    at_no = data.at_no[data.batch == imol]
-                    coord = data.pos[data.batch == imol] * unit_conversion(get_default_unit()[1], "Angstrom")
-                    for a, c in zip(at_no, coord):
-                        wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
-                    wf.write(f"real: [{real[imol][0].item():10.7f} {real[imol][1].item():10.7f} {real[imol][2].item():10.7f}]  ")
-                    wf.write(f"pred: [{pred[imol][0].item():10.7f} {pred[imol][1].item():10.7f} {pred[imol][2].item():10.7f}]  ")
-                    wf.write(f"loss: [{l1loss[imol][0].item():10.7f} {l1loss[imol][1].item():10.7f} {l1loss[imol][2].item():10.7f}]\n")
+            if verbose >= 1:
+                with open(outfile, 'a') as wf:
+                    for imol in range(len(data.y)):
+                        at_no = data.at_no[data.batch == imol]
+                        coord = data.pos[data.batch == imol] * unit_conversion(l_unit, "Angstrom")
+                        wf.write(f"mol {num_mol + imol + 1}\n")
+                        if verbose >= 2:  # print atom coordinates
+                            wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                        values = [
+                            f"X{vec[imol][0].item():12.6f}  Y{vec[imol][1].item():12.6f}  Z{vec[imol][2].item():12.6f}"
+                            for vec in [real, pred, error]
+                        ]
+                        titles = [f"Real ({p_unit})", f"Predict ({p_unit})", f"Error ({p_unit})"]
+                        filled_t = [f"{t: <{len(v)}}" for t, v in zip(titles, values)]
+                        wf.write("    ".join(filled_t) + "\n")
+                        wf.write("    ".join(values) + "\n\n")
+            num_mol += len(data.y)
     with open(outfile, 'a') as wf:
-        wf.write(f"Test MAE: {sum_loss.sum() / num_mol / 3 :10.7f}\n")
+        wf.write(f"Test MAE: {sum_loss / num_mol / 3 :12.6f} {p_unit}\n")
 
-def test_polar(model, test_loader, device, outfile):
+
+def test_polar(model, test_loader, device, outfile, verbose=0):
+    p_unit, l_unit = get_default_unit()
     sum_loss = torch.zeros((3,3), device=device)
     num_mol = 0
     with torch.no_grad():
@@ -107,26 +136,31 @@ def test_polar(model, test_loader, device, outfile):
             data = data.to(device)
             pred = model(data)
             real = data.y
-            l1loss = F.l1_loss(pred, real, reduce=False)
-            sum_loss += l1loss.sum(dim=0)
+            error = real - pred
+            sum_loss += error.abs().sum()
+            if verbose >= 1:
+                with open(outfile, 'a') as wf:
+                    for imol in range(len(data.y)):
+                        at_no = data.at_no[data.batch == imol]
+                        coord = data.pos[data.batch == imol] * unit_conversion(l_unit, "Angstrom")
+                        wf.write(f"mol {num_mol + imol + 1}\n")
+                        if verbose >= 2:  # print atom coordinates
+                            wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                        tri_values = []
+                        for i, D in enumerate(['X', 'Y', 'Z']):
+                            tri_values.append([
+                                f"{D}X{pol[imol][i,0].item():12.6f}  {D}Y{pol[imol][i,1].item():12.6f}  {D}Z{pol[imol][i,2].item():12.6f}"
+                                for pol in [real, pred, error]
+                            ])
+                        titles = [f"Real ({p_unit})", f"Predict ({p_unit})", f"Error ({p_unit})"]
+                        filled_t = [f"{t: <{len(v)}}" for t, v in zip(titles, tri_values[0])]
+                        wf.write("    ".join(filled_t) + "\n")
+                        for values in tri_values:
+                            wf.write("    ".join(values) + "\n")
+                        wf.write("\n")
             num_mol += len(data.y)
-            with open(outfile, 'a') as wf:
-                for imol in range(len(data.y)):
-                    at_no = data.at_no[data.batch == imol]
-                    coord = data.pos[data.batch == imol] * unit_conversion(get_default_unit()[1], "Angstrom")
-                    for a, c in zip(at_no, coord):
-                        wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
-                    wf.write(f"real: {real[imol][0,0].item():10.7f} {real[imol][0,1].item():10.7f} {real[imol][0,2].item():10.7f}  ")
-                    wf.write(f"pred: {pred[imol][0,0].item():10.7f} {pred[imol][0,1].item():10.7f} {pred[imol][0,2].item():10.7f}  ")
-                    wf.write(f"loss: {l1loss[imol][0,0].item():10.7f} {l1loss[imol][0,1].item():10.7f} {l1loss[imol][0,2].item():10.7f}\n")
-                    wf.write(f"      {real[imol][1,0].item():10.7f} {real[imol][1,1].item():10.7f} {real[imol][1,2].item():10.7f}  ")
-                    wf.write(f"      {pred[imol][1,0].item():10.7f} {pred[imol][1,1].item():10.7f} {pred[imol][1,2].item():10.7f}  ")
-                    wf.write(f"      {l1loss[imol][1,0].item():10.7f} {l1loss[imol][1,1].item():10.7f} {l1loss[imol][1,2].item():10.7f}\n")
-                    wf.write(f"      {real[imol][2,0].item():10.7f} {real[imol][2,1].item():10.7f} {real[imol][2,2].item():10.7f}  ")
-                    wf.write(f"      {pred[imol][2,0].item():10.7f} {pred[imol][2,1].item():10.7f} {pred[imol][2,2].item():10.7f}  ")
-                    wf.write(f"      {l1loss[imol][2,0].item():10.7f} {l1loss[imol][2,1].item():10.7f} {l1loss[imol][2,2].item():10.7f}\n")
     with open(outfile, 'a') as wf:
-        wf.write(f"Test MAE: {sum_loss.sum() / num_mol / 9 :10.7f}\n")
+        wf.write(f"Test MAE: {sum_loss / num_mol / 9 :12.6f} {p_unit}\n")
 
 
 def main():
@@ -147,6 +181,10 @@ def main():
     parser.add_argument(
         "--no-force", "-nf", action="store_true",
         help="Whether not testing force when the output mode is 'grad'",
+    )
+    parser.add_argument(
+        "--verbose", "-v", type=int, default=0, choices=[0, 1, 2],
+        help="Verbose level. (default: 0)",
     )
     args = parser.parse_args()
 
@@ -186,13 +224,15 @@ def main():
         wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
     if config.output_mode == "grad":
-        test_grad(ModelWrapper(model, config.version), test_loader, device, output_file)
+        test_grad(ModelWrapper(model, config.version), test_loader, device, output_file, args.verbose)
     elif config.output_mode == "vector" and config.output_dim == 3:
-        test_vector(ModelWrapper(model, config.version), test_loader, device, output_file)
+        test_vector(ModelWrapper(model, config.version), test_loader, device, output_file, args.verbose)
     elif config.output_mode == "polar" and config.output_dim == 9:
-        test_polar(ModelWrapper(model, config.version), test_loader, device, output_file)
+        test_polar(ModelWrapper(model, config.version), test_loader, device, output_file, args.verbose)
+    elif config.output_mode == "scalar":
+        test_scalar(ModelWrapper(model, config.version), test_loader, device, output_file, config.output_dim, args.verbose)
     else:
-        test_scalar(ModelWrapper(model, config.version), test_loader, device, output_file, config.output_dim)
+        raise ValueError(f"Unsupported output mode: {config.output_mode}")
 
 
 if __name__ == "__main__":

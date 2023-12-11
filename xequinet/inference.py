@@ -1,6 +1,7 @@
 import argparse
 
 import torch
+from torch_scatter import scatter
 from torch_cluster import radius_graph
 from torch_geometric.loader import DataLoader
 
@@ -8,13 +9,11 @@ from xequinet.nn import resolve_model
 from xequinet.utils import (
     NetConfig,
     set_default_unit, get_default_unit, unit_conversion,
-    get_atomic_energy,
+    get_atomic_energy, gen_3Dinfo_str,
     ModelWrapper,
 )
-from xequinet.utils.qc import ELEMENTS_LIST
 from xequinet.data import XYZDataset
 from xequinet.interface import mopac_calculation, xtb_calculation
-
 
 
 def predict_scalar(
@@ -25,37 +24,53 @@ def predict_scalar(
     device: torch.device,
     output_file: str,
     atom_sp: torch.Tensor,
-    base_method: str = None
+    base_method: str = None,
+    verbose: int = 0,
 ):
+    p_factor = unit_conversion(get_default_unit()[0], "AU")
+    c_factor = unit_conversion(get_default_unit()[1], "Angstrom")
     with torch.no_grad():
         for data in dataloader:
             data = data.to(device)
             data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
-            pred = model(data).double().index_add(0, data.batch, atom_sp[data.at_no])
+            nn_pred = model(data).double()
+            sum_atom_sp = scatter(atom_sp[data.at_no], data.batch, dim=0)
             for i in range(len(data)):
                 at_no = data.at_no[data.batch == i]
                 coord = data.pos[data.batch == i]
-                scalar = pred[i]
                 if base_method in ["pm7", "pm6"]:
-                    scalar += mopac_calculation(
+                    delta = mopac_calculation(
                         atomic_numbers=at_no.cpu().numpy(),
                         coordinates=coord.cpu().numpy(),
                         method=base_method,
                     )
                 elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
-                    scalar += xtb_calculation(
+                    delta = xtb_calculation(
                         atomic_numbers=at_no.cpu().numpy(),
                         coordinates=coord.cpu().numpy(),
                         method=base_method,
                     )
-                scalar *= unit_conversion(get_default_unit()[0], "AU")
+                else:
+                    delta = 0.0
+                total = nn_pred[i] + sum_atom_sp[i] + delta
                 with open(output_file, 'a') as wf:
-                    for a, c in zip(at_no, coord):
-                        wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
-                    wf.write("target property:")
-                    for prop in scalar:
-                        wf.write(f"  {prop.item():10.7f}")
-                    wf.write("\n")
+                    if verbose >= 2:  # print coordinates
+                        wf.write(gen_3Dinfo_str(at_no, coord * c_factor, title="Coordinates (Angstrom)"))
+                    if verbose >= 1:  # print detailed information
+                        wf.write("NN Contribution         :")
+                        for v_nn in nn_pred[i]:
+                            wf.write(f"    {v_nn * p_factor.item():10.7f} a.u.")
+                        wf.write("\nSum of Atomic Reference :")
+                        for v_at in sum_atom_sp[i]:
+                            wf.write(f"    {v_at * p_factor.item():10.7f} a.u.")
+                        if base_method is not None:
+                            wf.write("\nDelta Method Base       :")
+                            wf.write(f"    {delta * p_factor.item():10.7f} a.u.")
+                        wf.write("\n")
+                    wf.write("Total Property          :")
+                    for v_tot in total:
+                        wf.write(f"    {v_tot * p_factor.item():10.7f} a.u.")
+                    wf.write("\n\n")
 
 
 def predict_grad(
@@ -66,42 +81,61 @@ def predict_grad(
     device: torch.device,
     output_file: str,
     atom_sp: torch.Tensor,
-    base_method: str = None
+    base_method: str = None,
+    verbose: int = 0,
 ):
+    e_factor = unit_conversion(get_default_unit()[0], "AU")
+    c_factor = unit_conversion(get_default_unit()[1], "Angstrom")
+    f_factor = unit_conversion(f"{get_default_unit()[0]}/{get_default_unit()[1]}", "AU")
     for data in dataloader:
         data = data.to(device)
         data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
         data.pos.requires_grad = True
-        predE, predF = model(data)
-        predE = predE.double().index_add(0, data.batch, atom_sp[data.at_no])
+        nn_predE, nn_predF = model(data)
+        sum_atom_sp = scatter(atom_sp[data.at_no], data.batch, dim=0)
         for i in range(len(data)):
             at_no = data.at_no[data.batch == i]
             coord = data.pos[data.batch == i]
-            energy = predE[i]
-            force = predF[data.batch == i]
             if base_method in ["pm7", "pm6"]:
-                baseE, baseF = mopac_calculation(
+                deltaE, deltaF = mopac_calculation(
                     atomic_numbers=at_no.cpu().numpy(),
                     coordinates=coord.cpu().numpy(),
                     method=base_method,
                     calc_force=True,
                 )
-                energy += baseE; force += baseF
             elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
-                baseE, baseF = xtb_calculation(
+                deltaE, deltaF = xtb_calculation(
                     atomic_numbers=at_no.cpu().numpy(),
                     coordinates=coord.cpu().numpy(),
                     method=base_method,
                     calc_force=True,
                 )
-                energy += baseE; force += baseF
-            energy *= unit_conversion(get_default_unit()[0], "AU")
-            force *= unit_conversion(f"{get_default_unit()[0]}/{get_default_unit()[1]}", "AU")
+            else:
+                deltaE = 0.0
+                deltaF = torch.zeros_like(coord)
+            totalE = nn_predE[i] + sum_atom_sp[i] + deltaE
+            totalF = nn_predF[i] + deltaF
             with open(output_file, 'a') as wf:
-                for a, c, f in zip(at_no, coord, force):
-                    wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}")
-                    wf.write(f" {f[0].item():10.7f} {f[1].item():10.7f} {f[2].item():10.7f}\n")
-                wf.write(f"Energy: {energy.item():10.7f}\n")
+                if verbose >= 2:  # print coordinates
+                    wf.write(gen_3Dinfo_str(at_no, coord * c_factor, title="Coordinates (Angstrom)"))
+                if verbose >= 1:  # print detailed information
+                    wf.write("NN Contribution         :")
+                    wf.write(f"    {nn_predE[i] * e_factor.item():10.7f} a.u.\n")
+                    wf.write("Sum of Atomic Reference :")
+                    wf.write(f"    {sum_atom_sp[i] * e_factor.item():10.7f} a.u.\n")
+                    if base_method is not None:
+                        wf.write("Delta Method Base       :")
+                        wf.write(f"    {deltaE * e_factor.item():10.7f} a.u.\n")
+                wf.write(f"Total Energy            :")
+                wf.write(f"    {totalE * e_factor.item():10.7f} a.u.\n")
+                allFs, titles = [], []
+                if verbose >= 1 and base_method is not None:
+                    allFs.extend([nn_predF * f_factor, deltaF * f_factor])
+                    titles.append(["NN Forces (a.u.)", "Delta Forces (a.u.)"])
+                allFs.append(totalF * f_factor)
+                titles.append("Total Forces (a.u.)")
+                wf.write(gen_3Dinfo_str(at_no, allFs, titles, precision=9))
+                wf.write("\n")
 
 
 def predict_vector(
@@ -111,6 +145,7 @@ def predict_vector(
     dataloader: DataLoader,
     device: torch.device,
     output_file: str,
+    verbose: int = 0,
 ):
     with torch.no_grad():
         for data in dataloader:
@@ -123,10 +158,11 @@ def predict_vector(
                     at_no = data.at_no[data.batch == i]
                     coord = data.pos[data.batch == i]
                     vector = pred[i]
-                    for a, c in zip(at_no, coord):
-                        wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
-                    wf.write("vector property:")
-                    wf.write(f"    X  {vector[0].item():10.7f}  Y  {vector[1].item():10.7f}  Z  {vector[2].item():10.7f}\n")
+                    if verbose >= 2:  # print coordinates
+                        coord *= unit_conversion(get_default_unit()[1], "Angstrom")
+                        wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                    wf.write(f"Vector Property (a.u.):\n")
+                    wf.write(f"X{vector[0].item():12.6f}  Y{vector[1].item():12.6f}  Z{vector[2].item():12.6f}\n\n")
 
 
 def predict_polar(
@@ -136,6 +172,7 @@ def predict_polar(
     dataloader: DataLoader,
     device: torch.device,
     output_file: str,
+    verbose: int = 0,
 ):
     with torch.no_grad():
         for data in dataloader:
@@ -148,14 +185,13 @@ def predict_polar(
                     at_no = data.at_no[data.batch == i]
                     coord = data.pos[data.batch == i]
                     polar = pred[i]
-                    for a, c in zip(at_no, coord):
-                        wf.write(f"{ELEMENTS_LIST[a.item()]} {c[0].item():10.7f} {c[1].item():10.7f} {c[2].item():10.7f}\n")
-                    wf.write("polar property:")
-                    wf.write(f"    XX  {polar[0,0].item():10.7f}  XY  {polar[0,1].item():10.7f}  XZ  {polar[0,2].item():10.7f}\n")
-                    wf.write("               ")
-                    wf.write(f"    YX  {polar[1,0].item():10.7f}  YY  {polar[1,1].item():10.7f}  YZ  {polar[1,2].item():10.7f}\n")
-                    wf.write("               ")
-                    wf.write(f"    ZX  {polar[2,0].item():10.7f}  ZY  {polar[2,1].item():10.7f}  ZZ  {polar[2,2].item():10.7f}\n")
+                    if verbose >= 2:  # print coordinates
+                        coord *= unit_conversion(get_default_unit()[1], "Angstrom")
+                        wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                    wf.write("Polar property (a.u.):\n")
+                    wf.write(f"XX{polar[0,0].item():12.6f}  XY{polar[0,1].item():12.6f}  XZ{polar[0,2].item():12.6f}\n")
+                    wf.write(f"YX{polar[1,0].item():12.6f}  YY{polar[1,1].item():12.6f}  YZ{polar[1,2].item():12.6f}\n")
+                    wf.write(f"ZX{polar[2,0].item():12.6f}  ZY{polar[2,1].item():12.6f}  ZZ{polar[2,2].item():12.6f}\n\n")
 
 
 def main():
@@ -184,6 +220,10 @@ def main():
     parser.add_argument(
         "--output", "-o", type=str, default=None,
         help="Output file name."
+    )
+    parser.add_argument(
+        "--verbose", "-v", type=int, default=0, choices=[0, 1, 2],
+        help="Verbose level. (default: 0)"
     )
     parser.add_argument(
         "inp", type=str,
@@ -223,7 +263,7 @@ def main():
 
     with open(outp, 'w') as wf:
         wf.write("XequiNet prediction\n")
-        wf.write(f"Coordinates in Angstrom, Properties in Atomic Unit\n")
+        wf.write(f"Coordinates in Angstrom, Properties in Atomic Unit\n\n")
     if config.output_mode == "scalar":
         predict_scalar(
             model=ModelWrapper(model, config.version),
@@ -233,7 +273,8 @@ def main():
             device=device,
             output_file=outp,
             atom_sp=atom_sp,
-            base_method=args.base_method
+            base_method=args.base_method,
+            verbose=args.verbose,
         )
     elif config.output_mode == "grad":
         predict_grad(
@@ -244,7 +285,8 @@ def main():
             device=device,
             output_file=outp,
             atom_sp=atom_sp,
-            base_method=args.base_method
+            base_method=args.base_method,
+            verbose=args.verbose,
         )
     elif config.output_mode == "vector":
         predict_vector(
@@ -254,6 +296,7 @@ def main():
             dataloader=dataloader,
             device=device,
             output_file=outp,
+            verbose=args.verbose,
         )
     elif config.output_mode == "polar":
         predict_polar(
@@ -263,6 +306,7 @@ def main():
             dataloader=dataloader,
             device=device,
             output_file=outp,
+            verbose=args.verbose,
         )
     else:
         raise ValueError(f"Unknown output mode: {config.output_mode}")

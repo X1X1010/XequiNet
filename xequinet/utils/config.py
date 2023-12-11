@@ -77,7 +77,8 @@ class NetConfig(BaseModel):
     save_dir: str = './'                           # directory to save the model
     best_k: int = 1                                # number of the best models to keep
     log_file: str = "loss.log"                     # name of the logging file
-    log_interval: int = 50                         # number of the steps to log the training information
+    log_step: int = 50                             # number of the steps to log the training information
+    log_epoch: int = 1                             # number of the epochs to log the information
 
     # others
     seed: int = None                               # random seed
