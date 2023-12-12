@@ -135,7 +135,8 @@ def gen_int2c1e(embed_basis="gfn2-xtb", aux_basis="aux56"):
         )
         ovlp = mol.intor("int1e_ovlp")
         projection = ovlp[:nao_aux, nao_aux:]
-        embedding = np.sum(np.abs(projection), axis=-1)
+        # embedding = np.sum(np.abs(projection), axis=-1))
+        embedding = np.sum(projection, axis=-1)
         int2c1e_dict[atom] = torch.from_numpy(embedding[ao_loc_nr])
     torch.save(int2c1e_dict, savefile)
 
@@ -273,3 +274,7 @@ def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
     masses = ATOM_MASS[at_no].unsqueeze(-1)
     centroid = torch.sum(masses * coords, dim=0) / torch.sum(masses)
     return centroid
+
+
+if __name__ == "__main__":
+    gen_int2c1e(embed_basis="gfn2-xtb", aux_basis="aux56")

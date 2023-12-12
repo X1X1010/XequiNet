@@ -41,17 +41,17 @@ def test_scalar(model, test_loader, device, outfile, output_dim=1, verbose=0):
                         wf.write(f"    Error:")
                         wf.write("".join([f"{l.item():15.9f}" for l in error[imol]]))
                         wf.write(f"    ({p_unit})\n\n")
-            num_mol += len(data.y)
+        num_mol += len(data.y)
     with open(outfile, 'a') as wf:
         avg_loss = sum_loss / num_mol
         wf.write(f"Test MAE:")
         wf.write("".join([f"{l:15.9f}" for l in avg_loss]))
-        wf.write(f"{p_unit}\n")
+        wf.write(f"  {p_unit}\n")
 
 
 def test_grad(model, test_loader, device, outfile, verbose=0):
     p_unit, l_unit = get_default_unit()
-    sum_lossE, sum_lossF, num_mol, num_atm = 0.0, 0.0, 0, 0
+    sum_lossE, sum_lossF, num_mol, num_atom = 0.0, 0.0, 0, 0
     for data in test_loader:
         data = data.to(device)
         data.pos.requires_grad = True
@@ -86,12 +86,12 @@ def test_grad(model, test_loader, device, outfile, verbose=0):
                     wf.write(f"Energy | Real: {realE[imol].item():15.9f}    ")
                     wf.write(f"Predict: {predE[imol].item():15.9f}    ")
                     wf.write(f"Error: {errorE[imol].item():15.9f}    {p_unit}\n")
-                    wf.write(f"Force  | MAE : {errorF[idx].abs().mean()} {p_unit}/{l_unit}\n\n")
-            num_mol += data.y.numel()
-            num_atm += data.at_no.numel()
+                    wf.write(f"Force  | MAE : {errorF[idx].abs().mean():15.9f}   {p_unit}/{l_unit}\n\n")
+        num_mol += data.y.numel()
+        num_atom += data.at_no.numel()
     with open(outfile, 'a') as wf:
-        wf.write(f"Energy MAE : {sum_lossE / num_mol:15.9f}    {p_unit}")
-        wf.write(f"Force  MAE : {sum_lossF / (3*num_atm):15.9} {p_unit}/{l_unit}\n")
+        wf.write(f"Energy MAE : {sum_lossE / num_mol:15.9f}    {p_unit}\n")
+        wf.write(f"Force  MAE : {sum_lossF / (3*num_atom):15.9f}   {p_unit}/{l_unit}\n")
 
 
 def test_vector(model, test_loader, device, outfile, verbose=0):
@@ -122,7 +122,7 @@ def test_vector(model, test_loader, device, outfile, verbose=0):
                         filled_t = [f"{t: <{len(v)}}" for t, v in zip(titles, values)]
                         wf.write("    ".join(filled_t) + "\n")
                         wf.write("    ".join(values) + "\n\n")
-            num_mol += len(data.y)
+        num_mol += len(data.y)
     with open(outfile, 'a') as wf:
         wf.write(f"Test MAE: {sum_loss / num_mol / 3 :12.6f} {p_unit}\n")
 
@@ -158,7 +158,7 @@ def test_polar(model, test_loader, device, outfile, verbose=0):
                         for values in tri_values:
                             wf.write("    ".join(values) + "\n")
                         wf.write("\n")
-            num_mol += len(data.y)
+        num_mol += len(data.y)
     with open(outfile, 'a') as wf:
         wf.write(f"Test MAE: {sum_loss / num_mol / 9 :12.6f} {p_unit}\n")
 
@@ -186,7 +186,12 @@ def main():
         "--verbose", "-v", type=int, default=0, choices=[0, 1, 2],
         help="Verbose level. (default: 0)",
     )
+    parser.add_argument(
+        "--batch-size", "-bz", type=int, default=32,
+        help="Batch size. (default: 32)",
+    )
     args = parser.parse_args()
+    
 
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -201,7 +206,7 @@ def main():
 
     test_dataset = create_dataset(config, "test")
     test_loader = DataLoader(
-        test_dataset, batch_size=config.vbatch_size, shuffle=False,
+        test_dataset, batch_size=args.batch_size, shuffle=False,
         num_workers=config.num_workers, pin_memory=True, drop_last=False,
     )
     
