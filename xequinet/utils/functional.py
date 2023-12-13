@@ -4,7 +4,7 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
 from torch_geometric.loader import DataLoader
-from .lr_scheduler import SmoothReduceLROnPlateau
+from .lr_scheduler import SmoothReduceLROnPlateau, get_polynomial_decay_schedule
 import pytorch_warmup as warmup
 
 
@@ -59,6 +59,23 @@ def calculate_stats(
     return mean.item(), std.item()
 
 
+class MatCriterion(nn.Module):
+    """
+    MAE + RMSE
+    """
+    def __init__(self,):
+        super().__init__()
+        self.mae_loss = nn.L1Loss()
+        self.mse_loss = nn.MSELoss()
+    
+    def forward(self, pred, target):
+        mae = self.mae_loss(pred, target)
+        mse = self.mse_loss(pred, target)
+        rmse = torch.sqrt(mse)
+        loss = mae + rmse 
+        return loss
+
+
 def resolve_lossfn(lossfn: str) -> nn.Module:
     """Helper function to return loss function"""
     lossfn = lossfn.lower()
@@ -68,6 +85,8 @@ def resolve_lossfn(lossfn: str) -> nn.Module:
         return nn.L1Loss()
     elif lossfn == "smoothl1":
         return nn.SmoothL1Loss()
+    elif lossfn == "matloss":
+        return MatCriterion()
     else:
         raise NotImplementedError(f"Unsupported loss function {lossfn}")
 
@@ -128,6 +147,13 @@ def resolve_lr_scheduler(
             optimizer=optimizer,
             min_lr=min_lr,
             **kwargs,
+        )
+    elif sched_type == "linear_decay":
+        num_steps = max_epochs * steps_per_epoch
+        return get_polynomial_decay_schedule(
+            optimizer=optimizer,
+            num_training_steps=num_steps,
+            lr_end=min_lr,
         )
     else:
         raise NotImplementedError(f"Unsupported scheduler {sched_type}")

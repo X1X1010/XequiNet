@@ -91,13 +91,15 @@ class NodewiseInteraction(nn.Module):
         node_dim: int = 128,
         edge_attr_dim: int = 20, 
         actfn: str = "silu",
+        residual_update:bool = True,
     ):
         super().__init__() 
         self.irreps_node_in = irreps_node_in if isinstance(irreps_node_in, o3.Irreps) else o3.Irreps(irreps_node_in)
         self.irreps_node_out = irreps_node_out if isinstance(irreps_node_out, o3.Irreps) else o3.Irreps(irreps_node_out)
         max_l = irreps_node_out.lmax
         self.irreps_rshs = o3.Irreps.spherical_harmonics(max_l)
-        self.residual_update = self.irreps_node_in == self.irreps_node_out
+        self.residual_update = residual_update
+        self.message_update = self.irreps_node_in == self.irreps_node_out
         self.actfn = resolve_actfn(actfn)
         self.inner_dot = EquivariantDot(self.irreps_node_in) 
         # tensor product coupler
@@ -152,6 +154,8 @@ class NodewiseInteraction(nn.Module):
         tp_weights = self.lin_edge_scalar(s0) * self.lin_edge_rbf(edge_attr)
         msg_j = self.tp_node(x_j, edge_rshs, tp_weights) 
         accu_msg = scatter(msg_j, edge_index[0], dim=0, dim_size=node_feat.size(0))
+        if self.message_update:
+            accu_msg = accu_msg + x 
         out = self.e3norm(self.lin_node2(accu_msg))
         if self.residual_update:
             out = node_feat + out
