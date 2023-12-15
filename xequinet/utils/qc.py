@@ -21,9 +21,15 @@ kcal_per_mol = KCAL_PER_MOL = 627.5094738898777  # although not a unit of energy
 
 # length
 Angstrom = ANGSTROM = 0.5291772105638411
+
 # dipole
 Debye = DEBYE = 2.5417464157449032
 mDebye = MDEBYE = Debye * 1000
+
+# time
+fs = FS = 41.34137457575126
+ps = PS = fs * 1000
+
 
 PROP_UNIT = None
 LEN_UNIT = "Angstrom"

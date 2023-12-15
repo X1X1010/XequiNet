@@ -23,9 +23,10 @@ from .qc import get_default_unit
 
 
 class loss2file:
-    def __init__(self, loss: float, ptfile: str):
+    def __init__(self, loss: float, ptfile: str, epoch: int):
         self.loss = loss
         self.ptfile = ptfile
+        self.epoch = epoch
 
     def __lt__(self, other: "loss2file"):
         # overloading __lt__ inversely to realize max heap
@@ -158,7 +159,7 @@ class Trainer:
         # loss recording, model saving and logging
         self.meter = AverageMeter(device=device)
         self.best_l2fs: List[loss2file] = [
-            loss2file(float("inf"), os.path.join(config.save_dir, f"{config.run_name}_{i}.pt"))
+            loss2file(float("inf"), os.path.join(config.save_dir, f"{config.run_name}_{i}.pt"), 0)
             for i in range(config.best_k)
         ]  # a max-heap, actually it is a min-heap
         self.log = log
@@ -190,6 +191,7 @@ class Trainer:
         if curr_loss < self.best_l2fs[0].loss:
             l2f = heapq.heappop(self.best_l2fs)
             l2f.loss = curr_loss
+            l2f.epoch = self.epoch
             self._save_params(model, l2f.ptfile)
             heapq.heappush(self.best_l2fs, l2f)
 
@@ -303,7 +305,7 @@ class Trainer:
         
         self.log.f.info(" --- Training Completed")
         self.log.f.info(f" --- Best Valid MAE: {self.best_l2fs[-1].loss:.5f}")
-        self.log.f.info(f" --- Best Checkpoint: {self.best_l2fs[-1].ptfile}")
+        self.log.f.info(f" --- Best Checkpoint: {self.best_l2fs[-1].ptfile} at Epoch {self.best_l2fs[-1].epoch}")
 
 
 class WithForceMeter:

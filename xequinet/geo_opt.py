@@ -67,6 +67,10 @@ def main():
         help="Maximum number of optimization steps.",
     )
     parser.add_argument(
+        "--constraints", "-con", type=str, default=None,
+        help="Constraints file for optimization.",
+    )
+    parser.add_argument(
         "inp", type=str,
         help="Input xyz file."
     )
@@ -87,7 +91,7 @@ def main():
             unit="Angstrom",
         )
         fake_method = as_pyscf_method(mol, lambda mol: xeq_method(mol, model, device, args.base_method))
-        conv, new_mol = geometric_solver.kernel(fake_method, maxsteps=args.max_steps)
+        conv, new_mol = geometric_solver.kernel(fake_method, maxsteps=args.max_steps, constraints=args.constraints)
         
         # write optimized geometry
         wfile = args.inp.split(".")[0] + "_opt.xyz"

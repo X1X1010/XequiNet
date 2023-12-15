@@ -308,6 +308,9 @@ class SpatialOut(nn.Module):
         Returns:
             `res`: Spatial output.
         """
+        # relative position
+        centroid = scatter(coord, batch_index, dim=0, reduce="mean")
+        coord = coord - centroid[batch_index]
         scalar_out = self.scalar_out_mlp(x_scalar)
         spatial = torch.square(coord).sum(dim=1, keepdim=True)
         res = scatter(scalar_out * spatial, batch_index, dim=0)

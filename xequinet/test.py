@@ -91,7 +91,7 @@ def test_grad(model, test_loader, device, outfile, verbose=0):
         num_atom += data.at_no.numel()
     with open(outfile, 'a') as wf:
         wf.write(f"Energy MAE : {sum_lossE / num_mol:15.9f}    {p_unit}\n")
-        wf.write(f"Force  MAE : {sum_lossF / (3*num_atom):15.9f}   {p_unit}/{l_unit}\n")
+        wf.write(f"Force  MAE : {sum_lossF / (3*num_atom):15.9f}    {p_unit}/{l_unit}\n")
 
 
 def test_vector(model, test_loader, device, outfile, verbose=0):
