@@ -1,7 +1,6 @@
 import argparse
 import torch
 import torch_cluster
-import torch_scatter
 
 from pyscf import gto
 from pyscf.geomopt import geometric_solver, as_pyscf_method
@@ -30,9 +29,7 @@ def xeq_method(mol: gto.Mole, model: torch.nn.Module, device: torch.device, base
     """Xequinet method for energy and gradient calculation."""
     at_no = torch.tensor(mol.atom_charges(), dtype=torch.long, device=device)
     coord = torch.tensor(mol.atom_coords(unit="Angstrom"), dtype=torch.get_default_dtype(), device=device)
-    coord.requires_grad = True
-    batch = torch.zeros_like(at_no, dtype=torch.long, device=device)
-    energy, force = model(at_no, coord, batch)
+    energy, force = model(at_no, coord)
     energy = energy.item()
     force = force.detach().cpu().numpy()
     if base_method is not None:

@@ -2,9 +2,8 @@ import argparse
 
 import torch
 import torch_cluster
-import torch_scatter
 
-from xequinet.nn import resolve_jit_model
+from xequinet.interface import LmpPaiNN, JitPaiNN
 from xequinet.utils import NetConfig, set_default_unit
 
 
@@ -19,6 +18,14 @@ def main():
         "--force", "-f", action="store_true",
         help="Whether testing force additionally when the output mode is 'scalar'",
     )
+    parser.add_argument(
+        "--lammps", "-l", action="store_true",
+        help="Whether the model is used in LAMMPS",
+    )
+    parser.add_argument(
+        "--output", "-o", type=str, default=None,
+        help="Output file name. (default: XXX.jit)",
+    )
     args = parser.parse_args()
 
     # set device
@@ -31,15 +38,15 @@ def main():
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
-    # adjust some configurations
-    if args.force and config.output_mode == "scalar":
-        config.output_mode = "grad"
-    
     # build model
-    model = resolve_jit_model(config).to(device)
+    if args.lammps:
+        model = LmpPaiNN(config).to(device)
+    else:
+        model = JitPaiNN(config).to(device)
+
     model.load_state_dict(ckpt["model"], strict=False)
     model_script = torch.jit.script(model)
-    output_file = f"{args.ckpt.split('/')[-1].split('.')[0]}.jit"
+    output_file = f"{args.ckpt.split('/')[-1].split('.')[0]}.jit" if args.output is None else args.output
     model_script.save(output_file)
 
 

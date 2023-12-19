@@ -59,7 +59,6 @@ class XPaiNN(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
         self.config = config
-        self.cutoff = config.cutoff
         self.embed = XEmbedding(
             node_dim=config.node_dim,
             edge_irreps=config.edge_irreps,
@@ -162,7 +161,6 @@ class PBCPaiNN(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
         self.config = config
-        self.cutoff = config.cutoff
         self.embed = PBCEmbedding(
             node_dim=config.node_dim,
             edge_irreps=config.edge_irreps,

@@ -41,7 +41,7 @@ def test_scalar(model, test_loader, device, outfile, output_dim=1, verbose=0):
                         wf.write(f"    Error:")
                         wf.write("".join([f"{l.item():15.9f}" for l in error[imol]]))
                         wf.write(f"    ({p_unit})\n\n")
-        num_mol += len(data.y)
+            num_mol += len(data.y)
     with open(outfile, 'a') as wf:
         avg_loss = sum_loss / num_mol
         wf.write(f"Test MAE:")
@@ -122,7 +122,7 @@ def test_vector(model, test_loader, device, outfile, verbose=0):
                         filled_t = [f"{t: <{len(v)}}" for t, v in zip(titles, values)]
                         wf.write("    ".join(filled_t) + "\n")
                         wf.write("    ".join(values) + "\n\n")
-        num_mol += len(data.y)
+            num_mol += len(data.y)
     with open(outfile, 'a') as wf:
         wf.write(f"Test MAE: {sum_loss / num_mol / 3 :12.6f} {p_unit}\n")
 
@@ -158,7 +158,7 @@ def test_polar(model, test_loader, device, outfile, verbose=0):
                         for values in tri_values:
                             wf.write("    ".join(values) + "\n")
                         wf.write("\n")
-        num_mol += len(data.y)
+            num_mol += len(data.y)
     with open(outfile, 'a') as wf:
         wf.write(f"Test MAE: {sum_loss / num_mol / 9 :12.6f} {p_unit}\n")
 

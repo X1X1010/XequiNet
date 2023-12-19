@@ -202,7 +202,7 @@ def main():
         help="Xequinet checkpoint file. (XXX.pt containing 'model' and 'config')",
     )
     parser.add_argument(
-        "--batch-size", "-bs", type=int, default=64,
+        "--batch-size", "-bz", type=int, default=64,
         help="Batch size.",
     )
     parser.add_argument(

@@ -71,6 +71,7 @@ class NegGradOut(nn.Module):
         """
         Args:
             `node_dim`: Node dimension.
+            `hidden_dim`: Dimension of hidden layer.
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
         """

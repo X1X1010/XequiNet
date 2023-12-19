@@ -141,11 +141,6 @@ class Trainer:
         self.early_stop = EarlyStopping(
             patience=config.early_stop, min_lr=config.min_lr
         )
-        # load checkpoint
-        self.start_epoch = 1
-        if config.ckpt_file is not None:
-            self._load_params(config.ckpt_file)
-
         # exponential moving average
         self.ema_model = None
         if config.ema_decay is not None:
@@ -162,6 +157,12 @@ class Trainer:
             loss2file(float("inf"), os.path.join(config.save_dir, f"{config.run_name}_{i}.pt"), 0)
             for i in range(config.best_k)
         ]  # a max-heap, actually it is a min-heap
+        
+        # load checkpoint
+        self.start_epoch = 1
+        if config.ckpt_file is not None:
+            self._load_params(config.ckpt_file)
+        
         self.log = log
 
 
@@ -173,12 +174,18 @@ class Trainer:
             self.lr_scheduler.load_state_dict(state["lr_scheduler"])
             self.warmup_scheduler.load_state_dict(state["warmup_scheduler"])
             self.start_epoch = state["epoch"] + 1
+            for l2f in self.best_l2fs:
+                if os.path.isfile(l2f.ptfile):
+                    pt_state = torch.load(l2f.ptfile, map_location=self.device)
+                    l2f.loss = pt_state["loss"] if "loss" in pt_state else float("inf")
+        self.log.f.info(f" --- Loaded checkpoint from {ckpt_file}")
 
 
-    def _save_params(self, model: nn.Module, ckpt_file: str):
+    def _save_params(self, model: nn.Module, ckpt_file: str, loss: float = None):
         state = {
             "model": model.state_dict(),
             "epoch": self.epoch,
+            "loss": loss,
             "optimizer": self.optimizer.state_dict(),
             "lr_scheduler": self.lr_scheduler.state_dict(),
             "warmup_scheduler": self.warmup_scheduler.state_dict(),
@@ -192,7 +199,7 @@ class Trainer:
             l2f = heapq.heappop(self.best_l2fs)
             l2f.loss = curr_loss
             l2f.epoch = self.epoch
-            self._save_params(model, l2f.ptfile)
+            self._save_params(model, l2f.ptfile, l2f.loss)
             heapq.heappush(self.best_l2fs, l2f)
 
 
