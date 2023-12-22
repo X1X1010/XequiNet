@@ -2,8 +2,9 @@
 Utility for cutomizing e3nn.TensorProduct
 '''
 from e3nn.o3 import Irreps
+import math 
 
-# from QHNet https://github.com/mabuchilab/QNET
+# from QHNet https://github.com/divelab/AIRS/OpenDFT/QHBench
 def prod(x):
     """
     Return product of the input sequence.
@@ -62,6 +63,9 @@ def get_feasible_tp(
                     elif tp_mode == "uuu":
                         assert mul_1 == mul_2 
                         mul_out = mul_1
+                    elif tp_mode == "uuw":
+                        assert mul_1 == mul_2 
+                        mul_out = filter_irreps_out.count(ir_out)
                     elif tp_mode == "uvuv":
                         mul_out = mul_1 * mul_2 
                     else:
@@ -74,9 +78,26 @@ def get_feasible_tp(
                         k = irreps_mid.index((mul_out, ir_out)) 
                     instructions.append((i, j, k, tp_mode, trainable)) 
     irreps_mid = Irreps(irreps_mid) 
+    normalization_coefficients = []
+    for ins in instructions:
+        ins_dict = {
+            "uvw": irreps_in1[ins[0]].mul * irreps_in2[ins[1]].mul,
+            "uvu": irreps_in2[ins[1]].mul,
+            "uvv": irreps_in1[ins[0]].mul,
+            "uuw": irreps_in1[ins[0]].mul,
+            "uuu": 1,
+            "uvuv": 1,
+        }
+        alpha = irreps_mid[ins[2]].ir.dim 
+        x = sum([ins_dict[ins[3]] for ins in instructions])
+        if x > 0.0:
+            alpha /= x 
+        normalization_coefficients += [math.sqrt(alpha)]
+
     irreps_mid, p, _ = irreps_mid.sort() 
     instructions = [
-        (i_in1, i_in2, p[i_out], mode, train)
-        for i_in1, i_in2, i_out, mode, train in instructions
+        (i_in1, i_in2, p[i_out], mode, train, alpha)
+        for (i_in1, i_in2, i_out, mode, train), alpha 
+        in zip(instructions, normalization_coefficients)
     ]
     return irreps_mid, instructions 

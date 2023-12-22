@@ -55,7 +55,7 @@ class XMatEmbedding(nn.Module):
         pos:torch.Tensor, 
         edge_index:torch.Tensor, 
         edge_index_full:torch.Tensor
-    ):
+    )-> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
         """
@@ -138,7 +138,7 @@ class NodewiseInteraction(nn.Module):
         edge_attr:torch.Tensor, 
         edge_rshs:torch.Tensor, 
         edge_index:torch.LongTensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         pre_x = self.lin_node0(node_feat)
         s0 = self.inner_dot(pre_x[edge_index[0], :], pre_x[edge_index[1], :])[:, self.irreps_node_in.slices()[0].stop:]
         s0 = torch.cat(
@@ -333,7 +333,6 @@ class MatTrans(nn.Module):
         max_l = self.irreps_in.lmax
         self.irreps_hidden = o3.Irreps([(hidden_dim, (l, (-1)**l)) for l in range(max_l+1)]) 
         # self.irreps_hidden = o3.Irreps([(hidden_dim, (l, 1)) for l in range(max_l+1)])
-        # self.irreps_rshs = o3.Irreps.spherical_harmonics(max_l)
         # Building block 
         self.node_self_layer = SelfLayer(self.irreps_in, self.irreps_hidden, actfn)
         self.node_pair_layer = PairLayer(self.irreps_in, self.irreps_hidden, edge_dim, actfn)
@@ -398,7 +397,7 @@ class Expansion(nn.Module):
                 nn.Linear(64, self.num_bias, bias=True)
             )
 
-    def get_expansion_path(self, irrep_in:o3.Irreps, irrep_out_1:o3.Irreps, irrep_out_2:o3.Irreps):
+    def get_expansion_path(self, irrep_in:o3.Irreps, irrep_out_1:o3.Irreps, irrep_out_2:o3.Irreps) -> List:
         instructions = []
         for  i, (num_in, ir_in) in enumerate(irrep_in):
             for  j, (num_out1, ir_out1) in enumerate(irrep_out_1):
@@ -496,7 +495,7 @@ class MatriceOut(nn.Module):
         fij:torch.Tensor, 
         node_embed:torch.Tensor, 
         edge_index:torch.LongTensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.BoolTensor, torch.BoolTensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         _, src_indices = torch.sort(edge_index[1], stable=True)
         node_embed_pair = torch.cat([node_embed[edge_index[0],:], node_embed[edge_index[1],:]], dim=-1)
         diagnol_block = self.expand_ii(fii, node_embed) 
