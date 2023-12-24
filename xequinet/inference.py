@@ -34,7 +34,7 @@ def predict_scalar(
             data = data.to(device)
             data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
             nn_pred = model(data).double()
-            sum_atom_sp = scatter(atom_sp[data.at_no], data.batch, dim=0)
+            sum_atom_sp = scatter(atom_sp[data.at_no], data.batch, dim=0).unsqueeze(-1)
             for i in range(len(data)):
                 at_no = data.at_no[data.batch == i]
                 coord = data.pos[data.batch == i]
@@ -43,12 +43,16 @@ def predict_scalar(
                         atomic_numbers=at_no.cpu().numpy(),
                         coordinates=coord.cpu().numpy(),
                         method=base_method,
+                        charge=int(data.charge[i].item()),
+                        multiplicity=int(data.spin[i].item()) + 1,
                     )
                 elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
                     delta = xtb_calculation(
                         atomic_numbers=at_no.cpu().numpy(),
                         coordinates=coord.cpu().numpy(),
                         method=base_method,
+                        charge=int(data.charge[i].item()),
+                        uhf=int(data.spin[i].item()),
                     )
                 else:
                     delta = 0.0
@@ -56,20 +60,21 @@ def predict_scalar(
                 with open(output_file, 'a') as wf:
                     if verbose >= 2:  # print coordinates
                         wf.write(gen_3Dinfo_str(at_no, coord * c_factor, title="Coordinates (Angstrom)"))
+                        wf.write(f"Charge {int(data.charge[i].item())}   Multiplicity {int(data.spin[i].item()) + 1}\n")
                     if verbose >= 1:  # print detailed information
                         wf.write("NN Contribution         :")
                         for v_nn in nn_pred[i]:
-                            wf.write(f"    {v_nn * p_factor.item():10.7f} a.u.")
+                            wf.write(f"    {v_nn.item() * p_factor:10.7f} a.u.")
                         wf.write("\nSum of Atomic Reference :")
                         for v_at in sum_atom_sp[i]:
-                            wf.write(f"    {v_at * p_factor.item():10.7f} a.u.")
+                            wf.write(f"    {v_at.item() * p_factor:10.7f} a.u.")
                         if base_method is not None:
                             wf.write("\nDelta Method Base       :")
-                            wf.write(f"    {delta * p_factor.item():10.7f} a.u.")
+                            wf.write(f"    {delta.item() * p_factor:10.7f} a.u.")
                         wf.write("\n")
                     wf.write("Total Property          :")
                     for v_tot in total:
-                        wf.write(f"    {v_tot * p_factor.item():10.7f} a.u.")
+                        wf.write(f"    {v_tot.item() * p_factor:10.7f} a.u.")
                     wf.write("\n\n")
 
 
@@ -101,6 +106,8 @@ def predict_grad(
                     atomic_numbers=at_no.cpu().numpy(),
                     coordinates=coord.cpu().numpy(),
                     method=base_method,
+                    charge=int(data.charge[i].item()),
+                    multiplicity=int(data.spin[i].item()) + 1,
                     calc_force=True,
                 )
             elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
@@ -108,6 +115,8 @@ def predict_grad(
                     atomic_numbers=at_no.cpu().numpy(),
                     coordinates=coord.cpu().numpy(),
                     method=base_method,
+                    charge=int(data.charge[i].item()),
+                    uhf=int(data.spin[i].item()),
                     calc_force=True,
                 )
             else:
@@ -118,16 +127,17 @@ def predict_grad(
             with open(output_file, 'a') as wf:
                 if verbose >= 2:  # print coordinates
                     wf.write(gen_3Dinfo_str(at_no, coord * c_factor, title="Coordinates (Angstrom)"))
+                    wf.write(f"Charge {int(data.charge[i].item())}   Multiplicity {int(data.spin[i].item()) + 1}\n")
                 if verbose >= 1:  # print detailed information
                     wf.write("NN Contribution         :")
-                    wf.write(f"    {nn_predE[i] * e_factor.item():10.7f} a.u.\n")
+                    wf.write(f"    {nn_predE[i].item() * e_factor:10.7f} a.u.\n")
                     wf.write("Sum of Atomic Reference :")
-                    wf.write(f"    {sum_atom_sp[i] * e_factor.item():10.7f} a.u.\n")
+                    wf.write(f"    {sum_atom_sp[i].item() * e_factor:10.7f} a.u.\n")
                     if base_method is not None:
                         wf.write("Delta Method Base       :")
-                        wf.write(f"    {deltaE * e_factor.item():10.7f} a.u.\n")
+                        wf.write(f"    {deltaE * e_factor:10.7f} a.u.\n")
                 wf.write(f"Total Energy            :")
-                wf.write(f"    {totalE * e_factor.item():10.7f} a.u.\n")
+                wf.write(f"    {totalE.item() * e_factor:10.7f} a.u.\n")
                 allFs, titles = [], []
                 if verbose >= 1 and base_method is not None:
                     allFs.extend([nn_predF * f_factor, deltaF * f_factor])
@@ -161,6 +171,7 @@ def predict_vector(
                     if verbose >= 2:  # print coordinates
                         coord *= unit_conversion(get_default_unit()[1], "Angstrom")
                         wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                        wf.write(f"Charge {int(data.charge[i].item())}   Multiplicity {int(data.spin[i].item()) + 1}\n")
                     wf.write(f"Vector Property (a.u.):\n")
                     wf.write(f"X{vector[0].item():12.6f}  Y{vector[1].item():12.6f}  Z{vector[2].item():12.6f}\n\n")
 
@@ -188,6 +199,7 @@ def predict_polar(
                     if verbose >= 2:  # print coordinates
                         coord *= unit_conversion(get_default_unit()[1], "Angstrom")
                         wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                        wf.write(f"Charge {int(data.charge[i].item())}   Multiplicity {int(data.spin[i].item()) + 1}\n")
                     wf.write("Polar property (a.u.):\n")
                     wf.write(f"XX{polar[0,0].item():12.6f}  XY{polar[0,1].item():12.6f}  XZ{polar[0,2].item():12.6f}\n")
                     wf.write(f"YX{polar[1,0].item():12.6f}  YY{polar[1,1].item():12.6f}  YZ{polar[1,2].item():12.6f}\n")

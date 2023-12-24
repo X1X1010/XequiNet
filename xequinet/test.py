@@ -34,6 +34,7 @@ def test_scalar(model, test_loader, device, outfile, output_dim=1, verbose=0):
                         wf.write(f"mol {num_mol + imol + 1}\n")
                         if verbose >= 2:  # print atom coordinates
                             wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                            wf.write(f"Charge {int(data.charge[imol].item())}   Multiplicity {int(data.spin[imol].item()) + 1}\n")
                         wf.write(f"Real:")
                         wf.write("".join([f"{r.item():15.9f} " for r in real[imol]]))
                         wf.write(f"    Predict:")
@@ -83,6 +84,7 @@ def test_grad(model, test_loader, device, outfile, verbose=0):
                         ]
                         precisions = [6, 9, 9, 9]
                         wf.write(gen_3Dinfo_str(at_no, info_3ds, titles, precisions))
+                        wf.write(f"Charge {int(data.charge[imol].item())}   Multiplicity {int(data.spin[imol].item()) + 1}\n")
                     wf.write(f"Energy | Real: {realE[imol].item():15.9f}    ")
                     wf.write(f"Predict: {predE[imol].item():15.9f}    ")
                     wf.write(f"Error: {errorE[imol].item():15.9f}    {p_unit}\n")
@@ -114,6 +116,7 @@ def test_vector(model, test_loader, device, outfile, verbose=0):
                         wf.write(f"mol {num_mol + imol + 1}\n")
                         if verbose >= 2:  # print atom coordinates
                             wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                            wf.write(f"Charge {int(data.charge[imol].item())}   Multiplicity {int(data.spin[imol].item()) + 1}\n")
                         values = [
                             f"X{vec[imol][0].item():12.6f}  Y{vec[imol][1].item():12.6f}  Z{vec[imol][2].item():12.6f}"
                             for vec in [real, pred, error]
@@ -146,6 +149,7 @@ def test_polar(model, test_loader, device, outfile, verbose=0):
                         wf.write(f"mol {num_mol + imol + 1}\n")
                         if verbose >= 2:  # print atom coordinates
                             wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
+                            wf.write(f"Charge {int(data.charge[imol].item())}   Multiplicity {int(data.spin[imol].item()) + 1}\n")
                         tri_values = []
                         for i, D in enumerate(['X', 'Y', 'Z']):
                             tri_values.append([
@@ -234,10 +238,8 @@ def main():
         test_vector(ModelWrapper(model, config.version), test_loader, device, output_file, args.verbose)
     elif config.output_mode == "polar" and config.output_dim == 9:
         test_polar(ModelWrapper(model, config.version), test_loader, device, output_file, args.verbose)
-    elif config.output_mode == "scalar":
-        test_scalar(ModelWrapper(model, config.version), test_loader, device, output_file, config.output_dim, args.verbose)
     else:
-        raise ValueError(f"Unsupported output mode: {config.output_mode}")
+        test_scalar(ModelWrapper(model, config.version), test_loader, device, output_file, config.output_dim, args.verbose)
 
 
 if __name__ == "__main__":

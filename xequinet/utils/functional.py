@@ -199,7 +199,7 @@ def gen_3Dinfo_str(
     assert len(titles) == len(info_3ds)
     precisions = [precision] * len(titles) if isinstance(precision, int) else precision
     assert len(titles) == len(precisions)
-    assert len(at_no) == info_3d[0].size(0)
+    assert len(at_no) == info_3ds[0].size(0)
     info_lists = []
     for i, a in enumerate(at_no):
         at_symbol = ELEMENTS_LIST[a.item()]

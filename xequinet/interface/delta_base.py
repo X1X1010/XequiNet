@@ -20,7 +20,7 @@ def xtb_calculation(
     atomic_numbers: Iterable[int],
     coordinates: Iterable[float],
     charge: int = 0,
-    multiplicity: int = 1,
+    uhf: int = 0,
     method: str = "gfn2-xtb",
     calc_force: bool = False,
 ):
@@ -40,7 +40,6 @@ def xtb_calculation(
     prop_unit, len_unit = get_default_unit()
     at_no = np.array(atomic_numbers)
     coord = np.array(coordinates) * unit_conversion(len_unit, "Bohr")
-    uhf = multiplicity - 1
     m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
     calc = xtb.Calculator(
         method=m_dict[method.lower()],

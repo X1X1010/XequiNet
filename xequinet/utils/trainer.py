@@ -107,6 +107,7 @@ class Trainer:
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.dist_sampler = dist_sampler
+        self.log = log
 
         # set loss function
         self.lossfn = resolve_lossfn(config.lossfn).to(device)
@@ -162,8 +163,6 @@ class Trainer:
         self.start_epoch = 1
         if config.ckpt_file is not None:
             self._load_params(config.ckpt_file)
-        
-        self.log = log
 
 
     def _load_params(self, ckpt_file: str):
