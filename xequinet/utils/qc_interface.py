@@ -210,7 +210,8 @@ class Mat2GraphLabel(nn.Module):
         return node_label, edge_label
 
 
-def cal_orbital_and_energies(overlap_matrix, full_hamiltonian):
+def cal_orbital_and_energies(overlap_matrix:torch.Tensor, full_hamiltonian:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    assert overlap_matrix.shape[0] == full_hamiltonian.shape[0]
     eigvals, eigvecs = torch.linalg.eigh(overlap_matrix)
     eps = 1e-8 * torch.ones_like(eigvals)
     eigvals = torch.where(eigvals > 1e-8, eigvals, eps)
@@ -262,7 +263,7 @@ class QCMatriceBuilder(nn.Module):
 
     def forward(
             self, 
-            res_ten:Tuple[torch.tensor, torch.tensor], 
+            res_ten:Tuple[torch.Tensor, torch.Tensor], 
             raw_mask:Tuple[torch.BoolTensor, torch.BoolTensor], 
             atomic_numbers:torch.Tensor, 
             edge_index:torch.Tensor, 
@@ -288,7 +289,7 @@ class QCMatriceBuilder(nn.Module):
         diagnol_mask = torch.eye(max_natms, device=res.device).expand(*res.shape[:3]).bool()
         mask1d_list = [] 
         for idx in range(num_mole):
-            mask1d = torch.zeros(max_natms, dtype=torch.bool, device=res[0].device)
+            mask1d = torch.zeros(max_natms, dtype=torch.bool, device=res.device)
             mask1d[:natms[idx]] = True
             mask1d_list.append(mask1d) 
         diagnol_mask1d = torch.cat(mask1d_list) 
@@ -303,4 +304,81 @@ class QCMatriceBuilder(nn.Module):
         res_slices = scatter(elem_num_basis, batch_index, dim=0)
 
         return res[res_mask], res_slices
+
+
+class BuildMatPerMole(nn.Module):
+    def __init__(
+        self, 
+        irreps_out:Union[str, Irreps, Iterable], 
+        possible_elements:List[str],
+        basisname:str="def2svp",
+        m_idx_map=m_idx_map,
+    ):
+        super().__init__() 
+        self.irreps_out = irreps_out if isinstance(irreps_out, Irreps) else Irreps(irreps_out) 
+        self.num_channels_1d = self.irreps_out.num_irreps
+        out_repid_map = torch.zeros(self.num_reps_1d, dtype=torch.long)
+        elem_num_basis = torch.zeros(120, 1, dtype=torch.int32)
+        # out_repid_map 
+        num_reps_1d, src_id, offset_per_l = 0, [0], 0
+        for mul, ir in self.irreps_out:
+            cur_num_reps = mul * ir.dim
+            num_reps_1d += cur_num_reps
+            offset_per_l.append(cur_num_reps + offset_per_l[-1])
+            offset = 0
+            for dst_n_current in range(mul):
+                for m_qc in range(2*ir.l + 1):
+                    m_out = m_idx_map[ir.l][m_qc] 
+                    out_repid_map[src_id] = offset_per_l[ir.l] + offset + m_out 
+                    offset += 2*ir.l + 1
+                    src_id += 1 
+        self.num_reps_1d = num_reps_1d
+        # num_basis for each element 
+        for ele in possible_elements:
+            atm_num = ELEMENTS_DICT[ele]
+            basis_set = load_basis(basisname, ELEMENTS_LIST[atm_num])
+            for ao in basis_set:
+                l = ao[0]
+                elem_num_basis[ele] += 2*l + 1 
+        # register buffer
+        self.register_buffer("elem_num_basis", elem_num_basis)
+        self.register_buffer("out_repid_map", out_repid_map)
+
+    def forward(
+            self, 
+            res_node:torch.Tensor,
+            res_edge:torch.Tensor,
+            raw_node_mask:torch.BoolTensor,
+            raw_edge_mask:torch.BoolTensor,
+            atomic_numbers:torch.Tensor, 
+            edge_index:torch.Tensor, 
+            # batch_index:torch.LongTensor,
+        ):
+        # transform e3nn's rep layout to qc interleaved layout along the two dims where the matrice is stored.
+        # dimension -1
+        node_ten_tmp = torch.index_select(res_node, dim=2, index=self.out_repid_map)
+        edge_ten_tmp = torch.index_select(res_edge, dim=2, index=self.out_repid_map)
+        node_mask_tmp = torch.index_select(raw_node_mask, dim=2, index=self.out_repid_map) 
+        edge_mask_tmp = torch.index_select(raw_edge_mask, dim=2, index=self.out_repid_map) 
+        # dimension -2 
+        node_ten = torch.index_select(node_ten_tmp, dim=1, index=self.out_repid_map)
+        edge_ten = torch.index_select(edge_ten_tmp, dim=1, index=self.out_repid_map)
+        node_mask = torch.index_select(node_mask_tmp, dim=1, index=self.out_repid_map)
+        edge_mask = torch.index_select(edge_mask_tmp, dim=1, index=self.out_repid_map)
+        # create a sratch tensor to hold output 
+        natms = atomic_numbers.shape[0]
+        res = torch.zeros(natms, natms, self.num_reps_1d, self.num_reps_1d, device=res_node.device, dtype=res_node.dtype)
+        res_mask = torch.zeros(natms, natms, self.num_reps_1d, self.num_reps_1d, device=res_node.device, dtype=torch.bool)
+        # get the huge mask 
+        diagnol_mask = torch.eye(natms, device=res.device).bool()
+        
+        res[diagnol_mask, :, :] = node_ten 
+        res_mask[diagnol_mask, :, :] = node_mask
+        # scatter edge sub-blocks onto off-diagnol part of the res matrix 
+        batch_index = torch.zeros(natms, device=res.device, dtype=torch.long)
+        off_diagnol_mask = to_dense_adj(edge_index, batch=batch_index, max_atoms=natms).bool()
+        res[off_diagnol_mask, :, :] = edge_ten 
+        res_mask[off_diagnol_mask, :, :] = edge_mask
+        tot_num_basis = torch.sum(self.elem_num_basis[atomic_numbers]).item()
+        return res[res_mask].reshape(tot_num_basis, tot_num_basis)
 

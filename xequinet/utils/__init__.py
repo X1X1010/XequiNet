@@ -14,6 +14,7 @@ from .functional import (
 )
 from .qc_interface import(
     TwoBodyBlockPad, TwoBodyBlockMask, Mat2GraphLabel,
+    QCMatriceBuilder, BuildMatPerMole, cal_orbital_and_energies,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "resolve_lr_scheduler", "resolve_warmup_scheduler",
     "ModelWrapper",
     "TwoBodyBlockPad", "TwoBodyBlockMask", "Mat2GraphLabel",
+    "QCMatriceBuilder", "BuildMatPerMole", "cal_orbital_and_energies",
 ]
