@@ -137,7 +137,8 @@ def process_math5(f_h5:h5py.File, mode:str, cutoff:float, max_edges:int, config_
                 # fully connected 
                 mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols)
                 mole_node_mask, mole_edge_mask = genmask(at_no, data.fc_edge_index)
-            
+            if mode == "test":
+                setattr(data, "target_matrice", matrice_target)
             mole_node_label = mole_node_label.to(torch.get_default_dtype())
             mole_edge_label = mole_edge_label.to(torch.get_default_dtype())
             setattr(data, "node_label", mole_node_label)
