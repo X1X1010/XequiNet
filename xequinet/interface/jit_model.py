@@ -1,4 +1,5 @@
 from typing import Tuple
+import math
 
 import torch
 import torch.nn as nn
@@ -54,10 +55,10 @@ class JitGradOut(nn.Module):
             retain_graph=True,
             create_graph=True,
         )[0]
-        forces = torch.zeros_like(coord)    # because the output of `autograd.grad()` is `Tuple[Optional[torch.Tensor],...]` in jit script
-        if grad is not None:                # which means the complier thinks that `neg_grad` may be `torch.Tensor` or `None`
-            forces -= grad                  # but neg_grad there are not allowed to be `None`
-        return energy, forces               # so we add this if statement to let the compiler make sure that `neg_grad` is not `None`
+        nuc_grad = torch.zeros_like(coord)    # because the output of `autograd.grad()` is `Tuple[Optional[torch.Tensor],...]` in jit script
+        if grad is not None:                  # which means the complier thinks that `grad` may be `torch.Tensor` or `None`
+            nuc_grad += grad                  # but grad there are not allowed to be `None`
+        return energy, nuc_grad               # so we add this if statement to let the compiler make sure that `grad` is not `None`
 
 
 class JitPaiNN(nn.Module):
@@ -105,7 +106,7 @@ class JitPaiNN(nn.Module):
         self.prop_unit, self.len_unit = get_default_unit()
         atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
         self.register_buffer("atom_sp", atom_sp)
-        self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
+        self.len_unit_conv = unit_conversion("Bohr", self.len_unit)
         self.prop_unit_conv = unit_conversion(self.prop_unit, "AU")
         self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "AU")
 
@@ -113,6 +114,8 @@ class JitPaiNN(nn.Module):
         self,
         at_no: torch.LongTensor,
         coord: torch.Tensor,
+        charge: int,
+        spin: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         coord.requires_grad_(True)
         coord = coord * self.len_unit_conv
@@ -122,8 +125,88 @@ class JitPaiNN(nn.Module):
         for msg, upd in zip(self.message, self.update):
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
-        energy, forces = self.out(x_scalar, coord)
+        energy, nuc_grad = self.out(x_scalar, coord)
         energy = (energy.double() + self.atom_sp[at_no].sum()) * self.prop_unit_conv
-        forces = forces.double() * self.grad_unit_conv
-        return energy, forces
+        nuc_grad = nuc_grad.double() * self.grad_unit_conv
+        return energy, nuc_grad
+
+
+class JitEleFuse(nn.Module):
+    def __init__(
+        self,
+        node_dim: int = 128,
+    ):
+        super().__init__()
+        self.node_dim = node_dim
+        self.sqrt_dim = math.sqrt(node_dim)
+        self.q_linear = nn.Linear(node_dim, node_dim)
+        nn.init.zeros_(self.q_linear.bias)
+        self.k_linear = nn.Linear(1, node_dim)
+        nn.init.zeros_(self.k_linear.bias)
+        self.v_linear = nn.Linear(1, node_dim, bias=False)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        ele: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Args:
+            `x`: Node features.
+            `ele`: Electronic features.
+        Returns:
+            Atomic features.
+        """
+        q = self.q_linear(x)
+        k = self.k_linear(ele)
+        v = self.v_linear(ele)
+        dot = torch.sum(q * k, dim=1, keepdim=True) / self.sqrt_dim
+        attn = torch.softmax(dot, dim=0)
+        return attn * v
+
+
+class JitPaiNNEle(JitPaiNN):
+    """XPaiNN-ele model for JIT script. This model does not consider batch."""
+    def __init__(self, config: NetConfig):
+        super().__init__(config)
+        self.charge_fuse = nn.ModuleList([
+            JitEleFuse(node_dim=config.node_dim)
+            for _ in range(config.action_blocks)
+        ])
+        self.spin_fuse = nn.ModuleList([
+            JitEleFuse(node_dim=config.node_dim)
+            for _ in range(config.action_blocks)
+        ])
+
+    def forward(
+        self,
+        at_no: torch.LongTensor,
+        coord: torch.Tensor,
+        charge: int,
+        spin: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        coord.requires_grad_(True)
+        charge_t = torch.tensor([charge], dtype=torch.get_default_dtype(), device=coord.device)
+        spin_t = torch.tensor([spin], dtype=torch.get_default_dtype(), device=coord.device)
+        coord = coord * self.len_unit_conv
+        edge_index = radius_graph(coord, r=self.cutoff, max_num_neighbors=self.max_edges)
+        x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index)
+        x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
+        for cf, sf, msg, upd in zip(self.charge_fuse, self.spin_fuse, self.message, self.update):
+            x_scalar = x_scalar + cf(x_scalar, charge_t) + sf(x_scalar, spin_t)
+            x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
+            x_scalar, x_vector = upd(x_scalar, x_vector)
+        energy, nuc_grad = self.out(x_scalar, coord)
+        energy = (energy.double() + self.atom_sp[at_no].sum()) * self.prop_unit_conv
+        nuc_grad = nuc_grad.double() * self.grad_unit_conv
+        return energy, nuc_grad
+
+
+def resolve_jit_model(config: NetConfig) -> nn.Module:
+    if config.version.lower() == "xpainn":
+        return JitPaiNN(config)
+    elif config.version.lower() == "xpainn-ele":
+        return JitPaiNNEle(config)
+    else:
+        raise NotImplementedError(f"Unsupported model {config.version}")
     

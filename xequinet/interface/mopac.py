@@ -3,8 +3,8 @@ import os
 import subprocess
 import numpy as np
 
-# from ..utils import unit_conversion
-from xequinet.utils import unit_conversion
+from ..utils import unit_conversion
+# from xequinet.utils import unit_conversion
 
 
 class MOPAC:
@@ -18,7 +18,7 @@ class MOPAC:
         charge: int = 0,
         multiplicity: int = 1,
         method: str = "PM7",
-        calc_force: bool = False,
+        calc_grad: bool = False,
         name: str = "mopac",
         scratch: str = "./",
         keywords: str = "",
@@ -30,7 +30,7 @@ class MOPAC:
             `charge`: Charge of the molecule.
             `multiplicity`: Multiplicity of the molecule.
             `method`: Method of the calculation.
-            `calc_force`: Whether calculate the force.
+            `calc_grad`: Whether calculate the gradient.
             `name`: Name of the mopac files (.mop, .out, .arc, etc.).
             `scratch`: Scratch directory.
             `keywords`: Other keywords of the mopac calculation.
@@ -41,18 +41,18 @@ class MOPAC:
         self.charge = charge
         self.multi = multiplicity
         self.method = method
-        self.calc_force = calc_force
+        self.calc_grad = calc_grad
         self.name = name
         self.keywords = keywords
         self.scratch = scratch
         os.makedirs(self.scratch, exist_ok=True)
 
-        self.final_hof = None  # kcal/mol
-        self.force = None      # kcal/mol/angstrom
+        self.final_hof = None     # kcal/mol
+        self.gradient = None      # kcal/mol/angstrom
 
     def _write_input(self):
         s = f"{self.method}"
-        if self.calc_force:
+        if self.calc_grad:
             s += " FORCE NOREOR"
         if self.charge != 0:
             s += f"CHARGE={self.charge} "
@@ -78,14 +78,14 @@ class MOPAC:
         line = str(line, "utf-8")
         self.final_hof = float(line.split()[-2])
         # read force
-        if self.calc_force:
+        if self.calc_grad:
             lines = subprocess.check_output(
                 ["grep", "-A", str(len(self.atoms) + 3), "CARTESIAN COORDINATE DERIVATIVES", out_file],
                 cwd=self.scratch
             )
             lines = str(lines, "utf-8").strip().split("\n")[4:]
-            force = [l.strip().split()[2:5] for l in lines]
-            self.force = np.array(force, dtype=np.float32)
+            grad = [l.strip().split()[2:5] for l in lines]
+            self.gradient = np.array(grad, dtype=np.float32)
 
     def calculate(self, clean=False):
         self._write_input()
@@ -97,15 +97,15 @@ class MOPAC:
             if os.path.exists(os.path.join(self.scratch, f"{self.name}.arc")):
                 os.remove(os.path.join(self.scratch, f"{self.name}.arc"))
 
-    def get_final_heat_of_formation(self, unit="AU", clean=False):
+    def get_final_heat_of_formation(self, clean=False):
         if self.final_hof is None:
             self.calculate(clean=clean)
-        return self.final_hof * unit_conversion("kcal_per_mol", unit)
+        return self.final_hof * unit_conversion("kcal_per_mol", "AU")
     
-    def get_force(self, unit="AU", clean=False):
-        if self.force is None:
+    def get_gradient(self, clean=False):
+        if self.calc_grad is None:
             self.calculate(clean=clean)
-        return self.force * unit_conversion("kcal_per_mol/Angstrom", unit)
+        return self.gradient * unit_conversion("kcal_per_mol/Angstrom", "AU")
     
 
 if __name__ == "__main__":
@@ -117,5 +117,5 @@ if __name__ == "__main__":
     ]
     mopac = MOPAC(atoms, coords, charge=0, multiplicity=1, method="PM7", calc_force=True, name="mopac", scratch="./")
     mopac.calculate(clean=True)
-    print(mopac.get_final_heat_of_formation(unit="hartree"))
-    print(mopac.get_force(unit="hartree/bohr"))
+    print(mopac.get_final_heat_of_formation())
+    print(mopac.get_gradient())

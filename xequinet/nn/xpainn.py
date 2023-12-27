@@ -244,7 +244,7 @@ class ElectronicFuse(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-    ):
+    ) -> torch.Tensor:
         super().__init__()
         self.node_dim = node_dim
         self.sqrt_dim = math.sqrt(node_dim)

@@ -3,7 +3,7 @@ import argparse
 import torch
 import torch_cluster
 
-from xequinet.interface import LmpPaiNN, JitPaiNN
+from xequinet.interface import LmpPaiNN, resolve_jit_model
 from xequinet.utils import NetConfig, set_default_unit
 
 
@@ -42,7 +42,7 @@ def main():
     if args.lammps:
         model = LmpPaiNN(config).to(device)
     else:
-        model = JitPaiNN(config).to(device)
+        model = resolve_jit_model(config).to(device)
 
     model.load_state_dict(ckpt["model"], strict=False)
     model_script = torch.jit.script(model)

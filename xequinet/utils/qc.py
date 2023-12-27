@@ -17,7 +17,10 @@ Hartree = HARTREE = 1.0
 eV = EV = 27.211386024367243
 mHartree = MHARTREE = Hartree * 1000
 meV = MEV = eV * 1000
-kcal_per_mol = KCAL_PER_MOL = 627.5094738898777  # although not a unit of energy, it is often used to represent energy
+# although not units of energy, they are often used to represent energy
+kcal_per_mol = KCAL_PER_MOL = 627.5094738898777
+kJ_per_mol = KJ_PER_MOL = 2625.499638
+J_per_mol = J_PER_MOL = kJ_per_mol * 1000
 
 # length
 Angstrom = ANGSTROM = 0.5291772105638411
@@ -35,7 +38,8 @@ PROP_UNIT = None
 LEN_UNIT = "Angstrom"
 
 unit_set = {
-    "AU", "BOHR", "HARTREE", "EV", "MHARTREE", "MEV", "KCAL_PER_MOL", "ANGSTROM", "DEBYE", "MDEBYE",
+    "AU", "BOHR", "HARTREE", "EV", "MHARTREE", "MEV", "KCAL_PER_MOL", "KJ_PER_MOL", "J_PER_MOL",
+    "ANGSTROM", "DEBYE", "MDEBYE", "FS", "PS",
 }
 
 def eval_unit(unit: str):
