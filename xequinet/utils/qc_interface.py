@@ -296,7 +296,7 @@ class QCMatriceBuilder(nn.Module):
         res[diagnol_mask, :, :][diagnol_mask1d, :, :] = node_ten 
         res_mask[diagnol_mask, :, :][diagnol_mask1d, :, :] = node_mask
         # scatter edge sub-blocks onto off-diagnol part of the res matrix 
-        off_diagnol_mask = to_dense_adj(edge_index, batch=batch_index, max_atoms=max_natms).bool()
+        off_diagnol_mask = to_dense_adj(edge_index, batch=batch_index, max_num_nodes=max_natms).bool()
         res[off_diagnol_mask, :, :] = edge_ten 
         res_mask[off_diagnol_mask, :, :] = edge_mask
 
@@ -317,30 +317,29 @@ class BuildMatPerMole(nn.Module):
         super().__init__() 
         self.irreps_out = irreps_out if isinstance(irreps_out, Irreps) else Irreps(irreps_out) 
         self.num_channels_1d = self.irreps_out.num_irreps
-        out_repid_map = torch.zeros(self.num_reps_1d, dtype=torch.long)
+        out_repid_map = torch.zeros(self.irreps_out.dim, dtype=torch.long)
         elem_num_basis = torch.zeros(120, 1, dtype=torch.int32)
         # out_repid_map 
-        num_reps_1d, src_id, offset_per_l = 0, [0], 0
+        src_id, offset_per_l = 0, [0]
         for mul, ir in self.irreps_out:
             cur_num_reps = mul * ir.dim
-            num_reps_1d += cur_num_reps
             offset_per_l.append(cur_num_reps + offset_per_l[-1])
             offset = 0
             for dst_n_current in range(mul):
                 for m_qc in range(2*ir.l + 1):
                     m_out = m_idx_map[ir.l][m_qc] 
                     out_repid_map[src_id] = offset_per_l[ir.l] + offset + m_out 
-                    offset += 2*ir.l + 1
                     src_id += 1 
-        self.num_reps_1d = num_reps_1d
+                offset += 2 * ir.l + 1 
         # num_basis for each element 
         for ele in possible_elements:
             atm_num = ELEMENTS_DICT[ele]
-            basis_set = load_basis(basisname, ELEMENTS_LIST[atm_num])
+            basis_set = load_basis(basisname, ele)
             for ao in basis_set:
                 l = ao[0]
-                elem_num_basis[ele] += 2*l + 1 
+                elem_num_basis[atm_num] += 2*l + 1 
         # register buffer
+        self.num_reps_1d = self.irreps_out.dim 
         self.register_buffer("elem_num_basis", elem_num_basis)
         self.register_buffer("out_repid_map", out_repid_map)
 
@@ -348,37 +347,38 @@ class BuildMatPerMole(nn.Module):
             self, 
             res_node:torch.Tensor,
             res_edge:torch.Tensor,
-            raw_node_mask:torch.BoolTensor,
-            raw_edge_mask:torch.BoolTensor,
+            node_mask:torch.BoolTensor,
+            edge_mask:torch.BoolTensor,
             atomic_numbers:torch.Tensor, 
             edge_index:torch.Tensor, 
             # batch_index:torch.LongTensor,
         ):
         # transform e3nn's rep layout to qc interleaved layout along the two dims where the matrice is stored.
+        # notice: no need to swap mask tensor, as ordering only differs in m index. 
         # dimension -1
         node_ten_tmp = torch.index_select(res_node, dim=2, index=self.out_repid_map)
         edge_ten_tmp = torch.index_select(res_edge, dim=2, index=self.out_repid_map)
-        node_mask_tmp = torch.index_select(raw_node_mask, dim=2, index=self.out_repid_map) 
-        edge_mask_tmp = torch.index_select(raw_edge_mask, dim=2, index=self.out_repid_map) 
         # dimension -2 
         node_ten = torch.index_select(node_ten_tmp, dim=1, index=self.out_repid_map)
         edge_ten = torch.index_select(edge_ten_tmp, dim=1, index=self.out_repid_map)
-        node_mask = torch.index_select(node_mask_tmp, dim=1, index=self.out_repid_map)
-        edge_mask = torch.index_select(edge_mask_tmp, dim=1, index=self.out_repid_map)
-        # create a sratch tensor to hold output 
+        # create a sratch tensor to hold output, shape(natm, natm, num_reps_1d, num_reps_1d)
         natms = atomic_numbers.shape[0]
         res = torch.zeros(natms, natms, self.num_reps_1d, self.num_reps_1d, device=res_node.device, dtype=res_node.dtype)
-        res_mask = torch.zeros(natms, natms, self.num_reps_1d, self.num_reps_1d, device=res_node.device, dtype=torch.bool)
+        res_mask = torch.zeros(natms, natms, self.num_reps_1d, self.num_reps_1d, device=res_node.device).bool()
         # get the huge mask 
         diagnol_mask = torch.eye(natms, device=res.device).bool()
-        
+        # diagonal res 
         res[diagnol_mask, :, :] = node_ten 
         res_mask[diagnol_mask, :, :] = node_mask
         # scatter edge sub-blocks onto off-diagnol part of the res matrix 
-        batch_index = torch.zeros(natms, device=res.device, dtype=torch.long)
-        off_diagnol_mask = to_dense_adj(edge_index, batch=batch_index, max_atoms=natms).bool()
+        off_diagnol_mask = to_dense_adj(edge_index, max_num_nodes=natms).bool()
+        off_diagnol_mask = off_diagnol_mask.squeeze(0)
         res[off_diagnol_mask, :, :] = edge_ten 
         res_mask[off_diagnol_mask, :, :] = edge_mask
+        # transpose to (natm, num_reps_1d, natm, num_reps_1d)
+        res = res.transpose(1, 2)
+        res_mask = res_mask.transpose(1, 2)
+        # mask and reshape 
         tot_num_basis = torch.sum(self.elem_num_basis[atomic_numbers]).item()
         return res[res_mask].reshape(tot_num_basis, tot_num_basis)
 
