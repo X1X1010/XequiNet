@@ -110,7 +110,6 @@ def test_vector(model, test_loader, device, outfile, verbose=0):
             real = data.y
             error = real - pred
             sum_loss += error.abs().sum().item()
-            num_mol += len(data.y)
         if verbose >= 1:
             for imol in range(len(data.y)):
                 at_no = data.at_no[data.batch == imol]
