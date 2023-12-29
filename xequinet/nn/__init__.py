@@ -10,7 +10,7 @@ from .rbf import (
 )
 from .xpainn import (
     XEmbedding, XPainnMessage, XPainnUpdate,
-    PBCEmbedding, ElectronicFuse,
+    PBCEmbedding, EleEmbedding,
 )
 from .painn import Embedding, PainnMessage, PainnUpdate
 from .output import (
@@ -25,7 +25,7 @@ __all__ = [
     "CosineCutoff", "PolynomialCutoff",
     "GaussianSmearing", "SphericalBesselj0",
     "XEmbedding", "XPainnMessage", "XPainnUpdate",
-    "PBCEmbedding", "ElectronicFuse",
+    "PBCEmbedding", "EleEmbedding",
     "Embedding", "PainnMessage", "PainnUpdate",
     "ScalarOut", "NegGradOut", "VectorOut", "PolarOut", "SpatialOut",
     "XPaiNN", "PBCPaiNN", "resolve_model",

@@ -58,6 +58,7 @@ class NetConfig(BaseModel):
     # configurations about the training
     ckpt_file: str = None                          # checkpoint file to load
     resume: bool = False                           # whether to resume the training
+    finetune: bool = False                         # whether to finetune the model
     warmup_scheduler: str = "linear"               # warmup scheduler type
     warmup_epochs: int = 10                        # number of the warmup epochs
     max_epochs: int = 300                          # maximum number of the training epochs
@@ -86,7 +87,7 @@ class NetConfig(BaseModel):
 
     def model_hyper_params(self):
         hyper_params = self.dict(include={
-            "pbc", "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
+            "version", "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
             "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "max_edges", "action_blocks",
             "activation", "norm_type", "output_mode", "output_dim",
             "atom_ref", "batom_ref", "node_average", "default_property_unit", "default_length_unit",

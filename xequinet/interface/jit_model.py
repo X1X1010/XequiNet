@@ -131,7 +131,7 @@ class JitPaiNN(nn.Module):
         return energy, nuc_grad
 
 
-class JitEleFuse(nn.Module):
+class JitEleEmbedding(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
@@ -169,12 +169,12 @@ class JitPaiNNEle(JitPaiNN):
     """XPaiNN-ele model for JIT script. This model does not consider batch."""
     def __init__(self, config: NetConfig):
         super().__init__(config)
-        self.charge_fuse = nn.ModuleList([
-            JitEleFuse(node_dim=config.node_dim)
+        self.charge_ebd = nn.ModuleList([
+            JitEleEmbedding(node_dim=config.node_dim)
             for _ in range(config.action_blocks)
         ])
-        self.spin_fuse = nn.ModuleList([
-            JitEleFuse(node_dim=config.node_dim)
+        self.spin_ebd = nn.ModuleList([
+            JitEleEmbedding(node_dim=config.node_dim)
             for _ in range(config.action_blocks)
         ])
 
@@ -192,8 +192,8 @@ class JitPaiNNEle(JitPaiNN):
         edge_index = radius_graph(coord, r=self.cutoff, max_num_neighbors=self.max_edges)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
-        for cf, sf, msg, upd in zip(self.charge_fuse, self.spin_fuse, self.message, self.update):
-            x_scalar = x_scalar + cf(x_scalar, charge_t) + sf(x_scalar, spin_t)
+        for ce, se, msg, upd in zip(self.charge_ebd, self.spin_ebd, self.message, self.update):
+            x_scalar = x_scalar + ce(x_scalar, charge_t) + se(x_scalar, spin_t)
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
         energy, nuc_grad = self.out(x_scalar, coord)

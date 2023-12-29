@@ -112,10 +112,7 @@ class NegGradOut(nn.Module):
             retain_graph=True,
             create_graph=True,
         )[0]
-        neg_grad = torch.zeros_like(coord)      # because the output of `autograd.grad()` is `Tuple[Optional[torch.Tensor],...]` in jit script
-        if grad is not None:                    # which means the complier thinks that `neg_grad` may be `torch.Tensor` or `None`
-            neg_grad = neg_grad - grad          # but neg_grad there are not allowed to be `None`
-        return res, neg_grad                    # so we add this if statement to let the compiler make sure that `neg_grad` is not `None`
+        return res, -grad
 
 
 class VectorOut(nn.Module):

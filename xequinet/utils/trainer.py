@@ -15,7 +15,6 @@ from .functional import (
     resolve_optimizer,
     resolve_lr_scheduler,
     resolve_warmup_scheduler,
-    ModelWrapper,
 )
 from .config import NetConfig
 from .logger import ZeroLogger
@@ -101,7 +100,7 @@ class Trainer:
             `dist_sampler`: distributed sampler
             `log`: logger
         """
-        self.model = ModelWrapper(model, config.version)
+        self.model = model
         self.config = config
         self.device = device
         self.train_loader = train_loader
@@ -151,7 +150,7 @@ class Trainer:
                     config.ema_decay * avg_param + (1 - config.ema_decay) * param,
                 device=device,
             )
-            self.ema_model = ModelWrapper(ema_model, config.version)
+            self.ema_model = ema_model
         # loss recording, model saving and logging
         self.meter = AverageMeter(device=device)
         self.best_l2fs: List[loss2file] = [

@@ -8,7 +8,6 @@ from xequinet.nn import resolve_model
 from xequinet.utils import (
     NetConfig,
     unit_conversion, set_default_unit, get_default_unit,
-    ModelWrapper,
     gen_3Dinfo_str,
 )
 
@@ -236,13 +235,13 @@ def main():
         wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
     if config.output_mode == "grad":
-        test_grad(ModelWrapper(model, config.version), test_loader, device, output_file, args.verbose)
+        test_grad(model, test_loader, device, output_file, args.verbose)
     elif config.output_mode == "vector" and config.output_dim == 3:
-        test_vector(ModelWrapper(model, config.version), test_loader, device, output_file, args.verbose)
+        test_vector(model, test_loader, device, output_file, args.verbose)
     elif config.output_mode == "polar" and config.output_dim == 9:
-        test_polar(ModelWrapper(model, config.version), test_loader, device, output_file, args.verbose)
+        test_polar(model, test_loader, device, output_file, args.verbose)
     else:
-        test_scalar(ModelWrapper(model, config.version), test_loader, device, output_file, config.output_dim, args.verbose)
+        test_scalar(model, test_loader, device, output_file, config.output_dim, args.verbose)
 
 
 if __name__ == "__main__":

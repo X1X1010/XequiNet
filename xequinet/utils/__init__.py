@@ -9,7 +9,7 @@ from .functional import (
     distributed_zero_first, calculate_stats,
     resolve_lossfn, resolve_optimizer,
     resolve_lr_scheduler, resolve_warmup_scheduler,
-    ModelWrapper, gen_3Dinfo_str,
+    gen_3Dinfo_str,
 )
 
 __all__ = [
@@ -20,5 +20,5 @@ __all__ = [
     "distributed_zero_first", "calculate_stats",
     "resolve_lossfn", "resolve_optimizer",
     "resolve_lr_scheduler", "resolve_warmup_scheduler",
-    "ModelWrapper", "gen_3Dinfo_str",
+    "gen_3Dinfo_str",
 ]

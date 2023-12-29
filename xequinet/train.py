@@ -99,13 +99,18 @@ def main():
     model.to(device)
 
     # distributed training
-    ddp_model = DDP(model, device_ids=[local_rank], output_device=device)
+    find_unused = True if config.finetune else False
+    ddp_model = DDP(model, device_ids=[local_rank], output_device=device, find_unused_parameters=find_unused)
 
     # record the number of parameters
     n_params = 0
     for name, param in ddp_model.named_parameters():
-        n_params += param.numel()
-        log.s.info(f"{name}: {param.numel()}")
+        if config.finetune and "embed.node_lin" not in name:
+            param.requires_grad = False
+            log.s.info(f"{name}: {param.numel()} (frozen)")
+        else:
+            n_params += param.numel()
+            log.s.info(f"{name}: {param.numel()}")
     log.s.info(f"Total number of parameters to be optimized: {n_params}")
     
     # -------------------  train model ------------------- #

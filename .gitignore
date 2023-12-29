@@ -3,7 +3,7 @@ dataset
 docs
 debug
 experiment
-xequinet/deprecated
+xequinet/utils/logo
 */__pycache__
 **/__pycache__
 submission

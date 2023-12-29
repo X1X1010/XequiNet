@@ -240,7 +240,7 @@ class XPainnUpdate(nn.Module):
         return x_scalar + d_scalar, x_spherical + d_spherical
 
 
-class ElectronicFuse(nn.Module):
+class EleEmbedding(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
