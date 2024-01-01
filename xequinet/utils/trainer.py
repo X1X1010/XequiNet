@@ -584,8 +584,9 @@ class QCMatTrainer(Trainer):
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(total_mae)
-            self.early_stop(mae, self.best_l2fs[0].loss)
-        self.save_best_k(self.model.module, total_mae) 
+            self.early_stop(total_mae, self.best_l2fs[0].loss)
+        self.save_best_k(self.model.module, total_mae)
+        self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt") 
 
     def ema_validate(self):
         if self.ema_model is None:
@@ -614,6 +615,184 @@ class QCMatTrainer(Trainer):
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(total_mae)
-            self.early_stop(mae, self.best_l2fs[0].loss)
+            self.early_stop(total_mae, self.best_l2fs[0].loss)
         self.save_best_k(self.ema_model.module, total_mae)
+        self._save_params(self.ema_model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
 
+
+from torch_scatter import scatter_sum 
+class NewQCMatTrainer(Trainer):
+    def __init__(
+        self, 
+        model:nn.parallel.DistributedDataParallel, 
+        config:NetConfig,
+        device:torch.device, 
+        train_loader:DataLoader, 
+        valid_loader:DataLoader,
+        dist_sampler:Optional[DistributedSampler], 
+        log:ZeroLogger,
+    ):
+        super().__init__(model, config, device, train_loader, valid_loader, dist_sampler, log)
+        self.meter = GraphMeter(self.device) 
+    
+    def train1epoch(self):
+        self.model.train()
+        self.dist_sampler.set_epoch(self.epoch) 
+        
+        for step, data in enumerate(self.train_loader, start=1):
+            self.meter.reset()
+            data = data.to(self.device) 
+            # TODO: AMP
+            # forward propagation
+            res = self.model(data.at_no, data.pos, data.edge_index, data.fc_edge_index)
+            pred_diag, pred_off_diag = res[0], res[1]
+            batch_mask_diag, batch_mask_off_diag = data.onsite_mask, data.offsite_mask
+            real_diag, real_off_diag = data.node_label, data.edge_label
+            # calculate loss, average over graph 
+            batch_index = data.batch 
+            dst_index = data.fc_edge_index[0] 
+            edge_batch_index = batch_index[dst_index] 
+            # diagnol 
+            diff_diag = pred_diag - real_diag 
+            mse_diag_per_node = torch.sum(diff_diag**2 * batch_mask_diag, dim=[1, 2]) 
+            mae_diag_per_node = torch.sum(torch.abs(diff_diag) * batch_mask_diag, dim=[1, 2]) 
+            num_diag_per_node = torch.sum(batch_mask_diag, dim=[1, 2])
+            mse_diag_per_mole = scatter_sum(mse_diag_per_node, batch_index) 
+            mae_diag_per_mole = scatter_sum(mae_diag_per_node, batch_index) 
+            num_diag_per_mole = scatter_sum(num_diag_per_node, batch_index) 
+            # off-diagnol 
+            diff_off_diag = pred_off_diag - real_off_diag 
+            mse_off_diag_per_edge = torch.sum(diff_off_diag**2 * batch_mask_off_diag, dim=[1, 2])
+            mae_off_diag_per_edge = torch.sum(torch.abs(diff_off_diag) * batch_mask_off_diag, dim=[1, 2]) 
+            num_off_diag_per_edge = torch.sum(batch_mask_off_diag, dim=[1, 2]) 
+            mse_off_diag_per_mole = scatter_sum(mse_off_diag_per_edge, edge_batch_index) 
+            mae_off_diag_per_mole = scatter_sum(mae_off_diag_per_edge, edge_batch_index) 
+            num_off_diag_per_mole = scatter_sum(num_off_diag_per_edge, edge_batch_index)  
+            batch_mae = ((mae_diag_per_mole + mae_off_diag_per_mole) / (num_diag_per_mole + num_off_diag_per_mole)).mean() 
+            batch_mse = ((mse_diag_per_mole + mse_off_diag_per_mole) / (num_diag_per_mole + num_off_diag_per_mole)).mean() 
+            batch_rmse = torch.sqrt(batch_mse) 
+            loss = batch_mae + batch_rmse 
+            # back propagation 
+            self.optimizer.zero_grad()
+            loss.backward()
+            # gradient clipping
+            if self.config.grad_clip is not None:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip, error_if_nonfinite=True)
+                # torch.nn.utils.clip_grad_value_(self.model.parameters(), self.config.grad_clip)
+            self.optimizer.step()
+            # update EMA model
+            if self.ema_model is not None:
+                self.ema_model.update_parameters(self.model)
+            # update learning rate
+            if self.config.lr_scheduler != "plateau":
+                with self.warmup_scheduler.dampening():
+                    self.lr_scheduler.step()
+            # record l1 loss
+            with torch.no_grad():
+                l1loss_diag = (mae_diag_per_mole / num_diag_per_mole).sum()
+                l1loss_off_diag = (mae_off_diag_per_mole / num_off_diag_per_mole).sum()
+                l1loss_total = (mae_diag_per_mole + mae_off_diag_per_mole) / (num_diag_per_mole + num_off_diag_per_mole).sum()
+                num_mole = num_diag_per_mole.size(0)
+                self.meter.update(l1loss_diag.item(), l1loss_off_diag.item(), l1loss_total.item(), num_mole, num_mole, num_mole)
+            # logging
+            if step % self.config.log_interval == 0 or step == len(self.train_loader):
+                mae = self.meter.reduce()
+                self.log.f.info(
+                    "Epoch: [{iepoch:>4}][{step:>4}/{nstep}]   lr: {lr:3e}   train MAE: node: {mae_n:10.7f},  edge: {mae_e:10.7f},  total: {mae_tot:10.7f}".format(
+                        iepoch=self.epoch,
+                        step=step,
+                        nstep=len(self.train_loader),
+                        lr=self.optimizer.param_groups[0]["lr"],
+                        mae_n=mae[0],
+                        mae_e=mae[1],
+                        mae_tot=mae[2],
+                    )
+                )
+    
+    def validate(self):
+        self.model.eval()
+        self.meter.reset()
+        with torch.no_grad():
+            for data in self.valid_loader:
+                data = data.to(self.device)
+                # TODO: AMP
+                res = self.model(data.at_no, data.pos, data.edge_index, data.fc_edge_index)
+                pred_diag, pred_off_diag = res[0], res[1]
+                batch_mask_diag, batch_mask_off_diag = data.onsite_mask, data.offsite_mask
+                real_diag, real_off_diag = data.node_label, data.edge_label
+                # calculate mae, average over graph 
+                batch_index = data.batch 
+                dst_index = data.fc_edge_index[0] 
+                edge_batch_index = batch_index[dst_index] 
+                # diagnol  
+                diff_diag = pred_diag - real_diag
+                mae_diag_per_node = torch.sum(torch.abs(diff_diag) * batch_mask_diag, dim=[1, 2]) 
+                num_diag_per_node = torch.sum(batch_mask_diag, dim=[1, 2])
+                mae_diag_per_mole = scatter_sum(mae_diag_per_node, batch_index) 
+                num_diag_per_mole = scatter_sum(num_diag_per_node, batch_index) 
+                # off-diagnol 
+                diff_off_diag = pred_off_diag - real_off_diag  
+                mae_off_diag_per_edge = torch.sum(torch.abs(diff_off_diag) * batch_mask_off_diag, dim=[1, 2]) 
+                num_off_diag_per_edge = torch.sum(batch_mask_off_diag, dim=[1, 2])  
+                mae_off_diag_per_mole = scatter_sum(mae_off_diag_per_edge, edge_batch_index) 
+                num_off_diag_per_mole = scatter_sum(num_off_diag_per_edge, edge_batch_index)  
+                # sum over batch 
+                l1loss_diag = (mae_diag_per_mole / num_diag_per_mole).sum()
+                l1loss_off_diag = (mae_off_diag_per_mole / num_off_diag_per_mole).sum()
+                l1loss_total = (mae_diag_per_mole + mae_off_diag_per_mole) / (num_diag_per_mole + num_off_diag_per_mole).sum()
+                num_mole = num_diag_per_mole.size(0)
+                self.meter.update(l1loss_diag.item(), l1loss_off_diag.item(), l1loss_total.item(), num_mole, num_mole, num_mole)
+        valid_mae = self.meter.reduce()
+        self.log.f.info(f"Validation MAE: node: {valid_mae[0]:10.7f}, edge: {valid_mae[1]:10.7f}, total: {valid_mae[2]:10.7f}")
+        total_mae = valid_mae[2]
+        if self.config.lr_scheduler == "plateau":
+            with self.warmup_scheduler.dampening():
+                self.lr_scheduler.step(total_mae)
+            self.early_stop(valid_mae, self.best_l2fs[0].loss)
+        self.save_best_k(self.model.module, total_mae)
+        self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt") 
+                
+    def ema_validate(self):
+        if self.ema_model is None:
+            return
+        self.ema_model.eval()
+        self.meter.reset()
+        with torch.no_grad():
+            for data in self.valid_loader:
+                data = data.to(self.device)
+                # TODO: AMP
+                res = self.ema_model(data.at_no, data.pos, data.edge_index, data.fc_edge_index)
+                pred_diag, pred_off_diag = res[0], res[1]
+                batch_mask_diag, batch_mask_off_diag = data.onsite_mask, data.offsite_mask
+                real_diag, real_off_diag = data.node_label, data.edge_label
+                # calculate mae, average over graph 
+                batch_index = data.batch 
+                dst_index = data.fc_edge_index[0] 
+                edge_batch_index = batch_index[dst_index] 
+                # diagnol  
+                diff_diag = pred_diag - real_diag
+                mae_diag_per_node = torch.sum(torch.abs(diff_diag) * batch_mask_diag, dim=[1, 2]) 
+                num_diag_per_node = torch.sum(batch_mask_diag, dim=[1, 2])
+                mae_diag_per_mole = scatter_sum(mae_diag_per_node, batch_index) 
+                num_diag_per_mole = scatter_sum(num_diag_per_node, batch_index) 
+                # off-diagnol 
+                diff_off_diag = pred_off_diag - real_off_diag  
+                mae_off_diag_per_edge = torch.sum(torch.abs(diff_off_diag) * batch_mask_off_diag, dim=[1, 2]) 
+                num_off_diag_per_edge = torch.sum(batch_mask_off_diag, dim=[1, 2])  
+                mae_off_diag_per_mole = scatter_sum(mae_off_diag_per_edge, edge_batch_index) 
+                num_off_diag_per_mole = scatter_sum(num_off_diag_per_edge, edge_batch_index)  
+                # sum over batch 
+                l1loss_diag = (mae_diag_per_mole / num_diag_per_mole).sum()
+                l1loss_off_diag = (mae_off_diag_per_mole / num_off_diag_per_mole).sum()
+                l1loss_total = (mae_diag_per_mole + mae_off_diag_per_mole) / (num_diag_per_mole + num_off_diag_per_mole).sum()
+                num_mole = num_diag_per_mole.size(0)
+                self.meter.update(l1loss_diag.item(), l1loss_off_diag.item(), l1loss_total.item(), num_mole, num_mole, num_mole)
+        mae = self.meter.reduce()
+        self.log.f.info(f"Validation MAE: node: {mae[0]:10.7f}, edge: {mae[1]:10.7f}, total: {mae[2]:10.7f}")
+        total_mae = mae[2]
+        if self.config.lr_scheduler == "plateau":
+            with self.warmup_scheduler.dampening():
+                self.lr_scheduler.step(total_mae)
+            self.early_stop(total_mae, self.best_l2fs[0].loss)
+        self.save_best_k(self.ema_model.module, total_mae)
+        self._save_params(self.ema_model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
