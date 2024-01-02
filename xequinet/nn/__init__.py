@@ -1,5 +1,5 @@
 from .o3layer import (
-    Invariant, Gate, EquivariantDot,
+    Invariant, Gate, NormGate, EquivariantDot,
     Int2c1eEmbedding, EquivariantLayerNorm,
     resolve_norm, resolve_o3norm, resolve_actfn,
 
@@ -16,10 +16,10 @@ from .painn import Embedding, PainnMessage, PainnUpdate
 from .output import (
     ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut,
 )
-from .model import XPaiNN, PBCPaiNN, resolve_model
+from .model import XPaiNN, PBCPaiNN, XQHNet, resolve_model
 
 __all__ = [
-    "Invariant", "Gate", "EquivariantDot",
+    "Invariant", "Gate", "NormGate", "EquivariantDot",
     "Int2c1eEmbedding", "EquivariantLayerNorm",
     "resolve_norm", "resolve_o3norm", "resolve_actfn",
     "CosineCutoff", "PolynomialCutoff",
@@ -28,5 +28,6 @@ __all__ = [
     "PBCEmbedding", "EleEmbedding",
     "Embedding", "PainnMessage", "PainnUpdate",
     "ScalarOut", "NegGradOut", "VectorOut", "PolarOut", "SpatialOut",
-    "XPaiNN", "PBCPaiNN", "resolve_model",
+    "PBCScalarOut", "PBCNegGradOut",
+    "XPaiNN", "PBCPaiNN", "XQHNet", "resolve_model",
 ]

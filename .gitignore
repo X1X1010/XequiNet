@@ -1,9 +1,6 @@
 .vscode
 dataset
-docs
 debug
 experiment
-xequinet/utils/logo
 */__pycache__
 **/__pycache__
-submission

@@ -15,6 +15,10 @@ from .painn import (
 from .output import (
     ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut,
 )
+from .xqhnet import (
+    XMatEmbedding, NodewiseInteraction, MatTrans,
+    MatriceOut,
+)
 from ..utils import NetConfig
 
 
@@ -269,6 +273,77 @@ class PaiNN(nn.Module):
         return result
 
 
+class XQHNet(nn.module):
+    def __init__(self, config: NetConfig):
+        super().__init__()
+        assert config.num_mat_conv >= config.action_blocks
+        self.begin_read_idx = config.num_mat_conv - config.action_blocks
+        self.embed = XMatEmbedding(
+            node_dim=config.node_dim,
+            edge_irreps=config.edge_irreps,
+            embed_basis=config.embed_basis,
+            aux_basis=config.aux_basis,
+            num_basis=config.num_basis,
+            rbf_kernel=config.rbf_kernel,
+            cutoff=config.cutoff,
+            cutoff_fn=config.cutoff_fn,
+        )
+        self.mat_conv = nn.ModuleList() 
+        for idx in range(config.num_mat_conv):
+            irreps_in = f"{config.node_dim}x0e" if idx == 0 else config.edge_irreps 
+            self.mat_conv.append(
+                NodewiseInteraction(
+                    irreps_node_in=irreps_in,
+                    irreps_node_out=config.edge_irreps,
+                    node_dim=config.node_dim,
+                    edge_attr_dim=config.num_basis,
+                    actfn=config.activation,
+                )
+            )
+        self.mat_trans = nn.ModuleList([
+            MatTrans(
+                irreps_node=config.edge_irreps,
+                hidden_dim=config.mat_hidden_dim,
+                edge_dim=config.num_basis,
+                actfn=config.activation,
+            )
+            for _ in range(config.action_blocks)
+        ])
+        self.output = MatriceOut(
+            config.irreps_out,
+            node_dim=config.node_dim,
+            hidden_dim=config.mat_hidden_dim,
+            block_dim=config.mat_block_dim,
+            max_l=config.max_l,
+            actfn=config.activation, 
+        )
+    
+    def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            `at_no`: Atomic numbers.
+            `pos`: Atomic coordinates.
+            `edge_index`: Edge index.
+            `batch_idx`: Batch index.
+        Returns:
+            `result`: Output.
+        """
+        at_no = data.at_no; pos=data.pos
+        edge_index=data.edge_index; edge_index_full=data.fc_edge_index
+        node_feat, rbfs, rshs, full_rbfs = self.embed(at_no, pos, edge_index, edge_index_full)
+        # x_vector = torch.zeros((x_scalar.shape[0], rshs.shape[1]), device=x_scalar.device)
+        node_0, node_sph_ten, edge_sph_ten = node_feat, None, None 
+        # full_rbfs = self.edge_full_embed(pos, edge_index_full)
+        for idx, matconv in enumerate(self.mat_conv):
+            node_feat = matconv(node_feat, rbfs, rshs, edge_index)
+            if idx >= self.begin_read_idx:
+                node_sph_ten, edge_sph_ten = self.mat_trans[idx - self.begin_read_idx](node_feat, full_rbfs, edge_index_full, node_sph_ten, edge_sph_ten)
+        result = self.output(node_sph_ten, edge_sph_ten, node_0, edge_index_full)
+        
+        return result
+        
+
+
 def resolve_model(config: NetConfig) -> nn.Module:
     if config.version.lower() == "xpainn":
         return XPaiNN(config)
@@ -278,5 +353,7 @@ def resolve_model(config: NetConfig) -> nn.Module:
         return PBCPaiNN(config)
     elif config.version.lower() == "painn":
         return PaiNN(config)
+    elif config.version.lower() == "xqhnet":
+        return XQHNet(config)
     else:
         raise NotImplementedError(f"Unsupported model {config.version}")

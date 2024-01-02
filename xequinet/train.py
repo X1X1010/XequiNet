@@ -82,15 +82,17 @@ def main():
     )
 
     # calculate the mean and std of the training dataset
-    with distributed_zero_first(local_rank):
-        if isinstance(config.node_average, bool):
-            if config.node_average:
+    if config.node_average:
+        if config.node_average is True:
+            with distributed_zero_first(local_rank):
                 mean, std = calculate_stats(train_loader)
                 log.s.info(f"Mean: {mean:6.4f} {config.default_property_unit}")
                 log.s.info(f"Std : {std:6.4f} {config.default_property_unit}")
                 config.node_average = mean
-            else:
-                config.node_average = 0.0
+        else:
+            config.node_average = float(config.node_average)
+    else:
+        config.node_average = 0.0
 
     # -------------------  build model ------------------- #
     # initialize model
@@ -116,6 +118,8 @@ def main():
     # -------------------  train model ------------------- #
     if config.output_mode == "grad":
         from xequinet.utils import GradTrainer as MyTrainer
+    elif "mat" in config.version:
+        from xequinet.utils import QCMatTrainer as MyTrainer
     else:
         from xequinet.utils import Trainer as MyTrainer
     trainer = MyTrainer(ddp_model, config, device, train_loader, valid_loader, train_sampler, log)

@@ -13,11 +13,54 @@ from ..utils import (
     distributed_zero_first,
     NetConfig,
 )
+from ..utils.qc import ELEMENTS_LIST
 
 
-def process_h5(f_h5: h5py.File, mode: str, cutoff: float, max_edges: int, prop_dict: str, virtual_dim: bool):
+def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
+    """
+    Set the initial attributes of the dataset.
+    """
+    dataset._mode: str = kwargs.get("mode", "train")
+    assert dataset._mode in ["train", "valid", "test"]
+    dataset._pbc = True if "pbc" in config.version else False
+    dataset._mat = True if "xqh" in config.version else False
+    dataset._cutoff = config.cutoff
+    dataset._max_edges = config.max_edges
+    dataset._mem_process = config.mem_process
+    dataset.transform: Callable = kwargs.get("transform", None)
+    dataset.pre_transform: Callable = kwargs.get("pre_transform", None)
+
+    dataset._prop_dict = {'y': config.label_name}
+    if config.blabel_name is not None:
+        dataset._prop_dict['base_y'] = config.blabel_name
+    if config.force_name is not None:
+        dataset._prop_dict['force'] = config.force_name
+        if config.bforce_name is not None:
+            dataset._prop_dict['base_force'] = config.bforce_name
+    
+    if dataset._mat:
+        dataset._prop_dict["target_irreps"] = config.irreps_out
+        dataset._prop_dict["possible_elements"] = config.possible_elements
+        dataset._prop_dict["basisname"] = config.target_basisname
+        dataset._prop_dict["full_edge_index"] = config.full_edge_index
+
+    dataset._virtual_dim = True
+    if "field" in config.output_mode:
+        dataset._virtual_dim = False
+    
+    if dataset._pbc:
+        dataset._process_h5 = process_pbch5
+    elif dataset._mat:
+        dataset._process_h5 = process_math5
+    else:
+        dataset._process_h5 = process_h5
+
+
+def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwargs):
     from torch_cluster import radius_graph
     len_unit = get_default_unit()[1]
+    max_edges = kwargs.get("max_edges", 100)
+    virtual_dim = kwargs.get("virtual_dim", True)
     # loop over samples
     for mol_name in f_h5[mode].keys():
         mol_grp = f_h5[mode][mol_name]
@@ -47,10 +90,11 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, max_edges: int, prop_d
             yield data
 
 
-def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, virtual_dim: bool):
+def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **kwargs):
     import ase
     import ase.neighborlist
     len_unit = get_default_unit()[1]
+    virtual_dim = kwargs.get("virtual_dim", True)
     # loop over samples
     for pbc_name in f_h5[mode].keys():
         pbc_grp = f_h5[mode][pbc_name]
@@ -106,6 +150,51 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, vi
             yield data
 
 
+def process_math5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict, **kwargs):
+    from torch_cluster import radius_graph
+    from ..utils import Mat2GraphLabel, TwoBodyBlockMask 
+    len_unit = get_default_unit()[1]
+    max_edges = kwargs.get("max_edges", 100)
+    mat2graph = Mat2GraphLabel(prop_dict["irreps_out"], prop_dict["possible_elements"], prop_dict["basisname"])
+    genmask = TwoBodyBlockMask(prop_dict["irreps_out"], prop_dict["possible_elements"], prop_dict["basisname"])
+    full_edge_index: bool = prop_dict["full_edge_index"]
+    # loop over samples
+    for mol_name in f_h5[mode].keys():
+        mol_grp = f_h5[mode][mol_name]
+        at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
+        if "coordinates_A" in mol_grp.keys():
+            coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Angstrom", len_unit)
+        elif "coordinates_bohr" in mol_grp.keys():
+            coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Bohr", len_unit)
+        else:
+            raise ValueError("Coordinates not found in the hdf5 file.")
+        for icfm, coord in enumerate(coords):
+            edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
+            data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+            matrice_target = torch.from_numpy(
+                mol_grp[prop_dict['y']][()][icfm].copy()
+            ).to(torch.get_default_dtype())
+            atm_symbols = [ELEMENTS_LIST[atm] for atm in at_no]
+            if full_edge_index:
+                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols, edge_index)
+                mole_node_mask, mole_edge_mask = genmask(at_no, edge_index)
+            else:
+                # fully connected 
+                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols)
+                mole_node_mask, mole_edge_mask = genmask(at_no, data.fc_edge_index)
+            if mode == "test":
+                setattr(data, "target_matrice", matrice_target)
+            mole_node_label = mole_node_label.to(torch.get_default_dtype())
+            mole_edge_label = mole_edge_label.to(torch.get_default_dtype())
+            setattr(data, "node_label", mole_node_label)
+            setattr(data, "edge_label", mole_edge_label)
+            setattr(data, "onsite_mask", mole_node_mask)
+            setattr(data, "offsite_mask", mole_edge_mask)
+            yield data
+
+
 class H5Dataset(Dataset):
     """
     Classical torch Dataset for XequiNet.
@@ -116,15 +205,8 @@ class H5Dataset(Dataset):
         **kwargs,
     ):
         super().__init__()
-        self._mode: str = kwargs.get("mode", "train")
-        self._pbc = True if "pbc" in config.version else False
-        self._cutoff = config.cutoff
-        self._max_edges = config.max_edges
-        self._mem_process = config.mem_process
-        self.transform: Callable = kwargs.get("transform", None)
-        self.pre_transform: Callable = kwargs.get("pre_transform", None)
-
-        assert self._mode in ["train", "valid", "test"]
+        set_init_attr(self, config, **kwargs)
+        
         root = config.data_root
         data_files = config.data_files
         if isinstance(data_files, str):
@@ -133,19 +215,7 @@ class H5Dataset(Dataset):
             self._raw_paths = [os.path.join(root, "raw", f) for f in data_files]
         else:
             raise TypeError("data_files must be a string or iterable of strings")
-        # set the name of the processed data
-        self._prop_dict = {'y': config.label_name}
-        if config.blabel_name is not None:
-            self._prop_dict['base_y'] = config.blabel_name
-        if config.force_name is not None:
-            self._prop_dict['force'] = config.force_name
-            if config.bforce_name is not None:
-                self._prop_dict['base_force'] = config.bforce_name
-        # set the virtual dimension of the property
-        self._virtual_dim = True
-        if "field" in config.output_mode:
-            self._virtual_dim = False
-        
+
         self.data_list = []
         self.process()
 
@@ -164,10 +234,12 @@ class H5Dataset(Dataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            if self._pbc:
-                data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict, self._virtual_dim)
-            else:
-                data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict, self._virtual_dim)
+            data_iter = self._process_h5(
+                f_h5=f_h5, mode=self._mode, cutoff=self._cutoff,
+                max_edges=self._max_edges,
+                prop_dict=self._prop_dict,
+                virtual_dim=self._virtual_dim
+            )
             for data in data_iter:
                 if self.pre_transform is not None:
                     data = self.pre_transform(data)
@@ -196,15 +268,8 @@ class H5MemDataset(InMemoryDataset):
         config: NetConfig,
         **kwargs,
     ):
-        self._mode: str = kwargs.get("mode", "train")
-        self._pbc = True if "pbc" in config.version else False
-        self._cutoff = config.cutoff
-        self._max_edges = config.max_edges
-        self._mem_process = config.mem_process
-        self.transform: Callable = kwargs.get("transform", None)
-        self.pre_transform: Callable = kwargs.get("pre_transform", None)
+        set_init_attr(self, config, **kwargs)
 
-        assert self._mode in ["train", "valid", "test"]
         root = config.data_root
         data_files = config.data_files
         if isinstance(data_files, str):
@@ -213,22 +278,9 @@ class H5MemDataset(InMemoryDataset):
             self._raw_files = data_files
         else:
             raise TypeError("data_files must be a string or iterable of strings")
-        
         data_name = config.processed_name
         self._data_name: str = f"{self._raw_files[0].split('.')[0]}" if data_name is None else data_name
-        self._processed_file = f"{self._data_name}_{self._mode}.pt"
-        # set the name of the processed data
-        self._prop_dict = {'y': config.label_name}
-        if config.blabel_name is not None:
-            self._prop_dict['base_y'] = config.blabel_name
-        if config.force_name is not None:
-            self._prop_dict['force'] = config.force_name
-            if config.bforce_name is not None:
-                self._prop_dict['base_force'] = config.bforce_name
-        # set the virtual dimension of the property
-        self._virtual_dim = True
-        if "field" in config.output_mode:
-            self._virtual_dim = False
+        self._processed_file = f"{self._data_name}_{self._mode}.pt"        
         
         super().__init__(root, transform=self.transform, pre_transform=self.pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0])
@@ -257,10 +309,12 @@ class H5MemDataset(InMemoryDataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            if self._pbc:
-                data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict, self._virtual_dim)
-            else:
-                data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict, self._virtual_dim)
+            data_iter = self._process_h5(
+                f_h5=f_h5, mode=self._mode, cutoff=self._cutoff,
+                max_edges=self._max_edges,
+                prop_dict=self._prop_dict,
+                virtual_dim=self._virtual_dim
+            )
             for data in data_iter:
                 data_list.append(data)
             # close the file
@@ -283,15 +337,8 @@ class H5DiskDataset(DiskDataset):
         config: NetConfig,
         **kwargs,
     ):
-        self._mode: str = kwargs.get("mode", "train")
-        self._pbc = True if "pbc" in config.version else False
-        self._cutoff = config.cutoff
-        self._max_edges = config.max_edges
-        self._mem_process = config.mem_process
-        self.transform: Callable = kwargs.get("transform", None)
-        self.pre_transform: Callable = kwargs.get("pre_transform", None)
-        
-        assert self._mode in ["train", "valid", "test"]
+        set_init_attr(self, config, **kwargs)
+
         root = config.data_root
         data_files = config.data_files
         if isinstance(data_files, str):
@@ -304,18 +351,6 @@ class H5DiskDataset(DiskDataset):
         data_name = config.processed_name
         self._data_name: str = f"{self._raw_files[0].split('.')[0]}" if data_name is None else data_name
         self._processed_folder = f"{self._data_name}_{self._mode}"
-        # set the name of the processed data
-        self._prop_dict = {'y': config.label_name}
-        if config.blabel_name is not None:
-            self._prop_dict['base_y'] = config.blabel_name
-        if config.force_name is not None:
-            self._prop_dict['force'] = config.force_name
-            if config.bforce_name is not None:
-                self._prop_dict['base_force'] = config.bforce_name
-        # set the virtual dimension of the property
-        self._virtual_dim = True
-        if "field" in config.output_mode:
-            self._virtual_dim = False
 
         self._num_data = None
         super().__init__(root, transform=self.transform, pre_transform=self.pre_transform)
@@ -345,10 +380,12 @@ class H5DiskDataset(DiskDataset):
                     f_disk.close(); io_mem.close()
                 f_h5.close()
                 continue
-            if self._pbc:
-                data_iter = process_pbch5(f_h5, self._mode, self._cutoff, self._prop_dict, self._virtual_dim)
-            else:
-                data_iter = process_h5(f_h5, self._mode, self._cutoff, self._max_edges, self._prop_dict, self._virtual_dim)
+            data_iter = self._process_h5(
+                f_h5=f_h5, mode=self._mode, cutoff=self._cutoff,
+                max_edges=self._max_edges,
+                prop_dict=self._prop_dict,
+                virtual_dim=self._virtual_dim
+            )
             for data in data_iter:
                 if self.pre_transform is not None:
                     data = self.pre_transform(data)
@@ -408,6 +445,19 @@ def data_unit_transform(
     return new_data
 
 
+def mat_data_unit_transform(data: Data, label_unit: Optional[str] = None) -> Data:
+    """
+    Create a deep copy of the data and transform the units of the copy.
+    """
+    new_data = data.clone()
+    prop_unit, _ = get_default_unit()
+    if hasattr(new_data, "node_label"):
+        new_data.node_label *= unit_conversion(label_unit, prop_unit)
+    if hasattr(new_data, "edge_label"):
+        new_data.edge_label *= unit_conversion(label_unit, prop_unit)
+    return new_data
+
+
 def atom_ref_transform(
     data: Data,
     atom_sp: torch.Tensor,
@@ -449,17 +499,24 @@ def centroid_transform(
 def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = None):
     with distributed_zero_first(local_rank):
         # set transform function
-        pre_transform = lambda data: data_unit_transform(
-            data=data, y_unit=config.label_unit, by_unit=config.blabel_unit,
-            force_unit=config.force_unit, bforce_unit=config.bforce_unit,
-        )
+        if "mat" in config.version:
+            pre_transform = lambda data: mat_data_unit_transform(
+                data=data, label_unit=config.label_unit,
+            )
+        else:
+            pre_transform = lambda data: data_unit_transform(
+                data=data, y_unit=config.label_unit, by_unit=config.blabel_unit,
+                force_unit=config.force_unit, bforce_unit=config.bforce_unit,
+            )
         atom_sp = get_atomic_energy(config.atom_ref)
         batom_sp = get_atomic_energy(config.batom_ref)
-        transform = lambda data: atom_ref_transform(
-            data=data,
-            atom_sp=atom_sp,
-            batom_sp=batom_sp,
-        )
+        transform = None
+        if config.atom_ref is not None:
+            transform = lambda data: atom_ref_transform(
+                data=data,
+                atom_sp=atom_sp,
+                batom_sp=batom_sp,
+            )
         if config.dataset_type == "normal":
             dataset = H5Dataset(config, mode=mode, pre_transform=pre_transform, transform=transform)
         elif config.dataset_type == "memory":
