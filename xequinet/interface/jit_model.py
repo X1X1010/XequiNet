@@ -186,8 +186,8 @@ class JitPaiNNEle(JitPaiNN):
         spin: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         coord.requires_grad_(True)
-        charge_t = torch.tensor([charge], dtype=torch.get_default_dtype(), device=coord.device)
-        spin_t = torch.tensor([spin], dtype=torch.get_default_dtype(), device=coord.device)
+        charge_t = torch.tensor([[charge]], dtype=coord.dtype, device=coord.device)
+        spin_t = torch.tensor([[spin]], dtype=coord.dtype, device=coord.device)
         coord = coord * self.len_unit_conv
         edge_index = radius_graph(coord, r=self.cutoff, max_num_neighbors=self.max_edges)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index)

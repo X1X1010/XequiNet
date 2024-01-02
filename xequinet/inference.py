@@ -288,7 +288,7 @@ def main():
 
     # build model
     model = resolve_model(config).to(device)
-    model.load_state_dict(ckpt["model"], strict=False)
+    model.load_state_dict(ckpt["model"])
     model.eval()
 
     # load input data
