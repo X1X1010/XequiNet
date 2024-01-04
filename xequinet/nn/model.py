@@ -273,7 +273,7 @@ class PaiNN(nn.Module):
         return result
 
 
-class XQHNet(nn.module):
+class XQHNet(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
         assert config.num_mat_conv >= config.action_blocks
@@ -353,7 +353,7 @@ def resolve_model(config: NetConfig) -> nn.Module:
         return PBCPaiNN(config)
     elif config.version.lower() == "painn":
         return PaiNN(config)
-    elif config.version.lower() == "xqhnet":
+    elif config.version.lower() == "xqhnet-mat":
         return XQHNet(config)
     else:
         raise NotImplementedError(f"Unsupported model {config.version}")
