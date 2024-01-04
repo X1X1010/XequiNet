@@ -310,3 +310,71 @@ class SpatialOut(nn.Module):
         spatial = torch.square(coord).sum(dim=1, keepdim=True)
         res = scatter(scalar_out * spatial, batch_index, dim=0)
         return res
+
+
+class CartTensorOut(nn.Module):
+    """
+    Output Module for order n tensor via tensor product 1 \otimes 1 \otimes 1 ...
+    """
+    def __init__(
+        self,
+        node_dim: int = 128,
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
+        hidden_dim: int = 64,
+        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1o",
+        order: int = 2,
+        required_symmetry: str = "ij",
+        trace_out: bool = False,
+        actfn: str = "silu",
+    ):
+        super().__init__()
+        self.node_dim = node_dim
+        self.hidden_dim = hidden_dim
+        self.edge_irreps = edge_irreps if isinstance(edge_irreps, o3.Irreps) else o3.Irreps(edge_irreps)
+        self.hidden_irreps = hidden_irreps if isinstance(hidden_irreps, o3.Irreps) else o3.Irreps(hidden_irreps)
+        self.activation = resolve_actfn(actfn)
+        self.order = order
+        self.trace_out = trace_out and order == 2
+
+        self.scalar_out_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, self.order),
+        )
+        self.spherical_out_mlp = nn.Sequential(
+            o3.Linear(self.edge_irreps, self.hidden_irreps, biases=True),
+            Gate(self.hidden_irreps),
+            o3.Linear(self.hidden_irreps, f"{self.order}x1o", biases=True),
+        )
+        self.rsh_conv = o3.ElementwiseTensorProduct(f"{self.order}x1o", f"{self.order}x0e")
+        self.rtp = o3.ReducedTensorProducts(formula=required_symmetry, **{i: "1o" for i in range(self.order)})
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        nn.init.zeros_(self.scalar_out_mlp[0].bias)
+        nn.init.zeros_(self.scalar_out_mlp[2].bias)
+        nn.init.zeros_(self.spherical_out_mlp[0].bias)
+        nn.init.zeros_(self.spherical_out_mlp[2].bias)
+
+    def forward(
+        self,
+        x_scalar: torch.Tensor,
+        x_spherical: torch.Tensor,
+        coord: torch.Tensor,
+        batch_index: torch.LongTensor
+    ) -> torch.Tensor:
+        spherical_out = self.spherical_out_mlp(x_spherical)
+        scalar_out = self.scalar_out_mlp(x_scalar)
+        atom_out = self.rsh_conv(spherical_out, scalar_out)
+        reduced_out = scatter(atom_out, batch_index, dim=0)
+        split_vectors = torch.split(reduced_out, 3, dim=-1)
+        spherical_res = self.rtp(*split_vectors)
+        Q = self.rtp.change_of_basis
+        cartesian_res = spherical_res @ Q.flatten(-len(self.order))
+        shape = list(spherical_res.shape[:-1]) + list(Q.shape[1:])
+        cartesian_res = cartesian_res.view(shape)
+        if self.trace_out:
+            res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3
+            return res
+        else:
+            return cartesian_res

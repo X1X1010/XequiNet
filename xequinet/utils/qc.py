@@ -286,12 +286,17 @@ def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
     return centroid
 
 
-def load_basis(basisname, symbol):
+def get_l_from_basis(basisname, ele):
+    if basisname == "hessian":
+        return [1]
+    if isinstance(ele, int):
+        ele = ELEMENTS_LIST[ele]
     if (BASIS_FOLDER / f"{basisname}.dat").exists():
         bf = str(BASIS_FOLDER / f"{basisname}.dat")
     else:
         bf = basisname
-    return gto.basis.load(bf, symbol) 
+    basis = gto.basis.load(bf, ele)
+    return [b[0] for b in basis]
 
 
 if __name__ == "__main__":

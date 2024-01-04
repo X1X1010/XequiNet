@@ -13,7 +13,6 @@ from ..utils import (
     distributed_zero_first,
     NetConfig,
 )
-from ..utils.qc import ELEMENTS_LIST
 
 
 def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
@@ -23,7 +22,7 @@ def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
     dataset._mode: str = kwargs.get("mode", "train")
     assert dataset._mode in ["train", "valid", "test"]
     dataset._pbc = True if "pbc" in config.version else False
-    dataset._mat = True if "xqh" in config.version else False
+    dataset._mat = True if "mat" in config.version else False
     dataset._cutoff = config.cutoff
     dataset._max_edges = config.max_edges
     dataset._mem_process = config.mem_process
@@ -176,22 +175,53 @@ def process_math5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict, **kwargs
             matrice_target = torch.from_numpy(
                 mol_grp[prop_dict['y']][()][icfm].copy()
             ).to(torch.get_default_dtype())
-            atm_symbols = [ELEMENTS_LIST[atm] for atm in at_no]
             if full_edge_index:
-                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols, edge_index)
+                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, at_no, edge_index)
                 mole_node_mask, mole_edge_mask = genmask(at_no, edge_index)
             else:
                 # fully connected 
-                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, atm_symbols)
+                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, at_no)
                 mole_node_mask, mole_edge_mask = genmask(at_no, data.fc_edge_index)
             if mode == "test":
-                setattr(data, "target_matrice", matrice_target)
-            mole_node_label = mole_node_label.to(torch.get_default_dtype())
-            mole_edge_label = mole_edge_label.to(torch.get_default_dtype())
-            setattr(data, "node_label", mole_node_label)
-            setattr(data, "edge_label", mole_edge_label)
-            setattr(data, "onsite_mask", mole_node_mask)
-            setattr(data, "offsite_mask", mole_edge_mask)
+                data.target_matrice = matrice_target
+            data.node_label = mole_node_label.to(torch.get_default_dtype())
+            data.edge_label = mole_edge_label.to(torch.get_default_dtype())
+            data.onsite_mask = mole_node_mask
+            data.offsite_mask = mole_edge_mask
+            yield data
+
+
+def process_hessh5(f_h5: h5py.File, mode: str, cutoff: float, **kwargs):
+    from torch_cluster import radius_graph
+    len_unit = get_default_unit()[1]
+    max_edges = kwargs.get("max_edges", 100)
+    # loop over samples
+    for mol_name in f_h5[mode].keys():
+        mol_grp = f_h5[mode][mol_name]
+        at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
+        if "coordinates_A" in mol_grp.keys():
+            coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Angstrom", len_unit)
+        elif "coordinates_bohr" in mol_grp.keys():
+            coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+            coords *= unit_conversion("Bohr", len_unit)
+        else:
+            raise ValueError("Coordinates not found in the hdf5 file.")
+        for icfm, coord in enumerate(coords):
+            edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
+            data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
+            hess_ii = torch.from_numpy(
+                mol_grp["hii"][()][icfm].copy()
+            ).to(torch.get_default_dtype())
+            hess_ij = torch.from_numpy(
+                mol_grp["hij"][()][icfm].copy()
+            ).to(torch.get_default_dtype())
+            fc_edge_index = torch.from_numpy(
+                mol_grp["edge_index"][()][icfm].copy()
+            ).view(2, -1).long()
+            setattr(data, "node_label", hess_ii)
+            setattr(data, "edge_label", hess_ij)
+            setattr(data, "fc_edge_index", fc_edge_index)
             yield data
 
 
