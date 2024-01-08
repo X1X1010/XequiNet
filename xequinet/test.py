@@ -3,6 +3,7 @@ import argparse
 import torch
 import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
+from torch_scatter import scatter_sum 
 
 from xequinet.data import create_dataset
 from xequinet.nn import resolve_model
@@ -171,7 +172,7 @@ def test_polar(model, test_loader, device, outfile, verbose=0):
 
 
 @torch.no_grad()
-def test_matrix_over_dataset(model, test_loader, device, build_matrix, output_file):
+def test_matrix_wavefunc(model, test_loader, device, build_matrix, output_file):
     from xequinet.utils import cal_orbital_and_energies
     from pyscf import gto
     model.eval()
@@ -180,7 +181,7 @@ def test_matrix_over_dataset(model, test_loader, device, build_matrix, output_fi
     num_orbs, num_moles = 0, 0 
     for test_batch_idx, data in enumerate(test_loader):
         data = data.to(device) 
-        res_node, res_edge = model(data.at_no, data.pos, data.edge_index, data.fc_edge_index) 
+        res_node, res_edge = model(data) 
         node_mask, edge_mask = data.onsite_mask, data.offsite_mask
         mol = gto.Mole()
         t = [
@@ -206,7 +207,7 @@ def test_matrix_over_dataset(model, test_loader, device, build_matrix, output_fi
         sum_mae_e += mae_e.item() * real_e.shape[0] 
         sum_cosine_similarity += cosine_similarity.item()
         num_moles += 1 
-        num_orbs += norb_occ
+        num_orbs += real_e.shape[0]
         # write to log file 
         with open(output_file, 'a') as wf:
             wf.write(f"Test error for mole {test_batch_idx:6d}: \n")
@@ -225,7 +226,7 @@ def test_matrix(model, test_loader, device, output_file):
     num_node, num_edge, num_total = 0, 0, 0
     for data in test_loader:
         data = data.to(device)
-        pred_pad_node, pred_pad_edge = model(data.at_no, data.pos, data.edge_index, data.fc_edge_index)
+        pred_pad_node, pred_pad_edge = model(data)
         batch_mask_node, batch_mask_edge = data.onsite_mask, data.offsite_mask
         pred_node, pred_edge = pred_pad_node[batch_mask_node], pred_pad_edge[batch_mask_edge]
         real_node, real_edge = data.node_label[batch_mask_node], data.edge_label[batch_mask_edge] 
@@ -245,6 +246,42 @@ def test_matrix(model, test_loader, device, output_file):
     
     with open(output_file, 'a') as wf:
         wf.write(f"Test MAE: node {sum_loss_node / num_node:10.8f}, edge {sum_loss_edge / num_edge:10.8f}, total {sum_loss_total / num_total:10.8f}.\n")
+
+
+@torch.no_grad()
+def test_matrix_per_mole(model, data_loader, device, output_file):
+    model.eval() 
+    l1loss_diag, l1loss_off_diag, l1loss_total = 0.0, 0.0, 0.0
+    num_mole = 0
+    for data in data_loader:
+        data = data.to(device)
+        pred_diag, pred_off_diag = model(data)
+        batch_mask_diag, batch_mask_off_diag = data.onsite_mask, data.offsite_mask 
+        real_diag, real_off_diag = data.node_label, data.edge_label 
+        # calculate mae, average over graph 
+        batch_index = data.batch 
+        dst_index = data.fc_edge_index[0] 
+        edge_batch_index = batch_index[dst_index] 
+        ## diagnol  
+        diff_diag = pred_diag - real_diag
+        mae_diag_per_node = torch.sum(torch.abs(diff_diag) * batch_mask_diag, dim=[1, 2]) 
+        num_diag_per_node = torch.sum(batch_mask_diag, dim=[1, 2])
+        mae_diag_per_mole = scatter_sum(mae_diag_per_node, batch_index) 
+        num_diag_per_mole = scatter_sum(num_diag_per_node, batch_index) 
+        ## off-diagnol 
+        diff_off_diag = pred_off_diag - real_off_diag  
+        mae_off_diag_per_edge = torch.sum(torch.abs(diff_off_diag) * batch_mask_off_diag, dim=[1, 2]) 
+        num_off_diag_per_edge = torch.sum(batch_mask_off_diag, dim=[1, 2])  
+        mae_off_diag_per_mole = scatter_sum(mae_off_diag_per_edge, edge_batch_index) 
+        num_off_diag_per_mole = scatter_sum(num_off_diag_per_edge, edge_batch_index)  
+        # accumulation  
+        l1loss_diag += torch.sum((mae_diag_per_mole / num_diag_per_mole)).item()
+        l1loss_off_diag += torch.sum((mae_off_diag_per_mole / num_off_diag_per_mole)).item()
+        l1loss_total += torch.sum((mae_diag_per_mole + mae_off_diag_per_mole) / (num_diag_per_mole + num_off_diag_per_mole)).item()
+        num_mole += num_diag_per_mole.size(0)
+     
+    with open(output_file, 'a') as wf:
+        wf.write(f"Test MAE: diagnol {l1loss_diag / num_mole:10.8f}, off-diagnol {l1loss_off_diag / num_mole:10.8f}, total {l1loss_total / num_mole:10.8f}.\n")
 
 
 
@@ -327,7 +364,7 @@ def main():
         if args.diag:
             from xequinet.utils import BuildMatPerMole
             matrix_builder = BuildMatPerMole(config.irreps_out, config.possible_elements, config.target_basisname)
-            test_matrix_over_dataset(model, test_loader, device, matrix_builder, output_file)
+            test_matrix_wavefunc(model, test_loader, device, matrix_builder, output_file)
         else:
             test_matrix(model, test_loader, device, output_file)
     else:

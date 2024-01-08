@@ -298,12 +298,14 @@ class XQHNet(nn.Module):
                     node_dim=config.node_dim,
                     edge_attr_dim=config.num_basis,
                     actfn=config.activation,
+                    use_normgate=False if idx == 0 else True,
                 )
             )
         self.mat_trans = nn.ModuleList([
             MatTrans(
-                irreps_node=config.edge_irreps,
+                node_dim=config.node_dim,
                 hidden_dim=config.mat_hidden_dim,
+                max_l=config.max_l,
                 edge_dim=config.num_basis,
                 actfn=config.activation,
             )
@@ -331,9 +333,7 @@ class XQHNet(nn.Module):
         at_no = data.at_no; pos=data.pos
         edge_index=data.edge_index; edge_index_full=data.fc_edge_index
         node_feat, rbfs, rshs, full_rbfs = self.embed(at_no, pos, edge_index, edge_index_full)
-        # x_vector = torch.zeros((x_scalar.shape[0], rshs.shape[1]), device=x_scalar.device)
         node_0, node_sph_ten, edge_sph_ten = node_feat, None, None 
-        # full_rbfs = self.edge_full_embed(pos, edge_index_full)
         for idx, matconv in enumerate(self.mat_conv):
             node_feat = matconv(node_feat, rbfs, rshs, edge_index)
             if idx >= self.begin_read_idx:
