@@ -147,7 +147,7 @@ class TwoBodyBlockMask:
                 pos_idx = torch.arange(2*l+1) + offset + offset_per_l[l]
                 ele_repid_mask[pos_idx] = 1
                 offset += 2 * l + 1
-        self.out_repid_mask[ele] = ele_repid_mask
+            self.out_repid_mask[ele] = ele_repid_mask
 
     def __call__(self, at_no: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.BoolTensor, torch.BoolTensor]:
         """

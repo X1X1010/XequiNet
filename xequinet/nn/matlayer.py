@@ -42,8 +42,8 @@ class SelfLayer(nn.Module):
             shared_weights=True, 
             internal_weights=True,
         )
-        self.linear_node_l = o3.Linear(irreps_in=self.irreps_in, irreps_out=self.irreps_hidden, biases=True)
-        self.linear_node_r = o3.Linear(irreps_in=self.irreps_in, irreps_out=self.irreps_hidden, biases=True)
+        self.linear_node_l = o3.Linear(irreps_in=self.irreps_in, irreps_out=self.irreps_in, biases=True)
+        self.linear_node_r = o3.Linear(irreps_in=self.irreps_in, irreps_out=self.irreps_in, biases=True)
         self.linear_node_p = o3.Linear(irreps_in=self.irreps_tp_out, irreps_out=self.irreps_hidden, biases=False)
         self.normgate_l = NormGate(self.irreps_in, actfn)
         self.normgate_r = NormGate(self.irreps_in, actfn)
@@ -179,7 +179,7 @@ class Expansion(nn.Module):
                 nn.Linear(64, self.num_bias, bias=True)
             )
 
-    def get_expansion_path(self, irrep_in: o3.Irreps, irrep_out_1: o3.Irreps, irrep_out_2: o3.Irreps) -> List[List[int, int, int, bool, float, List[int, int, int]]]:
+    def get_expansion_path(self, irrep_in: o3.Irreps, irrep_out_1: o3.Irreps, irrep_out_2: o3.Irreps) -> List:
         instructions = []
         for  i, (num_in, ir_in) in enumerate(irrep_in):
             for  j, (num_out1, ir_out1) in enumerate(irrep_out_1):
