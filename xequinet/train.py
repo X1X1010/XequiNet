@@ -118,7 +118,7 @@ def main():
     # -------------------  train model ------------------- #
     if config.output_mode == "grad":
         from xequinet.utils import GradTrainer as MyTrainer
-    elif "mat" in config.version:
+    elif config.output_mode == "matrice":
         from xequinet.utils import QCMatTrainer as MyTrainer
     else:
         from xequinet.utils import Trainer as MyTrainer
