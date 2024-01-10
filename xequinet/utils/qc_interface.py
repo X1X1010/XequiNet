@@ -57,11 +57,11 @@ class TwoBodyBlockPad:
             repid_map = []
             l_list = get_l_from_basis(basisname, ele)
             offset, cur_l = 0, l_list[0]
-            for l in l_list:
+            for idx, l in enumerate(l_list):
                 if l > cur_l:  # new shell 
                     offset = 0
                     cur_l = l 
-                repid_map.append(torch.LongTensor(m_idx_map[l]) + offset + offset_per_l[l])
+                repid_map.append(torch.LongTensor(m_idx_map[l]) + offset + offset_per_l[idx])
                 offset += 2 * l + 1
             self.out_repid_map[ele] = torch.cat(repid_map)
     
@@ -140,14 +140,14 @@ class TwoBodyBlockMask:
             l_list = get_l_from_basis(basisname, ele)
             offset, cur_l = 0, l_list[0]
             ele_repid_mask = torch.zeros(self.num_reps_1d, dtype=torch.int32)
-            for l in l_list:
+            for idx, l in enumerate(l_list):
                 if l > cur_l:   # new shell 
                     offset = 0 
                     cur_l = l 
-                pos_idx = torch.arange(2*l+1) + offset + offset_per_l[l]
+                pos_idx = torch.arange(2*l+1) + offset + offset_per_l[idx]
                 ele_repid_mask[pos_idx] = 1
                 offset += 2 * l + 1
-        self.out_repid_mask[ele] = ele_repid_mask
+            self.out_repid_mask[ele] = ele_repid_mask
 
     def __call__(self, at_no: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.BoolTensor, torch.BoolTensor]:
         """
@@ -347,7 +347,7 @@ class BuildMatPerMole:
         node_mask: torch.BoolTensor,
         edge_mask: torch.BoolTensor,
         at_no: torch.LongTensor, 
-        edge_index: torch.Tensor, 
+        edge_index: torch.LongTensor, 
         # batch_index:torch.LongTensor,
     ):
         # transform e3nn's rep layout to qc interleaved layout along the two dims where the matrice is stored.
@@ -379,3 +379,41 @@ class BuildMatPerMole:
         tot_num_basis = torch.cat([self.elem_num_basis[ele.item()] for ele in at_no]).sum().item()
         return res[res_mask].reshape(tot_num_basis, tot_num_basis)
 
+
+class BuildHessPerMole:
+    def __init__(
+        self, 
+        p_idx_map: List[int] = m_idx_map[1],
+    ):
+        super().__init__() 
+        self.out_repid_map = torch.LongTensor(p_idx_map)
+
+    def __call__(
+        self, 
+        res_node: torch.Tensor,
+        res_edge: torch.Tensor,
+        edge_index: torch.LongTensor, 
+    ):
+        # transform e3nn's rep layout to qc interleaved layout along the two dims where the Hessian matrice is stored. 
+        # dimension -1
+        node_ten_tmp = torch.index_select(res_node, dim=2, index=self.out_repid_map)
+        edge_ten_tmp = torch.index_select(res_edge, dim=2, index=self.out_repid_map)
+        # dimension -2 
+        node_ten = torch.index_select(node_ten_tmp, dim=1, index=self.out_repid_map)
+        edge_ten = torch.index_select(edge_ten_tmp, dim=1, index=self.out_repid_map)
+        # create a sratch tensor to hold output, shape(natms, natms, 3, 3)
+        natms = res_node.shape[0]
+        res = torch.zeros(natms, natms, 3, 3, device=res_node.device, dtype=res_node.dtype)
+        # get the huge mask 
+        diagnol_mask = torch.eye(natms, device=res.device).bool()
+        # diagonal res 
+        res[diagnol_mask, :, :] = node_ten 
+        # scatter edge sub-blocks onto off-diagnol part of the res matrix 
+        off_diagnol_mask = to_dense_adj(edge_index, max_num_nodes=natms).bool()
+        off_diagnol_mask = off_diagnol_mask.squeeze(0)
+        res[off_diagnol_mask, :, :] = edge_ten 
+        # transpose to (natms, 3, natms, 3)
+        res = res.transpose(1, 2)
+        # reshape
+        tot_num_basis = 3 * natms
+        return res.reshape(tot_num_basis, tot_num_basis)

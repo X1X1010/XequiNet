@@ -154,8 +154,8 @@ def process_math5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict, **kwargs
     from ..utils import Mat2GraphLabel, TwoBodyBlockMask 
     len_unit = get_default_unit()[1]
     max_edges = kwargs.get("max_edges", 100)
-    mat2graph = Mat2GraphLabel(prop_dict["irreps_out"], prop_dict["possible_elements"], prop_dict["basisname"])
-    genmask = TwoBodyBlockMask(prop_dict["irreps_out"], prop_dict["possible_elements"], prop_dict["basisname"])
+    mat2graph = Mat2GraphLabel(prop_dict["target_irreps"], prop_dict["possible_elements"], prop_dict["basisname"])
+    genmask = TwoBodyBlockMask(prop_dict["target_irreps"], prop_dict["possible_elements"], prop_dict["basisname"])
     full_edge_index: bool = prop_dict["full_edge_index"]
     # loop over samples
     for mol_name in f_h5[mode].keys():

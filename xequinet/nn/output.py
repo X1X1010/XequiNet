@@ -347,7 +347,8 @@ class CartTensorOut(nn.Module):
             o3.Linear(self.hidden_irreps, f"{self.order}x1o", biases=True),
         )
         self.rsh_conv = o3.ElementwiseTensorProduct(f"{self.order}x1o", f"{self.order}x0e")
-        self.rtp = o3.ReducedTensorProducts(formula=required_symmetry, **{i: "1o" for i in range(self.order)})
+        self.indices = required_symmetry.split("=")[0].replace("-", "")
+        self.rtp = o3.ReducedTensorProducts(formula=required_symmetry, **{i: "1o" for i in self.indices})
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -370,7 +371,7 @@ class CartTensorOut(nn.Module):
         split_vectors = torch.split(reduced_out, 3, dim=-1)
         spherical_res = self.rtp(*split_vectors)
         Q = self.rtp.change_of_basis
-        cartesian_res = spherical_res @ Q.flatten(-len(self.order))
+        cartesian_res = spherical_res @ Q.flatten(-len(self.indices))
         shape = list(spherical_res.shape[:-1]) + list(Q.shape[1:])
         cartesian_res = cartesian_res.view(shape)
         if self.trace_out:
