@@ -391,7 +391,6 @@ class XPaiNNOrb(nn.Module):
             XMatTrans(
                 irreps_node=config.edge_irreps,
                 hidden_dim=config.mat_hidden_dim,
-                block_dim=config.mat_block_dim,
                 max_l = config.max_l,
                 edge_dim=config.num_basis,
                 actfn=config.activation,

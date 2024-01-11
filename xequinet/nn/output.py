@@ -312,10 +312,11 @@ class SpatialOut(nn.Module):
         return res
 
 
+"""
 class CartTensorOut(nn.Module):
-    """
-    Output Module for order n tensor via tensor product 1 \otimes 1 \otimes 1 ...
-    """
+
+    # Output Module for order n tensor via tensor product 1 \otimes 1 \otimes 1 ...
+
     def __init__(
         self,
         node_dim: int = 128,
@@ -379,3 +380,64 @@ class CartTensorOut(nn.Module):
             return res
         else:
             return cartesian_res
+"""
+
+class CartTensorOut(nn.Module):
+    """
+    Output Module for order n tensor via tensor product 1 \otimes 1 \otimes 1 ...
+    """
+    def __init__(
+        self,
+        node_dim: int = 128,
+        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
+        hidden_dim: int = 64,
+        order: int = 2,
+        required_symmetry: str = "ij",
+        trace_out: bool = False,
+        actfn: str = "silu",
+    ):
+        super().__init__()
+        self.node_dim = node_dim
+        self.hidden_dim = hidden_dim
+        self.hidden_irreps = o3.Irreps(f"{self.hidden_dim}x1o")
+        self.edge_irreps = edge_irreps if isinstance(edge_irreps, o3.Irreps) else o3.Irreps(edge_irreps)
+        self.activation = resolve_actfn(actfn)
+        self.order = order
+        self.trace_out = trace_out and order == 2
+        self.indices = required_symmetry.split("=")[0].replace("-", "")
+        self.rtp = o3.ReducedTensorProducts(formula=required_symmetry, **{i: "1o" for i in self.indices})
+        output_dim = self.rtp.irreps_out.num_irreps
+        self.scalar_out_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim, bias=True),
+            self.activation,
+            nn.Linear(self.hidden_dim, output_dim, bias=True),
+        )
+        self.lin_hidden = o3.Linear(self.edge_irreps, self.hidden_irreps, biases=False)
+        self.rsh_conv = o3.SphericalHarmonics(irreps_out=self.rtp.irreps_out, normalize=False)  
+        self.rsh_tp = o3.ElementwiseTensorProduct(self.rtp.irreps_out, f"{output_dim}x0e")
+        self.lin_out = o3.Linear(self.hidden_irreps, f"{output_dim}x1o", biases=False) 
+
+    def forward(
+        self,
+        x_scalar: torch.Tensor,
+        x_spherical: torch.Tensor,
+        coord: torch.Tensor,
+        batch_index: torch.LongTensor
+    ) -> torch.Tensor:
+        spherical_hidden = self.lin_hidden(x_spherical)
+        scalar_out = self.scalar_out_mlp(x_scalar)
+        rsh_basis = self.rsh_conv(self.lin_out(spherical_hidden))
+        atom_sph_out = self.rsh_tp(rsh_basis, scalar_out)
+        spherical_res = scatter(atom_sph_out, batch_index, dim=0)
+        # transform to cartesian representation  
+        Q = self.rtp.change_of_basis
+        cartesian_res = spherical_res @ Q.flatten(-len(self.indices))
+        shape = list(spherical_res.shape[:-1]) + list(Q.shape[1:])
+        cartesian_res = cartesian_res.view(shape)
+        if self.trace_out:
+            res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3
+            return res
+        else:
+            return cartesian_res
+
+
