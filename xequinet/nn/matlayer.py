@@ -250,7 +250,7 @@ class Expansion(nn.Module):
         return next(self.parameters()).device
 
     def __repr__(self):
-        return f'{self.irreps_block} -> {self.irreps_out} x {self.irreps_out} and bias {self.num_bias}' \
+        return f'{self.irreps_block} -> {self.irreps_out} x {self.irreps_out} and bias {self.num_bias} ' \
                f'with parameters {self.num_path_weight}'
 
 

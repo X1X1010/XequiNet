@@ -559,7 +559,9 @@ class QCMatTrainer(Trainer):
                 l1loss_total = F.l1_loss(batch_pred, batch_real, reduction="sum")
                 self.meter.update(l1loss_node.item(), l1loss_edge.item(), l1loss_total.item(), real_node.size(0), real_edge.size(0), batch_real.size(0))
             # logging
-            if step % self.config.log_interval == 0 or step == len(self.train_loader):
+            if (self.epoch % self.config.log_epoch == 0 and
+                (step % self.config.log_step == 0 or
+                 step == len(self.train_loader))):
                 mae = self.meter.reduce()
                 self.log.f.info(
                     "Epoch: [{iepoch:>4}][{step:>4}/{nstep}]   lr: {lr:3e}   train MAE: node: {mae_n:10.7f},  edge: {mae_e:10.7f},  total: {mae_tot:10.7f}".format(
@@ -703,7 +705,9 @@ class NewQCMatTrainer(Trainer):
                 num_mole = num_diag_per_mole.size(0)
                 self.meter.update(l1loss_diag.item(), l1loss_off_diag.item(), l1loss_total.item(), num_mole, num_mole, num_mole)
             # logging
-            if step % self.config.log_interval == 0 or step == len(self.train_loader):
+            if (self.epoch % self.config.log_epoch == 0 and
+                (step % self.config.log_step == 0 or
+                 step == len(self.train_loader))):
                 mae = self.meter.reduce()
                 self.log.f.info(
                     "Epoch: [{iepoch:>4}][{step:>4}/{nstep}]   lr: {lr:3e}   train MAE: node: {mae_n:10.7f},  edge: {mae_e:10.7f},  total: {mae_tot:10.7f}".format(
