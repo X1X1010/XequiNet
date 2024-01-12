@@ -43,7 +43,7 @@ def get_feasible_tp(
         It is recommended to set same multiplicity for each l channel in filter_irreps_out
         for the sake of ease, i.e. 64x0e + 64x1e + 64x2e, etc.
     """
-    assert tp_mode in ["uvw", "uvu", "uvv", "uuu", "uvuv"]
+    assert tp_mode in ["uvw", "uvu", "uvv", "uuw", "uuu", "uvuv"]
     irreps_mid = []
     instructions = [] 
     # loop over irreps in irreps_in1
