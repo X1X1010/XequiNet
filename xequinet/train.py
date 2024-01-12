@@ -20,7 +20,7 @@ from xequinet.data import create_dataset
 def main():
     # ------------------- set up ------------------- #
     # parse config
-    parser = argparse.ArgumentParser(description="Xequinet distributed training script")
+    parser = argparse.ArgumentParser(description="XequiNet distributed training script")
     parser.add_argument(
         "--config", "-C", type=str, default="config.json",
         help="Configuration file (default: config.json).",
