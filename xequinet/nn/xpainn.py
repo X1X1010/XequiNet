@@ -298,7 +298,9 @@ class PBCEmbedding(XEmbedding):
         pos: torch.Tensor,
         shifts: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+    ]:
         """
         Args:
             `x`: Atomic features.

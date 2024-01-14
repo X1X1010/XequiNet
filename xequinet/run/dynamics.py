@@ -6,7 +6,8 @@ import numpy as np
 import torch
 
 from ase import units
-from ase.io import read as ase_read
+from ase.io import read as ase_read, write as ase_write
+from ase.io import Trajectory
 from ase.md.velocitydistribution import (
     MaxwellBoltzmannDistribution, Stationary, ZeroRotation
 )
@@ -24,6 +25,7 @@ default_settings = {
     "ensemble": "NVT",         # choices=["NVE", "NVT", "NPT"]
     "dynamics": "Nose-Hoover", # choices=["Langevin", "Andersen", "Nose-Hoover", "Berendsen", "Parrinello-Rahman"]
     "timestep": 1.0,           # (fs)
+    "steps": 50,
     "temperature": 298.15,     # (K)
     "friction": 0.002,         # for Langevin
     "andersen_prob": 0.01,     # for Andersen
@@ -35,16 +37,36 @@ default_settings = {
     "compressibility": 5e-7,   # for Berendsen (1/bar)
     "mask": None,              # for Parrinello-Rahman
     "fixcm": True,
-    "trajectory": "traj.xyz",
     "logfile": "md.log",
-    "loginterval": 1,
+    "loginterval": 5,
+    "trajectory": "md.traj",
     "append_trajectory": False,
+    "traj_xyz": None,
+    "columns": ["symbols", "positions"],
 
     "seed": None,
 }
 
 
-def resolve_ensemble(ensemble, dynamics, atoms, **kwargs):
+def traj2xyz(trajectory, traj_xyz, columns=["symbols", "positions"]):
+    """
+    Convert trajectory file to extend xyz file.
+    """
+    with open(traj_xyz, 'w'): pass
+    for atoms in Trajectory(trajectory):
+        ase_write(
+            filename=traj_xyz,
+            images=atoms,
+            format="extxyz",
+            append=True,
+            write_results=False,
+            columns=columns,
+        )
+
+
+def resolve_ensemble(atoms, **kwargs):
+    ensemble = kwargs["ensemble"]
+    dynamics = kwargs["dynamics"]
     if ensemble == "NVE":
         from ase.md.verlet import VelocityVerlet
         return VelocityVerlet(
@@ -117,7 +139,7 @@ def main():
     parser = argparse.ArgumentParser(description="XequiNet molecular dynamics script")
     parser.add_argument(
         "settings", type=str, default=None,
-        help="Setting file for the molecular dynamics. (settings.json)",
+        help="Setting file for the molecular dynamics. (md.json)",
     )
     args = parser.parse_args()
 
@@ -127,9 +149,6 @@ def main():
         with open(args.settings, 'r') as f:
             settings.update(json.load(f))
 
-    # set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     # set random seed
     seed = settings["seed"]
     if seed is not None:
@@ -137,13 +156,11 @@ def main():
         torch.manual_seed(seed)
 
     # load atoms
-    init_xyz = settings["init_xyz"]
-    atoms = ase_read(init_xyz, index=0)
+    atoms = ase_read(settings["init_xyz"], index=0)
 
     # set calculator
     calc = XeqCalculator(
         ckpt_file=settings["ckpt_file"],
-        device=device,
         cutoff=settings["cutoff"],
         charge=settings["charge"],
         spin=settings["multiplicity"] - 1,
@@ -157,11 +174,17 @@ def main():
     Stationary(atoms)
 
     # set ensemble
-    ensemble = settings["ensemble"]; dynamics = settings["dynamics"]
-    dyn = resolve_ensemble(ensemble, dynamics, atoms, **settings)
+    dyn = resolve_ensemble(atoms, **settings)
 
+    # initialize log file
+    with open(settings["logfile"], 'w'): pass
+    
     # run dynamics
-    dyn.run()
+    dyn.run(settings["steps"])
+
+    # convert trajectory to xyz
+    if settings["traj_xyz"] is not None:
+        traj2xyz(settings["trajectory"], settings["traj_xyz"], settings["columns"])
 
 
 if __name__ == "__main__":

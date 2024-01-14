@@ -9,7 +9,8 @@ setup(
             "xeqjit = xequinet.run.jit_script:main",
             "xeqinfer = xequinet.run.inference:main",
             "xeqtest = xequinet.run.test:main",
-            "xeqopt = xequinet.run.geometry:main"
+            "xeqopt = xequinet.run.geometry:main",
+            "xeqmd = xequinet.run.dynamics:main",
         ]
     }
 )
