@@ -15,10 +15,6 @@ def main():
         help="Xequinet checkpoint file. (XXX.pt containing 'model' and 'config')",
     )
     parser.add_argument(
-        "--force", "-f", action="store_true",
-        help="Whether testing force additionally when the output mode is 'scalar'",
-    )
-    parser.add_argument(
         "--lammps", "-l", action="store_true",
         help="Whether the model is used in LAMMPS",
     )

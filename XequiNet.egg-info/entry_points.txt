@@ -1,6 +1,6 @@
 [console_scripts]
-xeqinfer = xequinet.inference:main
-xeqjit = xequinet.jit_script:main
-xeqopt = xequinet.geo_opt:main
-xeqtest = xequinet.test:main
-xeqtrain = xequinet.train:main
+xeqinfer = xequinet.run.inference:main
+xeqjit = xequinet.run.jit_script:main
+xeqopt = xequinet.run.geometry:main
+xeqtest = xequinet.run.test:main
+xeqtrain = xequinet.run.train:main

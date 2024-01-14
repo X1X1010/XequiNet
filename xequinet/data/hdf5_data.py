@@ -90,8 +90,8 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwar
 
 
 def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **kwargs):
-    import ase
-    import ase.neighborlist
+    from ase import Atoms
+    from ase.neighborlist import neighbor_list
     len_unit = get_default_unit()[1]
     virtual_dim = kwargs.get("virtual_dim", True)
     # loop over samples
@@ -114,7 +114,7 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **
             else:
                 raise ValueError("Lattice not found in the hdf5 file.")
         else:
-            lattice = None
+            lattice = torch.zeros(3, 3, dtype=torch.get_default_dtype())
         if "coordinates_A" in pbc_grp.keys():
             coords = torch.Tensor(pbc_grp["coordinates_A"][()]).to(torch.get_default_dtype())
             coords *= unit_conversion("Angstrom", len_unit)
@@ -132,11 +132,10 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **
         spin = torch.Tensor([spin]).to(torch.get_default_dtype())
         # loop over configurations
         for icfm, coord in enumerate(coords):
-            atoms = ase.Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)
-            idx_i, idx_j, shifts = ase.neighborlist.neighbor_list("ijS", a=atoms, cutoff=cutoff)
-            shifts = torch.Tensor(shifts).to(torch.get_default_dtype())
-            if lattice is not None:
-                shifts = torch.einsum("ij, kj -> ik", shifts, lattice)
+            atoms = Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)
+            idx_i, idx_j, offsets = neighbor_list("ijS", a=atoms, cutoff=cutoff)
+            offsets = torch.Tensor(offsets).to(torch.get_default_dtype())
+            shifts = torch.einsum("ij, kj -> ik", offsets, lattice)
             edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long)
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, charge=charge, spin=spin)
             for p_attr, p_name in prop_dict.items():

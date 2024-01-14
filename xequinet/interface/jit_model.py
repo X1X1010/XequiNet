@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Dict, Tuple
 import math
 
 import torch
@@ -54,11 +54,11 @@ class JitGradOut(nn.Module):
             [coord,],
             retain_graph=True,
             create_graph=True,
-        )[0]
-        nuc_grad = torch.zeros_like(coord)    # because the output of `autograd.grad()` is `Tuple[Optional[torch.Tensor],...]` in jit script
-        if grad is not None:                  # which means the complier thinks that `grad` may be `torch.Tensor` or `None`
-            nuc_grad += grad                  # but grad there are not allowed to be `None`
-        return energy, nuc_grad               # so we add this if statement to let the compiler make sure that `grad` is not `None`
+        )
+        nuc_grad = grad[0]
+        if nuc_grad is None:  # condition needed to unwrap optional for torchscript
+            raise RuntimeError("Gradient is None")
+        return energy, nuc_grad
 
 
 class JitPaiNN(nn.Module):
@@ -116,7 +116,7 @@ class JitPaiNN(nn.Module):
         coord: torch.Tensor,
         charge: int,
         spin: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Dict[str, torch.Tensor]:
         coord.requires_grad_(True)
         coord = coord * self.len_unit_conv
         edge_index = radius_graph(coord, r=self.cutoff, max_num_neighbors=self.max_edges)
@@ -128,7 +128,8 @@ class JitPaiNN(nn.Module):
         energy, nuc_grad = self.out(x_scalar, coord)
         energy = (energy.double() + self.atom_sp[at_no].sum()) * self.prop_unit_conv
         nuc_grad = nuc_grad.double() * self.grad_unit_conv
-        return energy, nuc_grad
+        result = {"energy": energy, "forces": nuc_grad}
+        return result
 
 
 class JitEleEmbedding(nn.Module):
@@ -184,7 +185,7 @@ class JitPaiNNEle(JitPaiNN):
         coord: torch.Tensor,
         charge: int,
         spin: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Dict[str, torch.Tensor]:
         coord.requires_grad_(True)
         charge_t = torch.tensor([[charge]], dtype=coord.dtype, device=coord.device)
         spin_t = torch.tensor([[spin]], dtype=coord.dtype, device=coord.device)
@@ -199,7 +200,8 @@ class JitPaiNNEle(JitPaiNN):
         energy, nuc_grad = self.out(x_scalar, coord)
         energy = (energy.double() + self.atom_sp[at_no].sum()) * self.prop_unit_conv
         nuc_grad = nuc_grad.double() * self.grad_unit_conv
-        return energy, nuc_grad
+        result = {"energy": energy, "gradient": nuc_grad}
+        return result
 
 
 def resolve_jit_model(config: NetConfig) -> nn.Module:

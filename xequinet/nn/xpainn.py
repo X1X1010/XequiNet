@@ -66,7 +66,6 @@ class XEmbedding(nn.Module):
             `rsh`: Real spherical harmonics.
         """
         # calculate distance and relative position
-        pos = pos[:, [1, 2, 0]]  # [x, y, z] -> [y, z, x]
         vec = pos[edge_index[0]] - pos[edge_index[1]]
         dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
         # node linear
@@ -76,8 +75,8 @@ class XEmbedding(nn.Module):
         # calculate radial basis function
         rbf = self.rbf(dist)
         fcut = self.cutoff_fn(dist)
-        # calculate spherical harmonics
-        rsh = self.sph_harm(vec)  # unit vector, normalized by component
+        # calculate spherical harmonics  [x, y, z] -> [y, z, x]
+        rsh = self.sph_harm(vec[:, [1, 2, 0]])  # unit vector, normalized by component
         return x_scalar, rbf, fcut, rsh
 
 
@@ -314,7 +313,6 @@ class PBCEmbedding(XEmbedding):
         """
         # calculate distance and relative position
         vec = pos[edge_index[0]] - pos[edge_index[1]] - shifts
-        vec = vec[:, [1, 2, 0]]  # [x, y, z] -> [y, z, x]
         dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
         # node linear
         x = self.int2c1e(at_no)
@@ -322,6 +320,6 @@ class PBCEmbedding(XEmbedding):
         # calculate radial basis function
         rbf = self.rbf(dist)
         fcut = self.cutoff_fn(dist)
-        # calculate spherical harmonics
-        rsh = self.sph_harm(vec)  # unit vector, normalized by component
-        return x_scalar, rbf, fcut, rsh
+        # calculate spherical harmonics  [x, y, z] -> [y, z, x]
+        rsh = self.sph_harm(vec[:, [1, 2, 0]])  # unit vector, normalized by component
+        return x_scalar, vec, rbf, fcut, rsh

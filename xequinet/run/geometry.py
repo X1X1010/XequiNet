@@ -7,9 +7,9 @@ import torch_cluster
 
 from pyscf import gto
 from pyscf.geomopt import geometric_solver, as_pyscf_method
+import tblite.interface as xtb
 
 from xequinet.utils.qc import ELEMENTS_LIST
-from xequinet.interface import xtb_calculation
 
 
 def read_xyz(xyz_file: str) -> tuple:
@@ -36,33 +36,36 @@ def read_xyz(xyz_file: str) -> tuple:
     return mol_tokens, charges, spins
 
 
-def xeq_method(mol: gto.Mole, model: torch.nn.Module, device: torch.device, base_method: str = None) -> tuple:
+def xeq_method(mol: gto.Mole, model: torch.jit.ScriptModule, device: torch.device, base_method: str = None) -> tuple:
     """Xequinet method for energy and gradient calculation."""
     at_no = torch.tensor(mol.atom_charges(), dtype=torch.long, device=device)
     coord = torch.tensor(mol.atom_coords(), dtype=torch.get_default_dtype(), device=device)
-    energy, nuc_grad = model(at_no, coord, mol.charge, mol.spin)
-    energy = energy.item()
-    nuc_grad = nuc_grad.detach().cpu().numpy()
+    model_res: dict = model(at_no=at_no, coord=coord, charge=mol.charge, spin=mol.spin)
+    energy = model_res.get("energy").item()
+    nuc_grad = model_res.get("gradient").detach().cpu().numpy()
     if base_method is not None:
-        d_ene, d_grad = xtb_calculation(
-            mol.atom_charges(),
-            mol.atom_coords(),
-            mol.charge,
-            mol.spin,
-            method=base_method,
-            calc_grad=True,
+        m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
+        calc = xtb.Calculator(
+            method=m_dict[base_method.lower()],
+            numbers=mol.atom_charges(),
+            positions=mol.atom_coords(),
+            charge=mol.charge,
+            uhf=mol.spin,
         )
-        energy += d_ene
-        nuc_grad += d_grad
+        xtb_res = calc.singlepoint()
+        energy += xtb_res.get("energy")
+        nuc_grad += xtb_res.get("gradient")
     return energy, nuc_grad
 
 
-def calc_analytical_hessian(mol: gto.Mole, model: torch.nn.Module, device: torch.device) -> tuple:
+def calc_analytical_hessian(mol: gto.Mole, model: torch.jit.ScriptModule, device: torch.device) -> tuple:
     """Calculate the hessian with analytical second derivative."""
     at_no = torch.tensor(mol.atom_charges(), dtype=torch.long, device=device)
     coord = torch.tensor(mol.atom_coords(), dtype=torch.get_default_dtype(), device=device)
     coord.requires_grad = True
-    energy, nuc_grad = model(at_no, coord, mol.charge, mol.spin)
+    model_res: dict = model(at_no=at_no, coord=coord, charge=mol.charge, spin=mol.spin)
+    energy = model_res.get("energy")
+    nuc_grad = model_res.get("gradient")
     hessian = torch.zeros((mol.natm, mol.natm, 3, 3), dtype=torch.get_default_dtype(), device=device)
     for i in range(mol.natm):
         for j in range(3):
@@ -93,7 +96,7 @@ def calc_numerical_hessian(mol: gto.Mole, model: torch.nn.Module, device: torch.
 
 def main():
     # parse arguments
-    parser = argparse.ArgumentParser(description="Xequinet geometry optimization script")
+    parser = argparse.ArgumentParser(description="XequiNet geometry optimization script")
     parser.add_argument(
         "--ckpt", "-c", type=str, required=True,
         help="Path to the checkpoint file. (XXX.jit)",
@@ -140,7 +143,7 @@ def main():
         # create a new freq log file
         freq_log = args.inp.split(".")[0] + "_freq.log"
         with open(freq_log, 'w') as f:
-           f.write(f"Xequinet Frequency Calculation\n\n")
+           f.write(f"XequiNet Frequency Calculation\n\n")
         from pyscf.hessian import thermo
     
     # set device

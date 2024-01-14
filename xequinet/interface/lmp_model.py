@@ -1,11 +1,11 @@
-from typing import Tuple
+from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
 
 from xequinet.utils import NetConfig
 
-from ..nn import XEmbedding, XPainnMessage, XPainnUpdate, resolve_actfn
+from ..nn import PBCEmbedding, XPainnMessage, XPainnUpdate, resolve_actfn
 from ..utils import NetConfig, unit_conversion, get_default_unit, get_atomic_energy
 
 
@@ -35,34 +35,49 @@ class LmpGradOut(nn.Module):
         self,
         x_scalar: torch.Tensor,
         coord: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        vec: torch.Tensor,
+        edge_index: torch.LongTensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             `x_scalar`: Scalar features.
             `at_no`: Atomic numbers.
             `coord`: Atomic coordinates.
+            `vec`: rij vectors.
+            `edge_index`: Edge index.
         Returns:
-            `e_tot`: Total energy.
-            `forces`: Forces.
-            `e_atom`: Atomic energies.
+            `energies`: Atomic energies.
+            `forces`: Atomic forces.
+            `virials`: Atomic virials.
         """
-        e_atom = self.out_mlp(x_scalar).view(-1)
+        energies = self.out_mlp(x_scalar).view(-1)
         grad = torch.autograd.grad(
-            [e_atom.sum(),],
-            [coord,],
+            [energies.sum(),],
+            [coord, vec],
             retain_graph=True,
             create_graph=True,
-        )[0]
-        forces = torch.zeros_like(coord)    # because the output of `autograd.grad()` is `Tuple[Optional[torch.Tensor],...]` in jit script
-        if grad is not None:                # which means the complier thinks that `neg_grad` may be `torch.Tensor` or `None`
-            forces -= grad                  # but neg_grad there are not allowed to be `None`
-        return e_atom, forces               # so we add this if statement to let the compiler make sure that `neg_grad` is not `None`
+        )
+        nuc_grad = grad[0]
+        if nuc_grad is None:  # condition needed to unwrap optional for torchscript
+            raise RuntimeError("Nuclear gradient is None")
+        forces = -nuc_grad
+
+        edge_grad = grad[1]
+        if edge_grad is None: # condition needed to unwrap optional for torchscript
+            raise RuntimeError("Edge gradient is None")
+        edge_virials = torch.einsum("zi, zj -> zij", edge_grad, vec)
+        virials = torch.zeros((coord.shape[0], 3, 3), device=coord.device)
+        # edge_virial is distributed into two nodes equally.
+        virials = virials.index_add(0, edge_index[0], edge_virials / 2)
+        virials = virials.index_add(0, edge_index[1], edge_virials / 2)
+
+        return energies, forces, virials
 
 
 class LmpPaiNN(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
-        self.embed = XEmbedding(
+        self.embed = PBCEmbedding(
             node_dim=config.node_dim,
             edge_irreps=config.edge_irreps,
             embed_basis=config.embed_basis,
@@ -100,8 +115,8 @@ class LmpPaiNN(nn.Module):
         atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
-        self.prop_unit_conv = unit_conversion(self.prop_unit, "kcal_per_mol")
-        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "kcal_per_mol/Angstrom")
+        self.prop_unit_conv = unit_conversion(self.prop_unit, "eV")
+        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "eV/Angstrom")
 
 
     def forward(
@@ -109,17 +124,33 @@ class LmpPaiNN(nn.Module):
         at_no: torch.LongTensor,
         coord: torch.Tensor,
         edge_index: torch.LongTensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        shifts: torch.Tensor,
+        charge: int,
+        spin: int,
+    ) -> Dict[str, torch.Tensor]:
+        # set coord.requires_grad_(True) to enable autograd
         coord.requires_grad_(True)
         coord = coord * self.len_unit_conv
-        x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index)
+        # network forward
+        x_scalar, vec, rbf, fcut, rsh = self.embed(at_no, coord, shifts, edge_index)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for msg, upd in zip(self.message, self.update):
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
-        e_atom, forces = self.out(x_scalar, coord)
-        e_atom = (e_atom.double() + self.atom_sp[at_no]) * self.prop_unit_conv
+        energies, forces, virials = self.out(x_scalar, coord, vec, edge_index)
+        # add atomic species energy and convert to eV
+        energies = (energies.double() + self.atom_sp[at_no]) * self.prop_unit_conv
+        energy = torch.sum(energies)
+        # convert forces to eV/Angstrom
         forces = forces.double() * self.grad_unit_conv
-        e_tot = torch.sum(e_atom, dim=0, keepdim=True)       
-        return e_tot, forces, e_atom
+        # symmetrize virial tensor and convert to eV
+        virial = torch.sum(virials, dim=0)
+        virial = 0.5 * (virial + virial.T) * self.prop_unit_conv
+        # return result
+        result = {
+            "energy": energy, "energies": energies,
+            "forces": forces,
+            "virial": virial, "virials": virials,
+        }
+        return result
 

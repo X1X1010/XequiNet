@@ -4,6 +4,7 @@ import torch
 from torch_scatter import scatter
 from torch_cluster import radius_graph
 from torch_geometric.loader import DataLoader
+import tblite.interface as xtb
 
 from xequinet.nn import resolve_model
 from xequinet.utils import (
@@ -12,7 +13,6 @@ from xequinet.utils import (
     get_atomic_energy, gen_3Dinfo_str,
 )
 from xequinet.data import XYZDataset
-from xequinet.interface import mopac_calculation, xtb_calculation
 
 
 def predict_scalar(
@@ -40,22 +40,17 @@ def predict_scalar(
             coord = data.pos[data.batch == i].cpu()
             nn_pred = nn_preds[i].cpu()
             atom_ref = atom_refs[i].cpu()
-            if base_method in ["pm7", "pm6"]:
-                delta = mopac_calculation(
-                    atomic_numbers=at_no.numpy(),
-                    coordinates=coord.numpy() * unit_conversion(get_default_unit()[1], "Angstrom"),
-                    method=base_method,
-                    charge=int(data.charge[i].item()),
-                    multiplicity=int(data.spin[i].item()) + 1,
-                )  # the delta value is already in atomic unit
-            elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
-                delta = xtb_calculation(
-                    atomic_numbers=at_no.numpy(),
-                    coordinates=coord.numpy() * unit_conversion(get_default_unit()[1], "Bohr"),
-                    method=base_method,
+            if base_method is not None:
+                m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
+                calc = xtb.Calculator(
+                    method=m_dict[base_method.lower()],
+                    numbers=at_no.numpy(),
+                    positions=coord.numpy() * unit_conversion(get_default_unit()[1], "Bohr"),
                     charge=int(data.charge[i].item()),
                     uhf=int(data.spin[i].item()),
-                )  # the delta value is already in atomic unit
+                )
+                res = calc.singlepoint()
+                delta = res.get("energy")  # the delta value is already in atomic unit
             else:
                 delta = 0.0
             total = nn_pred + atom_ref + delta
@@ -113,24 +108,18 @@ def predict_grad(
             nn_predE = nn_predEs[i].cpu()
             nn_predF = nn_predFs[i].cpu()
             atom_E = atom_Es[i].cpu()
-            if base_method in ["pm7", "pm6"]:
-                d_ene, d_grad = mopac_calculation(
-                    atomic_numbers=at_no.numpy(),
-                    coordinates=coord.numpy() * unit_conversion(get_default_unit()[1], "Angstrom"),
-                    method=base_method,
-                    charge=int(data.charge[i].item()),
-                    multiplicity=int(data.spin[i].item()) + 1,
-                    calc_grad=True,
-                )  # the delta value is already in atomic unit
-            elif base_method in ["gfn2-xtb", "gfn1-xtb", "ipea1-xtb"]:
-                d_ene, d_grad = xtb_calculation(
-                    atomic_numbers=at_no.numpy(),
-                    coordinates=coord.numpy() * unit_conversion(get_default_unit()[1], "Bohr"),
-                    method=base_method,
+            if base_method is not None:
+                m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
+                calc = xtb.Calculator(
+                    method=m_dict[base_method.lower()],
+                    numbers=at_no.numpy(),
+                    positions=coord.numpy() * unit_conversion(get_default_unit()[1], "Bohr"),
                     charge=int(data.charge[i].item()),
                     uhf=int(data.spin[i].item()),
-                    calc_grad=True,
-                )  # the delta value is already in atomic unit
+                )
+                res = calc.singlepoint()
+                d_ene = res.get("energy")     # the delta value is already in atomic unit
+                d_grad = res.get("gradient")  # the delta gradient is already in atomic unit
             else:
                 d_ene = 0.0
                 d_grad = torch.zeros_like(coord)
@@ -235,10 +224,10 @@ def predict_polar(
 
 def main():
     # parse arguments
-    parser = argparse.ArgumentParser(description="Xequinet inference script")
+    parser = argparse.ArgumentParser(description="XequiNet inference script")
     parser.add_argument(
         "--ckpt", "-c", type=str, required=True,
-        help="Xequinet checkpoint file. (XXX.pt containing 'model' and 'config')",
+        help="XequiNet checkpoint file. (XXX.pt containing 'model' and 'config')",
     )
     parser.add_argument(
         "--batch-size", "-bz", type=int, default=64,
