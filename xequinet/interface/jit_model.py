@@ -128,7 +128,7 @@ class JitPaiNN(nn.Module):
         energy, nuc_grad = self.out(x_scalar, coord)
         energy = (energy.double() + self.atom_sp[at_no].sum()) * self.prop_unit_conv
         nuc_grad = nuc_grad.double() * self.grad_unit_conv
-        result = {"energy": energy, "forces": nuc_grad}
+        result = {"energy": energy, "gradient": nuc_grad}
         return result
 
 
