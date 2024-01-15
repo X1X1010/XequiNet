@@ -222,7 +222,7 @@ class PBCPaiNN(nn.Module):
         at_no = data.at_no; pos=data.pos; edge_index=data.edge_index; batch=data.batch
         shifts=data.shifts; charge = data.charge; spin = data.spin
         # embed input
-        x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, shifts, edge_index)
+        x_scalar, vec, rbf, fcut, rsh = self.embed(at_no, pos, shifts, edge_index)
         # initialize vector with zeros
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         # electron embedding, message passing and node update
