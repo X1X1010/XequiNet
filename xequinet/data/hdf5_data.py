@@ -499,10 +499,12 @@ def atom_ref_transform(
 
     if hasattr(new_data, "y"):
         at_no = new_data.at_no
-        new_data.y -= atom_sp[at_no].sum()
+        if atom_sp is not None:
+            new_data.y -= atom_sp[at_no].sum()
         new_data.y = new_data.y.to(torch.get_default_dtype())
         if hasattr(new_data, "base_y"):
-            new_data.base_y -= batom_sp[at_no].sum()
+            if batom_sp is not None:
+                new_data.base_y -= batom_sp[at_no].sum()
             new_data.base_y = new_data.base_y.to(torch.get_default_dtype())
     # change the dtype of force by the way
     if hasattr(new_data, "force"):
@@ -539,13 +541,11 @@ def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = Non
             )
         atom_sp = get_atomic_energy(config.atom_ref)
         batom_sp = get_atomic_energy(config.batom_ref)
-        transform = None
-        if config.atom_ref is not None:
-            transform = lambda data: atom_ref_transform(
-                data=data,
-                atom_sp=atom_sp,
-                batom_sp=batom_sp,
-            )
+        transform = lambda data: atom_ref_transform(
+            data=data,
+            atom_sp=atom_sp,
+            batom_sp=batom_sp,
+        )
         if config.dataset_type == "normal":
             dataset = H5Dataset(config, mode=mode, pre_transform=pre_transform, transform=transform)
         elif config.dataset_type == "memory":

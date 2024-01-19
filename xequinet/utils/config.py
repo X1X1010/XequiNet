@@ -5,11 +5,7 @@ from pydantic import BaseModel, Extra
 class NetConfig(BaseModel):
     """
     Network configuration
-    """
-    class Config:
-        arbitrary_types_allowed = True
-        extra = Extra.allow
-    
+    """  
     # non-essential
     run_name: str = "my_task"                      # name of the run
 

@@ -15,6 +15,7 @@ from xequinet.utils import (
 from xequinet.data import XYZDataset
 
 
+@torch.no_grad()
 def predict_scalar(
     model: torch.nn.Module,
     cutoff: float,
@@ -28,13 +29,12 @@ def predict_scalar(
 ):
     wf = open(output_file, 'a')
     for data in dataloader:
-        with torch.no_grad():
-            data = data.to(device)
-            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
-            # change the prediction unit to atomic unit
-            nn_preds = model(data).double() * unit_conversion(get_default_unit()[0], "AU")
-            # the atomic reference is already in atomic unit
-            atom_refs = scatter(atom_sp[data.at_no], data.batch, dim=0).unsqueeze(-1)
+        data = data.to(device)
+        data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+        # change the prediction unit to atomic unit
+        nn_preds = model(data).double() * unit_conversion(get_default_unit()[0], "AU")
+        # the atomic reference is already in atomic unit
+        atom_refs = scatter(atom_sp[data.at_no], data.batch, dim=0).unsqueeze(-1)
         for i in range(len(data)):
             at_no = data.at_no[data.batch == i].cpu()
             coord = data.pos[data.batch == i].cpu()
@@ -154,6 +154,7 @@ def predict_grad(
     wf.close()
 
 
+@torch.no_grad()
 def predict_vector(
     model: torch.nn.Module,
     cutoff: float,
@@ -165,11 +166,10 @@ def predict_vector(
 ):
     wf = open(output_file, 'a')
     for data in dataloader:
-        with torch.no_grad():
-            data = data.to(device)
-            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
-            pred = model(data)
-            pred *= unit_conversion(get_default_unit()[0], "AU")
+        data = data.to(device)
+        data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+        pred = model(data)
+        pred *= unit_conversion(get_default_unit()[0], "AU")
         for i in range(len(data)):
             at_no = data.at_no[data.batch == i]
             coord = data.pos[data.batch == i]
@@ -187,6 +187,7 @@ def predict_vector(
     wf.close()
 
 
+@torch.no_grad()
 def predict_polar(
     model: torch.nn.Module,
     cutoff: float,
@@ -198,11 +199,10 @@ def predict_polar(
 ):
     wf = open(output_file, 'a')
     for data in dataloader:
-        with torch.no_grad():
-            data = data.to(device)
-            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
-            pred = model(data)
-            pred *= unit_conversion(get_default_unit()[0], "AU")
+        data = data.to(device)
+        data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+        pred = model(data)
+        pred *= unit_conversion(get_default_unit()[0], "AU")
         for i in range(len(data)):
             at_no = data.at_no[data.batch == i]
             coord = data.pos[data.batch == i]
@@ -238,10 +238,6 @@ def main():
         help="Whether testing force additionally when the output mode is 'scalar'",
     )
     parser.add_argument(
-        "--no-force", "-nf", action="store_true",
-        help="Whether not testing force when the output mode is 'grad'",
-    )
-    parser.add_argument(
         "--base-method", "-bm", type=str, default=None,
         help="Base semiempirical method for delta learning."
     )
@@ -270,9 +266,9 @@ def main():
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
     # adjust some configurations
-    if args.force and config.output_mode == "scalar":
+    if args.force:
         config.output_mode = "grad"
-    if args.no_force and config.output_mode == "grad":
+    elif config.output_mode == "grad":
         config.output_mode = "scalar"
 
     # build model
