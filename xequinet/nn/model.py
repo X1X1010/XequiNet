@@ -13,7 +13,7 @@ from .painn import (
     Embedding, PainnMessage, PainnUpdate,
 )
 from .output import (
-    ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut, CartTensorOut,
+    ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut, CartTensorOut, CSCOut,
 )
 from .xqhnet import (
     XMatEmbedding, NodewiseInteraction, MatTrans,
@@ -67,10 +67,19 @@ def resolve_output(config: NetConfig):
             hidden_irreps=config.hidden_irreps,
             order=config.order,
             required_symmetry=config.required_symm,
+            output_dim=config.output_dim,
+            actfn=config.activation,
+        )
+    elif config.output_mode == "atomic_2_tensor":
+        return CSCOut(
+            node_dim=config.node_dim,
+            edge_irreps=config.edge_irreps,
+            hidden_dim=config.hidden_dim,
+            hidden_irreps=config.hidden_irreps,
+            required_symmetry=config.required_symm,
             trace_out=config.output_dim==1,
             actfn=config.activation,
         )
-
     else:
         raise NotImplementedError(f"output mode {config.output_mode} is not implemented")
 
