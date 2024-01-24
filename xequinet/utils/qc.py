@@ -278,14 +278,6 @@ def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
     return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
 
 
-def get_centroid(at_no: torch.Tensor, coords: torch.Tensor):
-    """Calculate the centroid of a molecule."""
-    assert at_no.shape[0] == coords.shape[0]
-    masses = ATOM_MASS[at_no].unsqueeze(-1)
-    centroid = torch.sum(masses * coords, dim=0) / torch.sum(masses)
-    return centroid
-
-
 def get_l_from_basis(basisname, ele):
     if basisname == "hessian":
         return [1]

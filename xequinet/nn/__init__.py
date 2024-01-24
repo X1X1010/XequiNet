@@ -9,14 +9,13 @@ from .rbf import (
     GaussianSmearing, SphericalBesselj0,
 )
 from .xpainn import (
-    XEmbedding, XPainnMessage, XPainnUpdate,
-    PBCEmbedding, EleEmbedding,
+    XEmbedding, XPainnMessage, XPainnUpdate, EleEmbedding,
 )
 from .painn import Embedding, PainnMessage, PainnUpdate
 from .output import (
     ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut,
 )
-from .model import XPaiNN, PBCPaiNN, XQHNet, resolve_model
+from .model import XPaiNN, XPaiNNEle, XQHNet, resolve_model
 
 __all__ = [
     "Invariant", "Gate", "NormGate", "EquivariantDot",
@@ -25,9 +24,9 @@ __all__ = [
     "CosineCutoff", "PolynomialCutoff",
     "GaussianSmearing", "SphericalBesselj0",
     "XEmbedding", "XPainnMessage", "XPainnUpdate",
-    "PBCEmbedding", "EleEmbedding",
+    "EleEmbedding",
     "Embedding", "PainnMessage", "PainnUpdate",
     "ScalarOut", "NegGradOut", "VectorOut", "PolarOut", "SpatialOut",
     "PBCScalarOut", "PBCNegGradOut",
-    "XPaiNN", "PBCPaiNN", "XQHNet", "resolve_model",
+    "XPaiNN",  "XPaiNNEle", "XQHNet", "resolve_model",
 ]

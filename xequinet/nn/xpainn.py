@@ -53,6 +53,7 @@ class XEmbedding(nn.Module):
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         edge_index: torch.Tensor,
+        shifts: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -66,7 +67,7 @@ class XEmbedding(nn.Module):
             `rsh`: Real spherical harmonics.
         """
         # calculate distance and relative position
-        vec = pos[edge_index[0]] - pos[edge_index[1]]
+        vec = pos[edge_index[0]] - pos[edge_index[1]] - shifts
         dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
         # node linear
         # x_scalar = self.embedding(at_no)
@@ -273,55 +274,3 @@ class EleEmbedding(nn.Module):
         dot = torch.sum(q * k, dim=1, keepdim=True) / self.sqrt_dim
         attn = softmax(dot, batch, dim=0)
         return attn * v
-
-
-class PBCEmbedding(XEmbedding):
-    def __init__(
-        self,
-        node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
-        embed_basis: str = "gfn2-xtb",
-        aux_basis: str = "aux56",
-        num_basis: int = 20,
-        rbf_kernel: str = "bessel",
-        cutoff: float = 5.0,
-        cutoff_fn: str = "cosine",
-    ):
-        super().__init__(
-            node_dim, edge_irreps, embed_basis, aux_basis,
-            num_basis, rbf_kernel, cutoff, cutoff_fn,
-        )
-
-    def forward(
-        self,
-        at_no: torch.LongTensor,
-        pos: torch.Tensor,
-        shifts: torch.Tensor,
-        edge_index: torch.Tensor,
-    ) -> Tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
-    ]:
-        """
-        Args:
-            `x`: Atomic features.
-            `pos`: Atomic coordinates.
-            `edge_index`: Edge index.
-            `shifts`: Shift vectors.
-        Returns:
-            `x_scalar`: Scalar features.
-            `rbf`: Values under radial basis functions.
-            `fcut`: Values under cutoff function.
-            `rsh`: Real spherical harmonics.
-        """
-        # calculate distance and relative position
-        vec = pos[edge_index[0]] - pos[edge_index[1]] - shifts
-        dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
-        # node linear
-        x = self.int2c1e(at_no)
-        x_scalar = self.node_lin(x)
-        # calculate radial basis function
-        rbf = self.rbf(dist)
-        fcut = self.cutoff_fn(dist)
-        # calculate spherical harmonics  [x, y, z] -> [y, z, x]
-        rsh = self.sph_harm(vec[:, [1, 2, 0]])  # unit vector, normalized by component
-        return x_scalar, vec, rbf, fcut, rsh

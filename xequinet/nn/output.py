@@ -4,6 +4,7 @@ import math
 
 import torch
 import torch.nn as nn
+from torch_geometric.data import Data
 from torch_scatter import scatter
 from e3nn import o3
 
@@ -23,6 +24,7 @@ class ScalarOut(nn.Module):
         """
         Args:
             `node_dim`: Node dimension.
+            `hidden_dim`: Dimension of hidden layer.
             `out_dim`: Output dimension.
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
@@ -41,27 +43,25 @@ class ScalarOut(nn.Module):
     
     def forward(
         self,
+        data: Data,
         x_scalar: torch.Tensor,
         x_spherical: torch.Tensor,
-        coord: torch.Tensor,
-        batch_index: torch.LongTensor,
     ) -> torch.Tensor:
         """
         Args:
+            `data`: pyg `Data` object.
             `x_scalar`: Scalar features.
             `x_spherical`: Spherical features. (Unused in this module)
-            `at_no`: Atomic numbers.
-            `coord`: Atomic coordinates. (Unused in this module)
-            `batch_index`: Batch index.
         Returns:
             `res`: Scalar output.
         """
+        batch = data.batch
         atom_out = self.out_mlp(x_scalar)
-        res = scatter(atom_out, batch_index, dim=0)
+        res = scatter(atom_out, batch, dim=0)
         return res
 
 
-class NegGradOut(nn.Module):
+class NegGradOut(ScalarOut):
     def __init__(
         self,
         node_dim: int = 128,
@@ -76,37 +76,26 @@ class NegGradOut(nn.Module):
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
         """
-        super().__init__()
-        self.node_dim = node_dim
-        self.hidden_dim = hidden_dim
-        self.out_mlp = nn.Sequential(
-            nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
-            nn.Linear(self.hidden_dim, 1),
-        )
-        nn.init.zeros_(self.out_mlp[0].bias)
-        nn.init.constant_(self.out_mlp[2].bias, node_bias)
+        super().__init__(self, node_dim, hidden_dim, 1, actfn, node_bias)
 
     def forward(
         self,
+        data: Data,
         x_scalar: torch.Tensor,
         x_spherical: torch.Tensor,
-        coord: torch.Tensor,
-        batch_index: torch.LongTensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
+            `data`: pyg `Data` object.
             `x_scalar`: Scalar features.
             `x_spherical`: Spherical features. (Unused in this module)
-            `at_no`: Atomic numbers.
-            `coord`: Atomic coordinates.
-            `batch_index`: Batch index.
         Returns:
             `res`: Scalar output.
             `neg_grad`: Negative gradient.
         """
+        batch = data.batch; coord = data.pos
         atom_out = self.out_mlp(x_scalar)
-        res =  scatter(atom_out, batch_index, dim=0)
+        res =  scatter(atom_out, batch, dim=0)
         grad = torch.autograd.grad(
             [atom_out.sum(),],
             [coord,],
@@ -158,24 +147,23 @@ class VectorOut(nn.Module):
 
     def forward(
         self,
+        data: Data,
         x_scalar: torch.Tensor,
         x_spherical: torch.Tensor,
-        coord: torch.Tensor,
-        batch_index: torch.LongTensor,
     ) -> torch.Tensor:
         """
         Args:
+            `data`: pyg `Data` object.
             `x_scalar`: Scalar features.
             `x_spherical`: Spherical features.
-            `coord`: Atomic coordinates.
-            `batch_index`: Batch index.
         Returns:
             `res`: Vector output.
         """
+        batch = data.batch
         spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
         scalar_out = self.scalar_out_mlp(x_scalar)
         atom_out = spherical_out * scalar_out
-        res = scatter(atom_out, batch_index, dim=0)
+        res = scatter(atom_out, batch, dim=0)
         if self.output_dim == 1:
             res = torch.linalg.norm(res, dim=-1, keepdim=True)
         return res
@@ -226,24 +214,23 @@ class PolarOut(nn.Module):
 
     def forward(
         self,
+        data: Data,
         x_scalar: torch.Tensor,
         x_spherical: torch.Tensor,
-        coord: torch.Tensor,
-        batch_index: torch.LongTensor,
     ) -> torch.Tensor:
         """
         Args:
+            `data`: pyg `Data` object.
             `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features.
-            `coord`: Atomic coordinates.
-            `batch_index`: Batch index.
+            `x_spherical`: Spherical features. (Unused in this module)
         Returns:
             `res`: Polarizability.
         """
+        batch = data.batch
         spherical_out = self.spherical_out_mlp(x_spherical)
         scalar_out = self.scalar_out_mlp(x_scalar)
         atom_out = self.rsh_conv(spherical_out, scalar_out)
-        mol_out = scatter(atom_out, batch_index, dim=0)
+        mol_out = scatter(atom_out, batch, dim=0)
         zero_order = mol_out[:, 0:1]
         second_order = mol_out[:, 1:6]
         # build zero order output
@@ -281,8 +268,10 @@ class SpatialOut(nn.Module):
             `actfn`: Activation function type.
         """
         super().__init__()
+        from ..utils.qc import ATOM_MASS
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
+        self.register_buffer("masses", ATOM_MASS)
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
@@ -293,24 +282,68 @@ class SpatialOut(nn.Module):
 
     def forward(
         self,
+        data: Data,
         x_scalar: torch.Tensor,
         x_spherical: torch.Tensor,
-        coord: torch.Tensor,
-        batch_index: torch.LongTensor,
     ) -> torch.Tensor:
         """
         Args:
+            `data`: pyg `Data` object.
             `x_scalar`: Scalar features.
             `x_spherical`: Spherical features.
-            `coord`: Atomic coordinates.
-            `batch_index`: Batch index.
         Returns:
             `res`: Spatial output.
         """
+        batch = data.batch; coord = data.pos; at_no = data.at_no
+        masses = self.masses[at_no]
+        centroids = scatter(masses * coord, batch, dim=0) / scatter(masses, batch, dim=0)
+        coord -= centroids[batch]
         scalar_out = self.scalar_out_mlp(x_scalar)
         spatial = torch.square(coord).sum(dim=1, keepdim=True)
-        res = scatter(scalar_out * spatial, batch_index, dim=0)
+        res = scatter(scalar_out * spatial, batch, dim=0)
         return res
+
+
+class AtomicCharge(ScalarOut):
+    def __init__(
+        self,
+        node_dim: int = 128,
+        hidden_dim: int = 64,
+        out_dim: int = 1,
+        actfn: str = "silu",
+        node_bias: float = 0.0,
+    ):
+        """
+        Args:
+            `node_dim`: Node dimension.
+            `hidden_dim`: Dimension of hidden layer.
+            `actfn`: Activation function type.
+            `node_bias`: Bias for atomic wise output.
+        """
+        super().__init__(node_dim, hidden_dim, out_dim, actfn, node_bias)
+
+    def forward(
+        self,
+        data: Data,
+        x_scalar: torch.Tensor,
+        x_spherical: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Args:
+            `data`: pyg `Data` object.
+            `x_scalar`: Scalar features.
+            `x_spherical`: Spherical features. (Unused in this module)
+        Returns:
+            `res`: Atomic charges.
+        """
+        charge = data.charge; batch = data.batch
+        tot_chrg = charge.index_select(0, batch)
+        atom_out = self.out_mlp(x_scalar).squeeze()
+        # force the sum of atomic charge equals to the total charge
+        sum_chrg = scatter(atom_out, data.batch)
+        num_atoms = scatter(torch.ones_like(atom_out), batch)
+        at_chrgs = atom_out + (tot_chrg - sum_chrg) / num_atoms
+        return at_chrgs        
 
 
 class CartTensorOut(nn.Module):
@@ -375,16 +408,24 @@ class CartTensorOut(nn.Module):
 
     def forward(
         self,
+        data: Data,
         x_scalar: torch.Tensor,
         x_spherical: torch.Tensor,
-        coord: torch.Tensor,
-        batch_index: torch.LongTensor
     ) -> torch.Tensor:
+        """
+        Args:
+            `data`: pyg `Data` object.
+            `x_scalar`: Scalar features.
+            `x_spherical`: Spherical features.
+        Returns:
+            `res`: high-order `Tensor` output.
+        """
+        batch = data.batch
         x_sph = self.lin_out_pre(x_spherical)
         tp_weights = self.gate_mlp(x_scalar)
         x_tp = self.tp(x_sph, x_sph, tp_weights) 
         atom_out = self.lin_out_post(x_tp) if self.post_trans else x_tp
-        res_sph = scatter(atom_out, batch_index, dim=0)
+        res_sph = scatter(atom_out, batch, dim=0)
         # cartesian transform 
         Q = self.rtp.change_of_basis
         res_cart = res_sph @ Q.flatten(-len(self.indices))
@@ -451,10 +492,9 @@ class CSCOut(nn.Module):
 
     def forward(
         self,
+        data: Data,
         x_scalar: torch.Tensor,
         x_spherical: torch.Tensor,
-        coord: torch.Tensor,
-        batch_index: torch.LongTensor
     ) -> torch.Tensor:
         x_sph = self.lin_out_pre(x_spherical)
         tp_weights = self.gate_mlp(x_scalar)

@@ -9,7 +9,7 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.data import Dataset as DiskDataset
 
 from ..utils import (
-    unit_conversion, get_default_unit, get_centroid, get_atomic_energy,
+    unit_conversion, get_default_unit, get_atomic_energy,
     distributed_zero_first,
     NetConfig,
 )
@@ -44,7 +44,7 @@ def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
         dataset._prop_dict["full_edge_index"] = config.full_edge_index
 
     dataset._virtual_dim = True
-    if "field" in config.output_mode:
+    if "atomic" in config.output_mode:
         dataset._virtual_dim = False
     
     if dataset._pbc:
@@ -80,6 +80,8 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwar
             edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index, charge=charge, spin=spin)
             for p_attr, p_name in prop_dict.items():
+                if p_name not in mol_grp.keys():
+                    continue
                 p_val = torch.tensor(mol_grp[p_name][()][icfm])
                 if p_val.dim() == 0:
                     p_val = p_val.unsqueeze(0)
@@ -512,18 +514,6 @@ def atom_ref_transform(
         if hasattr(new_data, "base_force"):
             new_data.base_force = new_data.base_force.to(torch.get_default_dtype())
 
-    return new_data
-
-
-def centroid_transform(
-    data: Data,
-):
-    """
-    Create a deep copy of the data and subtract the centroid.
-    """
-    new_data = data.clone()
-    centroid = get_centroid(new_data.at_no, new_data.pos)
-    new_data.pos -= centroid
     return new_data
 
 
