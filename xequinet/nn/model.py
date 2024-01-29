@@ -1,5 +1,3 @@
-from typing import Tuple, Union
-
 import torch
 import torch.nn as nn
 from torch_geometric.data import Data
@@ -10,9 +8,7 @@ from .xpainn import (
 from .painn import (
     Embedding, PainnMessage, PainnUpdate,
 )
-from .output import (
-    ScalarOut, NegGradOut, VectorOut, PolarOut, SpatialOut, CartTensorOut, CSCOut,
-)
+from .output import resolve_output
 from .xqhnet import (
     XMatEmbedding, NodewiseInteraction, MatTrans,
 )
@@ -21,65 +17,6 @@ from .xpainnorb import (
 )
 from .matlayer import MatriceOut 
 from ..utils import NetConfig
-
-
-def resolve_output(config: NetConfig):
-    if config.output_mode == "scalar":
-        return ScalarOut(
-            node_dim=config.node_dim,
-            hidden_dim=config.hidden_dim,
-            out_dim=config.output_dim,
-            actfn=config.activation,
-            node_bias=config.node_average,
-        )
-    elif config.output_mode == "grad":
-        return NegGradOut(
-            node_dim=config.node_dim,
-            hidden_dim=config.hidden_dim,
-            actfn=config.activation,
-            node_bias=config.node_average,
-        )
-    elif config.output_mode == "vector":
-        return VectorOut(
-            edge_irreps=config.edge_irreps,
-            hidden_irreps=config.hidden_irreps,
-            output_dim=config.output_dim,
-        )
-    elif config.output_mode == "polar":
-        return PolarOut(
-            edge_irreps=config.edge_irreps,
-            hidden_irreps=config.hidden_irreps,
-            output_dim=config.output_dim,
-        )
-    elif config.output_mode == "spatial":
-        return SpatialOut(
-            node_dim=config.node_dim,
-            hidden_dim=config.hidden_dim,
-            actfn=config.activation,
-        )
-    elif config.output_mode == "cart_tensor":
-        return CartTensorOut(
-            node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
-            hidden_dim=config.hidden_dim,
-            hidden_irreps=config.hidden_irreps,
-            order=config.order,
-            required_symmetry=config.required_symm,
-            output_dim=config.output_dim,
-            actfn=config.activation,
-        )
-    elif config.output_mode == "atomic_2_tensor":
-        return CSCOut(
-            node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
-            hidden_dim=config.hidden_dim,
-            hidden_irreps=config.hidden_irreps,
-            required_symmetry=config.required_symm,
-            trace_out=config.output_dim==1,
-            actfn=config.activation,
-        )
-    else:
-        raise NotImplementedError(f"output mode {config.output_mode} is not implemented")
 
 
 class XPaiNN(nn.Module):
@@ -126,8 +63,12 @@ class XPaiNN(nn.Module):
         """
         # get required input from data
         at_no = data.at_no; pos=data.pos; edge_index=data.edge_index
+        if hasattr(data, "shifts"):
+            shifts = data.shifts
+        else:
+            shifts = torch.zeros((edge_index.shape[1], 3), device=pos.device)
         # embed input
-        x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index)
+        x_scalar, rbf, fcut, rsh = self.embed(at_no, pos, edge_index, shifts)
         # initialize vector with zeros
         x_spherical = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         # message passing and node update
@@ -390,10 +331,9 @@ class XPaiNNOrb(nn.Module):
 
 
 def resolve_model(config: NetConfig) -> nn.Module:
-    if config.version.lower() == "xpainn":
+    if config.version.lower() in ["xpainn", "xpainn-pbc"]:
         return XPaiNN(config)
-    elif (config.version.lower() == "xpainn-ele" or 
-          config.version.lower() == "xpainn-pbc"):
+    elif config.version.lower() in ["xpainn-ele", "xpainn-elepbc"]:
         return XPaiNNEle(config)
     elif config.version.lower() == "painn":
         return PaiNN(config)

@@ -3,10 +3,12 @@ import io
 import os
 
 import h5py
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.data import Dataset as DiskDataset
+from torch_cluster import radius_graph
 
 from ..utils import (
     unit_conversion, get_default_unit, get_atomic_energy,
@@ -56,7 +58,6 @@ def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
 
 
 def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwargs):
-    from torch_cluster import radius_graph
     len_unit = get_default_unit()[1]
     max_edges = kwargs.get("max_edges", 100)
     virtual_dim = kwargs.get("virtual_dim", True)
@@ -92,8 +93,7 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwar
 
 
 def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **kwargs):
-    from ase import Atoms
-    from ase.neighborlist import neighbor_list
+    from ase.neighborlist import primitive_neighbor_list
     len_unit = get_default_unit()[1]
     virtual_dim = kwargs.get("virtual_dim", True)
     # loop over samples
@@ -101,31 +101,30 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **
         pbc_grp = f_h5[mode][pbc_name]
         at_no = torch.LongTensor(pbc_grp['atomic_numbers'][()])
         # set periodic boundary condition
+        pbc = np.zeros(3, dtype=bool)
         if "pbc" in pbc_grp.keys():
-            pbc = pbc_grp["pbc"][()]
-        else:
-            pbc = False
+            pbc = ~pbc * pbc_grp["pbc"][()]
         pbc_condition = pbc if isinstance(pbc, bool) else any(pbc)
         if pbc_condition:
             if "lattice_A" in pbc_grp.keys():
-                lattice = torch.Tensor(pbc_grp["lattice_A"][()]).to(torch.get_default_dtype())
+                lattice = pbc_grp["lattice_A"][()]
                 lattice *= unit_conversion("Angstrom", len_unit)
             elif "lattice_bohr" in pbc_grp.keys():
-                lattice = torch.Tensor(pbc_grp["lattice_bohr"][()]).to(torch.get_default_dtype())
+                lattice = pbc_grp["lattice_bohr"][()]
                 lattice *= unit_conversion("Bohr", len_unit)
             else:
                 raise ValueError("Lattice not found in the hdf5 file.")
         else:
-            lattice = torch.zeros(3, 3, dtype=torch.get_default_dtype())
+            lattice = np.zeros((3, 3))
         if "coordinates_A" in pbc_grp.keys():
-            coords = torch.Tensor(pbc_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+            coords = pbc_grp["coordinates_A"][()]
             coords *= unit_conversion("Angstrom", len_unit)
         elif "coordinates_bohr" in pbc_grp.keys():
-            coords = torch.Tensor(pbc_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+            coords = pbc_grp["coordinates_bohr"][()]
             coords *= unit_conversion("Bohr", len_unit)
         elif "coordinates_frac" in pbc_grp.keys():
-            coords = torch.Tensor(pbc_grp["coordinates_frac"][()]).to(torch.get_default_dtype())
-            coords = torch.einsum("nij, kj -> nik", coords, lattice)
+            coords = pbc_grp["coordinates_frac"][()]
+            coords = np.einsum("nij, jk -> nik", coords, lattice)
         else:
             raise ValueError("Coordinates not found in the hdf5 file.")
         charge = float(pbc_grp["charge"][()]) if "charge" in pbc_grp.keys() else 0.0
@@ -134,11 +133,13 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **
         spin = torch.Tensor([spin]).to(torch.get_default_dtype())
         # loop over configurations
         for icfm, coord in enumerate(coords):
-            atoms = Atoms(symbols=at_no, positions=coord, cell=lattice, pbc=pbc)
-            idx_i, idx_j, offsets = neighbor_list("ijS", a=atoms, cutoff=cutoff)
-            offsets = torch.Tensor(offsets).to(torch.get_default_dtype())
-            shifts = torch.einsum("ij, kj -> ik", offsets, lattice)
+            idx_i, idx_j, offsets = primitive_neighbor_list(
+                "ijS", pbc=pbc, cell=lattice, positions=coords, cutoff=cutoff,
+            )
+            shifts = np.dot(offsets, lattice)
             edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long)
+            coord = torch.from_numpy(coord).to(torch.get_default_dtype())
+            shifts = torch.from_numpy(shifts).to(torch.get_default_dtype())
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, charge=charge, spin=spin)
             for p_attr, p_name in prop_dict.items():
                 p_val = torch.tensor(pbc_grp[p_name][()][icfm])
@@ -151,7 +152,6 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **
 
 
 def process_math5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict, **kwargs):
-    from torch_cluster import radius_graph
     from ..utils import Mat2GraphLabel, TwoBodyBlockMask 
     len_unit = get_default_unit()[1]
     max_edges = kwargs.get("max_edges", 100)
@@ -193,7 +193,6 @@ def process_math5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict, **kwargs
 
 
 def process_hessh5(f_h5: h5py.File, mode: str, cutoff: float, **kwargs):
-    from torch_cluster import radius_graph
     len_unit = get_default_unit()[1]
     max_edges = kwargs.get("max_edges", 100)
     # loop over samples

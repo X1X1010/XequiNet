@@ -1,9 +1,9 @@
-from .jit_model import JitPaiNN, JitPaiNNEle, resolve_jit_model
-from .lmp_model import LmpPaiNN
+from .jit_model import resolve_jit_model
+from .md_model import resolve_md_model
 from .ase_calculator import XeqCalculator
 
 __all__ = [
-    "JitPaiNN", "JitPaiNNEle", "resolve_jit_model",
-    "LmpPaiNN",
+    "resolve_jit_model",
+    "resolve_md_model",
     "XeqCalculator",
 ]

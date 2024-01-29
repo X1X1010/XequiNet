@@ -5,9 +5,8 @@ import torch
 import torch.nn as nn
 from torch_cluster import radius_graph
 
-from xequinet.utils import NetConfig
-
-from ..nn import XEmbedding, XPainnMessage, XPainnUpdate, resolve_actfn
+from ..nn import resolve_actfn
+from ..nn.xpainn import XEmbedding, XPainnMessage, XPainnUpdate
 from ..utils import NetConfig, unit_conversion, get_default_unit, get_atomic_energy
 
 

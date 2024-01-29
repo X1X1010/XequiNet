@@ -16,10 +16,7 @@ from .qc_interface import(
     TwoBodyBlockPad, TwoBodyBlockMask, Mat2GraphLabel,
     QCMatriceBuilder, BuildMatPerMole, cal_orbital_and_energies,
 )
-from .qc_interface import(
-    TwoBodyBlockPad, TwoBodyBlockMask, Mat2GraphLabel,
-    QCMatriceBuilder, BuildMatPerMole, cal_orbital_and_energies,
-)
+
 
 __all__ = [
     "Trainer", "GradTrainer", "QCMatTrainer",

@@ -177,7 +177,7 @@ class EquivariantLayerNorm(nn.Module):
             self.affine_bias = nn.Parameter(bias)
         else:
             self.register_buffer('affine_weight', weight)
-            self.register_parameter('affine_bias', bias)
+            self.register_buffer('affine_bias', bias)
 
 
     def forward(self, node_input: torch.Tensor) -> torch.Tensor:

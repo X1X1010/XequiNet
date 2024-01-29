@@ -9,7 +9,8 @@ from torch_scatter import scatter
 from e3nn import o3
 
 from .o3layer import Gate, resolve_actfn
-from .tensorproduct import get_feasible_tp 
+from .tensorproduct import get_feasible_tp
+from ..utils.config import NetConfig
 
 
 class ScalarOut(nn.Module):
@@ -76,7 +77,7 @@ class NegGradOut(ScalarOut):
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
         """
-        super().__init__(self, node_dim, hidden_dim, 1, actfn, node_bias)
+        super().__init__(node_dim, hidden_dim, 1, actfn, node_bias)
 
     def forward(
         self,
@@ -515,3 +516,61 @@ class CSCOut(nn.Module):
                 res_cart = torch.index_select(res_cart, dim=-i_dim, index=self.cartesian_index)
             return res_cart 
 
+
+def resolve_output(config: NetConfig):
+    if config.output_mode == "scalar":
+        return ScalarOut(
+            node_dim=config.node_dim,
+            hidden_dim=config.hidden_dim,
+            out_dim=config.output_dim,
+            actfn=config.activation,
+            node_bias=config.node_average,
+        )
+    elif config.output_mode == "grad":
+        return NegGradOut(
+            node_dim=config.node_dim,
+            hidden_dim=config.hidden_dim,
+            actfn=config.activation,
+            node_bias=config.node_average,
+        )
+    elif config.output_mode == "vector":
+        return VectorOut(
+            edge_irreps=config.edge_irreps,
+            hidden_irreps=config.hidden_irreps,
+            output_dim=config.output_dim,
+        )
+    elif config.output_mode == "polar":
+        return PolarOut(
+            edge_irreps=config.edge_irreps,
+            hidden_irreps=config.hidden_irreps,
+            output_dim=config.output_dim,
+        )
+    elif config.output_mode == "spatial":
+        return SpatialOut(
+            node_dim=config.node_dim,
+            hidden_dim=config.hidden_dim,
+            actfn=config.activation,
+        )
+    elif config.output_mode == "cart_tensor":
+        return CartTensorOut(
+            node_dim=config.node_dim,
+            edge_irreps=config.edge_irreps,
+            hidden_dim=config.hidden_dim,
+            hidden_irreps=config.hidden_irreps,
+            order=config.order,
+            required_symmetry=config.required_symm,
+            output_dim=config.output_dim,
+            actfn=config.activation,
+        )
+    elif config.output_mode == "atomic_2_tensor":
+        return CSCOut(
+            node_dim=config.node_dim,
+            edge_irreps=config.edge_irreps,
+            hidden_dim=config.hidden_dim,
+            hidden_irreps=config.hidden_irreps,
+            required_symmetry=config.required_symm,
+            trace_out=config.output_dim==1,
+            actfn=config.activation,
+        )
+    else:
+        raise NotImplementedError(f"output mode {config.output_mode} is not implemented")

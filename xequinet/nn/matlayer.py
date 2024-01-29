@@ -12,6 +12,7 @@ from .tensorproduct import prod, get_feasible_tp
 from .o3layer import NormGate, EquivariantDot 
 from .o3layer import resolve_actfn 
 
+
 class SelfLayer(nn.Module):
     """
     Block for generate diagnol/onsite hidden irreps.

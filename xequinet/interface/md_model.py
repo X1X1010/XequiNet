@@ -6,12 +6,13 @@ from e3nn import o3
 
 from xequinet.utils import NetConfig
 
-from ..nn import XEmbedding, XPainnMessage, XPainnUpdate, resolve_actfn
+from ..nn import resolve_actfn
+from ..nn.xpainn import XEmbedding, XPainnMessage, XPainnUpdate
 from ..utils import NetConfig, unit_conversion, get_default_unit, get_atomic_energy
 
 
 
-class LmpEmbedding(XEmbedding):
+class MDEmbedding(XEmbedding):
     def __init__(
         self,
         node_dim: int = 128,
@@ -63,7 +64,7 @@ class LmpEmbedding(XEmbedding):
         return x_scalar, vec, rbf, fcut, rsh
 
 
-class LmpGradOut(nn.Module):
+class MDGradOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
@@ -128,10 +129,10 @@ class LmpGradOut(nn.Module):
         return energies, forces, virials
 
 
-class LmpPaiNN(nn.Module):
+class MDPaiNN(nn.Module):
     def __init__(self, config: NetConfig):
         super().__init__()
-        self.embed = LmpEmbedding(
+        self.embed = MDEmbedding(
             node_dim=config.node_dim,
             edge_irreps=config.edge_irreps,
             embed_basis=config.embed_basis,
@@ -160,7 +161,7 @@ class LmpPaiNN(nn.Module):
             )
             for _ in range(config.action_blocks)
         ])
-        self.out = LmpGradOut(
+        self.out = MDGradOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
             actfn=config.activation,
@@ -208,3 +209,9 @@ class LmpPaiNN(nn.Module):
         }
         return result
 
+
+def resolve_md_model(config: NetConfig) -> nn.Module:
+    if config.version.lower() == "xpainn":
+        return MDPaiNN(config)
+    else:
+        raise NotImplementedError(f"Unsupported model {config.version}")
