@@ -45,6 +45,10 @@ def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
         dataset._prop_dict["basisname"] = config.target_basisname
         dataset._prop_dict["full_edge_index"] = config.full_edge_index
 
+    # virtual dimension is for batch collation
+    # e.g. shape of dipole moment is (3,) for a single molecule
+    # we need to add a virtual dimension to make it (1, 3), so the pyg `Data` will collate
+    # along the first dimension, and the shape of the collated dipole moment will be (N, 3)
     dataset._virtual_dim = True
     if "atomic" in config.output_mode:
         dataset._virtual_dim = False
@@ -64,12 +68,13 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwar
     # loop over samples
     for mol_name in f_h5[mode].keys():
         mol_grp = f_h5[mode][mol_name]
+        # `torch.LongTensor` is required for some pytorch/pyg functions, but I do not remember which one
         at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
         if "coordinates_A" in mol_grp.keys():
-            coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
+            coords = torch.from_numpy(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
             coords *= unit_conversion("Angstrom", len_unit)
         elif "coordinates_bohr" in mol_grp.keys():
-            coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
+            coords = torch.from_numpy(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
             coords *= unit_conversion("Bohr", len_unit)
         else:
             raise ValueError("Coordinates not found in the hdf5 file.")
@@ -93,8 +98,9 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwar
 
 
 def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **kwargs):
-    from ase.neighborlist import primitive_neighbor_list
+    from .radius_pbc import radius_graph_pbc
     len_unit = get_default_unit()[1]
+    max_edges = kwargs.get("max_edges", 100)
     virtual_dim = kwargs.get("virtual_dim", True)
     # loop over samples
     for pbc_name in f_h5[mode].keys():
@@ -133,11 +139,11 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **
         spin = torch.Tensor([spin]).to(torch.get_default_dtype())
         # loop over configurations
         for icfm, coord in enumerate(coords):
-            idx_i, idx_j, offsets = primitive_neighbor_list(
-                "ijS", pbc=pbc, cell=lattice, positions=coords, cutoff=cutoff,
+            edge_index, shifts = radius_graph_pbc(
+                positions=coord, pbc=pbc, cell=lattice, cutoff=cutoff,
+                max_num_neighbors=max_edges,
             )
-            shifts = np.dot(offsets, lattice)
-            edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long)
+            edge_index = torch.from_numpy(edge_index).long()
             coord = torch.from_numpy(coord).to(torch.get_default_dtype())
             shifts = torch.from_numpy(shifts).to(torch.get_default_dtype())
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, charge=charge, spin=spin)

@@ -23,7 +23,7 @@ kJ_per_mol = KJ_PER_MOL = 2625.499638
 J_per_mol = J_PER_MOL = kJ_per_mol * 1000
 
 # length
-Angstrom = ANGSTROM = 0.5291772105638411
+Angstrom = ANGSTROM = ANGS = 0.5291772105638411
 
 # dipole
 Debye = DEBYE = 2.5417464157449032
@@ -39,7 +39,7 @@ LEN_UNIT = "Angstrom"
 
 unit_set = {
     "AU", "BOHR", "HARTREE", "EV", "MHARTREE", "MEV", "KCAL_PER_MOL", "KJ_PER_MOL", "J_PER_MOL",
-    "ANGSTROM", "DEBYE", "MDEBYE", "FS", "PS",
+    "ANGSTROM", "ANGS" "DEBYE", "MDEBYE", "FS", "PS",
 }
 
 def eval_unit(unit: str):

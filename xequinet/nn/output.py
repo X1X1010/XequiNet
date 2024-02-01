@@ -310,7 +310,6 @@ class AtomicCharge(ScalarOut):
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
-        out_dim: int = 1,
         actfn: str = "silu",
         node_bias: float = 0.0,
     ):
@@ -321,7 +320,7 @@ class AtomicCharge(ScalarOut):
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
         """
-        super().__init__(node_dim, hidden_dim, out_dim, actfn, node_bias)
+        super().__init__(node_dim, hidden_dim, 1, actfn, node_bias)
 
     def forward(
         self,
@@ -535,21 +534,34 @@ def resolve_output(config: NetConfig):
         )
     elif config.output_mode == "vector":
         return VectorOut(
+            node_dim=config.node_dim,
             edge_irreps=config.edge_irreps,
+            hidden_dim=config.hidden_dim,
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
+            actfn=config.activation,
         )
     elif config.output_mode == "polar":
         return PolarOut(
+            node_dim=config.node_dim,
             edge_irreps=config.edge_irreps,
+            hidden_dim=config.hidden_dim,
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
+            actfn=config.activation,
         )
     elif config.output_mode == "spatial":
         return SpatialOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
             actfn=config.activation,
+        )
+    elif config.output_mode == "atomic_charge":
+        return AtomicCharge(
+            node_dim=config.node_dim,
+            hidden_dim=config.hidden_dim,
+            actfn=config.activation,
+            node_bias=config.node_average,
         )
     elif config.output_mode == "cart_tensor":
         return CartTensorOut(
