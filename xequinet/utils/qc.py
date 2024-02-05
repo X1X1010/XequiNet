@@ -39,7 +39,7 @@ LEN_UNIT = "Angstrom"
 
 unit_set = {
     "AU", "BOHR", "HARTREE", "EV", "MHARTREE", "MEV", "KCAL_PER_MOL", "KJ_PER_MOL", "J_PER_MOL",
-    "ANGSTROM", "ANGS" "DEBYE", "MDEBYE", "FS", "PS",
+    "ANGSTROM", "ANGS", "DEBYE", "MDEBYE", "FS", "PS",
 }
 
 def eval_unit(unit: str):

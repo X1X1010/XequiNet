@@ -96,12 +96,15 @@ class SphericalBesselj0(nn.Module):
     def forward(self, dist: torch.Tensor) -> torch.Tensor:
         # dist: [nedge, 1]
         coeff = math.sqrt(2 / self.cutoff)
-        norm = torch.where(dist == 0, torch.tensor(1.0, device=dist.device), dist)
-        rbf = coeff * torch.sin(self.freq * norm) / norm
+        rbf = torch.where(
+            dist == 0,
+            torch.tensor(self.freq, device=dist.device),
+            torch.sin(self.freq * dist) / dist
+        ) * coeff
         return rbf
 
 
-def softplus_inverse(x:torch.Tensor):
+def softplus_inverse(x: torch.Tensor):
     if not isinstance(x, torch.Tensor):
         x = torch.tensor(x)
     return x + torch.log(-torch.expm1(-x))
