@@ -48,8 +48,8 @@ class NetConfig(BaseModel):
 
     # configurations about the dataset
     dataset_type: str = "normal"                   # dataset type (`memory` is for the dataset in memory, `disk` is for the dataset on disk)
-    data_root: str                                 # root directory of the dataset
-    data_files: Union[List[str], str]              # list of the data files
+    data_root: Optional[str] = None                # root directory of the dataset
+    data_files: Optional[Union[List[str], str]] = None  # list of the data files
     processed_name: Optional[str] = None           # name of the processed dataset
     mem_process: bool = True                       # whether to process the dataset in memory
     label_name: Optional[str] = None               # name of the label
@@ -94,7 +94,7 @@ class NetConfig(BaseModel):
     num_workers: int = 0                           # number of the workers for the data loader
 
     def model_hyper_params(self):
-        hyper_params = self.dict(include={
+        hyper_params = self.model_dump(include={
             "version", "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
             "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "max_edges", "action_blocks",
             "activation", "norm_type", "output_mode", "output_dim", "order", "required_symm",
@@ -102,7 +102,7 @@ class NetConfig(BaseModel):
             "default_dtype",
         })
         if "mat" in self.version:
-            hyper_params.update(self.dict(include={
+            hyper_params.update(self.model_dump(include={
                 "irreps_out", "mat_hidden_dim", "mat_block_dim", "max_l", "num_mat_conv", "target_basisname",
                 "possible_elements", "full_edge_index",
             }))

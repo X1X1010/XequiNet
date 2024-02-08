@@ -250,17 +250,26 @@ def main():
         help="Verbose level. (default: 0)"
     )
     parser.add_argument(
+        "--warning", "-w", action="store_true",
+        help="Whether to show warning messages",
+    )
+    parser.add_argument(
         "inp", type=str,
         help="Input xyz file."
     )
     args = parser.parse_args()
 
+    # open warning or not
+    if not args.warning:
+        import warnings
+        warnings.filterwarnings("ignore")
+    
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # load checkpoint and config
     ckpt = torch.load(args.ckpt, map_location=device)
-    config = NetConfig.parse_obj(ckpt["config"])
+    config = NetConfig.model_validate(ckpt["config"])
 
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)

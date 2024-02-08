@@ -1,24 +1,22 @@
 from typing import Dict
-import numpy as np
 import torch
 
-from ase.neighborlist import neighbor_list
 from ase.stress import full_3x3_to_voigt_6_stress
 from ase.calculators.calculator import Calculator, all_changes
 
+from ..utils import radius_graph_pbc
 
 
 class XeqCalculator(Calculator):
     """
     ASE calculator for XequiNet models.
-
-    Args:
     """
     implemented_properties = ["energy", "energies", "forces"]
     implemented_properties += ["stress", "stresses"]
     default_parameters = {
         "ckpt_file": "model.jit",
         "cutoff": 5.0,
+        "max_edges": 100,
         "charge": 0,
         "spin": 0,
     }
@@ -46,15 +44,17 @@ class XeqCalculator(Calculator):
             properties = self.implemented_properties
 
         Calculator.calculate(self, atoms, properties, system_changes)
-        cutoff = self.parameters.cutoff
         positions = self.atoms.positions
-        cell = self.atoms.cell
-        idx_i, idx_j, offsets = neighbor_list("ijS", self.atoms, cutoff)
-        shifts = torch.from_numpy(
-            np.einsum("ij, kj -> ik", offsets, cell)
-        ).to(torch.get_default_dtype()).to(self.device)
-        edge_index = torch.tensor([idx_i, idx_j], dtype=torch.long, device=self.device)
-        at_no = torch.tensor(self.atoms.numbers, dtype=torch.long, device=self.device)
+        edge_index, shifts = radius_graph_pbc(
+            positions=positions,
+            pbc=self.atoms.pbc,
+            cell=self.atoms.cell,
+            cutoff=self.parameters.cutoff,
+            max_num_neighbors=self.parameters.max_edges,
+        )
+        edge_index = torch.from_numpy(edge_index).to(torch.long).to(self.device)
+        shifts = torch.from_numpy(shifts).to(torch.get_default_dtype()).to(self.device)
+        at_no = torch.from_numpy(self.atoms.numbers).to(torch.long).to(self.device)
         coord = torch.from_numpy(positions).to(torch.get_default_dtype()).to(self.device)
         model_res: Dict[str, torch.Tensor] = self.model(
             at_no=at_no, coord=coord,

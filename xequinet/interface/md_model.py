@@ -31,7 +31,7 @@ class MDEmbedding(XEmbedding):
 
     def forward(
         self,
-        at_no: torch.LongTensor,
+        at_no: torch.Tensor,
         pos: torch.Tensor,
         shifts: torch.Tensor,
         edge_index: torch.Tensor,
@@ -91,7 +91,7 @@ class MDGradOut(nn.Module):
         x_scalar: torch.Tensor,
         coord: torch.Tensor,
         vec: torch.Tensor,
-        edge_index: torch.LongTensor,
+        edge_index: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -176,9 +176,9 @@ class MDPaiNN(nn.Module):
 
     def forward(
         self,
-        at_no: torch.LongTensor,
+        at_no: torch.Tensor,
         coord: torch.Tensor,
-        edge_index: torch.LongTensor,
+        edge_index: torch.Tensor,
         shifts: torch.Tensor,
         charge: int,
         spin: int,

@@ -13,6 +13,7 @@ from torch_cluster import radius_graph
 from ..utils import (
     unit_conversion, get_default_unit, get_atomic_energy,
     distributed_zero_first,
+    radius_graph_pbc,
     NetConfig,
 )
 
@@ -62,6 +63,9 @@ def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
 
 
 def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwargs):
+    """
+    process the hdf5 file of molecular data
+    """
     len_unit = get_default_unit()[1]
     max_edges = kwargs.get("max_edges", 100)
     virtual_dim = kwargs.get("virtual_dim", True)
@@ -98,7 +102,9 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwar
 
 
 def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **kwargs):
-    from .radius_pbc import radius_graph_pbc
+    """
+    process the hdf5 file of system with periodic boundary condition
+    """
     len_unit = get_default_unit()[1]
     max_edges = kwargs.get("max_edges", 100)
     virtual_dim = kwargs.get("virtual_dim", True)
@@ -158,6 +164,9 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **
 
 
 def process_math5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict, **kwargs):
+    """
+    process the hdf5 file of matirx data
+    """
     from ..utils import Mat2GraphLabel, TwoBodyBlockMask 
     len_unit = get_default_unit()[1]
     max_edges = kwargs.get("max_edges", 100)
@@ -199,6 +208,9 @@ def process_math5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict, **kwargs
 
 
 def process_hessh5(f_h5: h5py.File, mode: str, cutoff: float, **kwargs):
+    """
+    process of the hdf5 file of hessian data
+    """
     len_unit = get_default_unit()[1]
     max_edges = kwargs.get("max_edges", 100)
     # loop over samples

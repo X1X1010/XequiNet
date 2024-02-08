@@ -134,10 +134,19 @@ def main():
         help="Verbosity level.",
     )
     parser.add_argument(
+        "--warning", "-w", action="store_true",
+        help="Whether to show warning messages",
+    )
+    parser.add_argument(
         "inp", type=str,
         help="Input xyz file."
     )
     args = parser.parse_args()
+
+    # open warning or not
+    if not args.warning:
+        import warnings
+        warnings.filterwarnings("ignore")
 
     if args.freq:
         # create a new freq log file
@@ -160,7 +169,7 @@ def main():
         mol = gto.M(
             atom=mol_token,
             charge=charge,
-            spin=spin,        # multiplicity = spin + 1
+            spin=spin,  # multiplicity = spin + 1
         )
         # create a fake method as pyscf method, which returns energy and gradient
         fake_method = as_pyscf_method(mol, lambda mol: xeq_method(mol, model, device, args.base_method))

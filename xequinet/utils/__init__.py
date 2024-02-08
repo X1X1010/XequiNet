@@ -16,6 +16,7 @@ from .qc_interface import(
     TwoBodyBlockPad, TwoBodyBlockMask, Mat2GraphLabel,
     QCMatriceBuilder, BuildMatPerMole, cal_orbital_and_energies,
 )
+from .radius_pbc import radius_graph_pbc
 
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "gen_3Dinfo_str",
     "TwoBodyBlockPad", "TwoBodyBlockMask", "Mat2GraphLabel",
     "QCMatriceBuilder", "BuildMatPerMole", "cal_orbital_and_energies",
+    "radius_graph_pbc",
 ]

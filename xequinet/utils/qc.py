@@ -11,16 +11,17 @@ import torch
 # Atomic Units
 AU = 1.0
 Bohr = BOHR = 1.0
-Hartree = HARTREE = 1.0
+Hartree = HARTREE = EH = HA = 1.0
 
 # energy
 eV = EV = 27.211386024367243
 mHartree = MHARTREE = Hartree * 1000
 meV = MEV = eV * 1000
-# although not units of energy, they are often used to represent energy
-kcal_per_mol = KCAL_PER_MOL = 627.5094738898777
-kJ_per_mol = KJ_PER_MOL = 2625.499638
-J_per_mol = J_PER_MOL = kJ_per_mol * 1000
+# energy per mole, for convienence
+mol = MOL = 1.0
+kcal = KCAL = 627.5094738898777
+kJ = KJ = 2625.499638
+J = kJ * 1000
 
 # length
 Angstrom = ANGSTROM = ANGS = 0.5291772105638411
@@ -38,8 +39,8 @@ PROP_UNIT = None
 LEN_UNIT = "Angstrom"
 
 unit_set = {
-    "AU", "BOHR", "HARTREE", "EV", "MHARTREE", "MEV", "KCAL_PER_MOL", "KJ_PER_MOL", "J_PER_MOL",
-    "ANGSTROM", "ANGS", "DEBYE", "MDEBYE", "FS", "PS",
+    "AU", "BOHR", "HARTREE", "EH", "HA", "EV", "MHARTREE", "MEV", "KCAL", "KJ", "J",
+    "MOL", "ANGSTROM", "ANGS", "DEBYE", "MDEBYE", "FS", "PS",
 }
 
 def eval_unit(unit: str):
@@ -257,15 +258,15 @@ def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
         atom_sp_dict = torch.load(PRE_FOLDER / sp_file_name)
         atomic_energy = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
         periodic_table = """
-        H                                                  He
-        Li Be                               B  C  N  O  F  Ne
-        Na Mg                               Al Si P  S  Cl Ar
-        K  Ca Sc Ti V  Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr
-        Rb Sr Y  Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I  Xe
-        Cs Ba    Hf Ta W  Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn
+H                                                  He
+Li Be                               B  C  N  O  F  Ne
+Na Mg                               Al Si P  S  Cl Ar
+K  Ca Sc Ti V  Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr
+Rb Sr Y  Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I  Xe
+Cs Ba    Hf Ta W  Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn
         
-              La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu
-        """
+      La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu
+"""
         for atom, energy in atom_sp_dict.items():
             atomic_energy[ELEMENTS_DICT[atom]] = energy
             periodic_table = periodic_table.replace(f"{atom: <2}", "  ")

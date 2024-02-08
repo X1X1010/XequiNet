@@ -9,7 +9,7 @@ from ..utils.qc import ELEMENTS_DICT
 
 
 """
-                        Standard XYZ file
+                        Special XYZ file
 number of atoms         >>>  5
 charge & multiplicity   >>>  0 1
 atom1 x y z             >>>  C   0.00000000    0.00000000    0.00000000

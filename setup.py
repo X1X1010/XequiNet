@@ -11,6 +11,7 @@ setup(
             "xeqtest = xequinet.run.test:main",
             "xeqopt = xequinet.run.geometry:main",
             "xeqmd = xequinet.run.dynamics:main",
+            "xeqipi = xequinet.run.pimd:main",
         ]
     }
 )

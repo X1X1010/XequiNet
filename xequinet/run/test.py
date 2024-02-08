@@ -316,16 +316,24 @@ def main():
         "--batch-size", "-bz", type=int, default=32,
         help="Batch size. (default: 32)",
     )
+    parser.add_argument(
+        "--warning", "-w", action="store_true",
+        help="Whether to show warning messages",
+    )
     args = parser.parse_args()
     
-
+    # open warning or not
+    if not args.warning:
+        import warnings
+        warnings.filterwarnings("ignore")
+    
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # load checkpoint and config
-    config = NetConfig.parse_file(args.config)
+    config = NetConfig.model_validate(args.config)
     ckpt = torch.load(args.ckpt, map_location=device)
-    config.parse_obj(ckpt["config"])
+    config.model_validate(ckpt["config"])
     
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)

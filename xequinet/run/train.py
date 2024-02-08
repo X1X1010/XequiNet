@@ -25,10 +25,20 @@ def main():
         "--config", "-C", type=str, default="config.json",
         help="Configuration file (default: config.json).",
     )
+    parser.add_argument(
+        "--warning", "-w", action="store_true",
+        help="Whether to show warning messages",
+    )
     args = parser.parse_args()
 
+    # open warning or not
+    if not args.warning:
+        import warnings
+        warnings.filterwarnings("ignore")
+    
+    # load config
     if os.path.isfile(args.config):
-        config = NetConfig.parse_file(args.config)
+        config = NetConfig.model_validate_json(args.config)
     else:
         Warning(f"Config file {args.config} not found. Default config will be used.")
         config = NetConfig()

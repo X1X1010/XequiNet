@@ -21,6 +21,7 @@ default_settings = {
     "multiplicity": 1,
     "ckpt_file": "model.jit",
     "cutoff": 5.0,
+    "max_edges": 100,
 
     "ensemble": "NVT",         # choices=["NVE", "NVT", "NPT"]
     "dynamics": "Nose-Hoover", # choices=["Langevin", "Andersen", "Nose-Hoover", "Berendsen", "Parrinello-Rahman"]
@@ -141,8 +142,17 @@ def main():
         "settings", type=str, default=None,
         help="Setting file for the molecular dynamics. (md.json)",
     )
+    parser.add_argument(
+        "--warning", "-w", action="store_true",
+        help="Whether to show warning messages",
+    )
     args = parser.parse_args()
 
+    # open warning or not
+    if not args.warning:
+        import warnings
+        warnings.filterwarnings("ignore")
+    
     # dump settings
     settings = default_settings.copy()
     if args.settings is not None:
