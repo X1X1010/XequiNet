@@ -1,5 +1,6 @@
 import argparse
 import xml.etree.ElementTree as ET
+import json
 
 from xequinet.interface import iPIDriver
 
@@ -25,30 +26,32 @@ def main():
     # parse the XML file
     tree = ET.parse(args.xml)
     root = tree.getroot()
-    ffsocket = root.find("ffsocket")
     kwargs = {
         "ckpt_file": "model.jit",
+        "init_file": "init.xyz",
         "address": "localhost",
         "port": 31415,
     }
+    ffsocket = root.find("ffsocket")
     kwargs["pbc"] = bool(ffsocket.attrib["pbc"])
     for child in ffsocket:
         if child.tag =="address":
             kwargs["address"] = child.text
         elif child.tag == "port":
             kwargs["port"] = int(child.text)
-        elif child.tag == "ckpt_file":
-            kwargs["ckpt_file"] = child.text
-        elif child.tag == "cutoff":
-            kwargs["cutoff"] = float(child.text)
-        elif child.tag == "max_edges":
-            kwargs["max_edges"] = int(child.text)
-        elif child.tag == "charge":
-            kwargs["charge"] = int(child.text)
-        elif child.tag == "multiplicity":
-            kwargs["multiplicity"] = int(child.text)
-    
+        elif child.tag == "parameters":
+            kwargs.update(json.loads(child.text))
+    initialize = root.find("system").find("initialize")
+    kwargs["init_file"] = initialize.find("file").text.strip()
+
     # create the driver
     driver = iPIDriver(**kwargs)
-    driver.run_driver()
+    while True:
+        try:
+            driver.parse()
+        except SystemExit:
+            exit()
+        except TimeoutError:
+            exit()
+        
     

@@ -98,7 +98,7 @@ class SphericalBesselj0(nn.Module):
         coeff = math.sqrt(2 / self.cutoff)
         rbf = torch.where(
             dist == 0,
-            torch.tensor(self.freq, device=dist.device),
+            self.freq,
             torch.sin(self.freq * dist) / dist
         ) * coeff
         return rbf

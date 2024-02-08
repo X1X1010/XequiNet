@@ -13,6 +13,8 @@ def radius_graph_pbc(
     flow: str = 'source_to_target',
 ) -> Tuple[np.ndarray, ...]:
     assert flow in ['source_to_target', 'target_to_source']
+    # make sure `pbc` is a 3-element array
+    pbc = np.ones(3, dtype=bool) * pbc
     # here we define `offsets` as how many unit cells does the `idx_j` atom shift from its original position
     # and `shifts` as the actual shift vector
     idx_c, idx_n, distances, offsets = primitive_neighbor_list(

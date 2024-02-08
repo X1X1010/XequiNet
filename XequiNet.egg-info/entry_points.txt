@@ -1,5 +1,6 @@
 [console_scripts]
 xeqinfer = xequinet.run.inference:main
+xeqipi = xequinet.run.pimd:main
 xeqjit = xequinet.run.jit_script:main
 xeqmd = xequinet.run.dynamics:main
 xeqopt = xequinet.run.geometry:main

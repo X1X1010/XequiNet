@@ -199,8 +199,9 @@ class MDPaiNN(nn.Module):
         # convert forces to eV/Angstrom
         forces = forces.double() * self.grad_unit_conv
         # symmetrize virial tensor and convert to eV
+        virials = virials.double() * self.prop_unit_conv
         virial = torch.sum(virials, dim=0)
-        virial = 0.5 * (virial + virial.T) * self.prop_unit_conv
+        virial = 0.5 * (virial + virial.T)
         # return result
         result = {
             "energy": energy, "energies": energies,
