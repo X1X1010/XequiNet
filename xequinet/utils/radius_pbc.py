@@ -1,5 +1,6 @@
 from typing import Tuple, Union
 import numpy as np
+import torch
 from ase.neighborlist import primitive_neighbor_list
 
 
@@ -11,7 +12,10 @@ def radius_graph_pbc(
     loop: bool = False,
     max_num_neighbors: int = 32,
     flow: str = 'source_to_target',
-) -> Tuple[np.ndarray, ...]:
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate the radius graph with a periodic boundary condition.
+    """
     assert flow in ['source_to_target', 'target_to_source']
     # make sure `pbc` is a 3-element array
     pbc = np.ones(3, dtype=bool) * pbc
@@ -49,4 +53,39 @@ def radius_graph_pbc(
     else:
         edge_index = np.stack([idx_n, idx_c], axis=0)
 
+    return edge_index, shifts
+
+
+def radius_batch_pbc(
+    positions: torch.Tensor,
+    pbc: torch.Tensor,
+    lattice: torch.Tensor,
+    cutoff: float,
+    loop: bool = False,
+    max_num_neighbors: int = 32,
+    flow: str = 'source_to_target',
+    batch: torch.Tensor = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Calculate the radius graph with PBC for a batch one by one.
+    Fake batch process for `radius_graph_pbc`.
+    """
+    assert flow in ['source_to_target', 'target_to_source']
+    if batch is None:
+        batch = torch.zeros(positions.shape[0], dtype=torch.long)
+    num_points = batch.max().item() + 1
+    edge_index_list = []
+    shifts_list = []
+    for i in range(num_points):
+        _mask = batch == i
+        _pos = positions[_mask].cpu().numpy()
+        _pbc = pbc[i].cpu().numpy()
+        _cell = lattice[i].cpu().numpy()
+        _edge_index, _shifts = radius_graph_pbc(
+            _pos, _pbc, _cell, cutoff, loop, max_num_neighbors, flow
+        )
+        edge_index_list.append(torch.from_numpy(_edge_index))
+        shifts_list.append(torch.from_numpy(_shifts))
+    edge_index = torch.cat(edge_index_list, dim=1).to(torch.long).to(positions.device)
+    shifts = torch.cat(shifts_list, dim=0).to(torch.get_default_dtype()).to(positions.device)
     return edge_index, shifts

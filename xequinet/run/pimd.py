@@ -40,7 +40,8 @@ def main():
         elif child.tag == "port":
             kwargs["port"] = int(child.text)
         elif child.tag == "parameters":
-            kwargs.update(json.loads(child.text))
+            # replace ' with " for json compatibility
+            kwargs.update(json.loads(child.text.replace("'", '"')))
     initialize = root.find("system").find("initialize")
     kwargs["init_file"] = initialize.find("file").text.strip()
 
@@ -49,9 +50,7 @@ def main():
     while True:
         try:
             driver.parse()
-        except SystemExit:
-            exit()
-        except TimeoutError:
-            exit()
+        except:
+            break
         
     

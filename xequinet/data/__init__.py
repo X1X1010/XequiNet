@@ -3,11 +3,11 @@ from .hdf5_data import (
     data_unit_transform, atom_ref_transform,
     create_dataset,
 )
-from .xyz_data import XYZDataset
+from .text_data import TextDataset
 
 __all__ = [
     "H5Dataset", "H5MemDataset", "H5DiskDataset",
     "data_unit_transform", "atom_ref_transform",
     "create_dataset",
-    "XYZDataset",
+    "TextDataset",
 ]

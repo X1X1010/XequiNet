@@ -169,6 +169,8 @@ def main():
     atoms = ase_read(settings["init_xyz"], index=0)
 
     # set calculator
+    if "spin" in settings:
+        settings["multiplicity"] = settings.pop("spin") + 1
     calc = XeqCalculator(
         ckpt_file=settings["ckpt_file"],
         cutoff=settings["cutoff"],

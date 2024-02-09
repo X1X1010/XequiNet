@@ -1,18 +1,22 @@
+import warnings
 import argparse
 
 import torch
 from torch_scatter import scatter
 from torch_cluster import radius_graph
 from torch_geometric.loader import DataLoader
-import tblite.interface as xtb
+try:
+    import tblite.interface as xtb
+except:
+    warnings.warn("xtb is not installed, xtb calculation will not be performed.")
 
 from xequinet.nn import resolve_model
 from xequinet.utils import (
     NetConfig,
     set_default_unit, get_default_unit, unit_conversion,
-    get_atomic_energy, gen_3Dinfo_str,
+    get_atomic_energy, gen_3Dinfo_str, radius_batch_pbc,
 )
-from xequinet.data import XYZDataset
+from xequinet.data import TextDataset
 
 
 @torch.no_grad()
@@ -29,8 +33,14 @@ def predict_scalar(
 ):
     wf = open(output_file, 'a')
     for data in dataloader:
-        data = data.to(device)
-        data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+        if hasattr(data, "pbc") and data.pbc.any():
+            data.edge_index, data.shifts = radius_batch_pbc(
+                data.pos, data.pbc, data.lattice, cutoff, max_num_neighbors=max_edges
+            )
+            data = data.to(device)
+        else:
+            data = data.to(device)
+            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
         # change the prediction unit to atomic unit
         nn_preds = model(data).double() * unit_conversion(get_default_unit()[0], "AU")
         # the atomic reference is already in atomic unit
@@ -93,8 +103,14 @@ def predict_grad(
 ):
     wf = open(output_file, 'a')
     for data in dataloader:
-        data = data.to(device)
-        data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+        if hasattr(data, "pbc") and data.pbc.any():
+            data.edge_index, data.shifts = radius_batch_pbc(
+                data.pos, data.pbc, data.lattice, cutoff, max_num_neighbors=max_edges
+            )
+            data = data.to(device)
+        else:
+            data = data.to(device)
+            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
         data.pos.requires_grad = True
         nn_predEs, nn_predFs = model(data)
         # change the prediction unit to atomic unit
@@ -166,8 +182,14 @@ def predict_vector(
 ):
     wf = open(output_file, 'a')
     for data in dataloader:
-        data = data.to(device)
-        data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+        if hasattr(data, "pbc") and data.pbc.any():
+            data.edge_index, data.shifts = radius_batch_pbc(
+                data.pos, data.pbc, data.lattice, cutoff, max_num_neighbors=max_edges
+            )
+            data = data.to(device)
+        else:
+            data = data.to(device)
+            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
         pred = model(data)
         pred *= unit_conversion(get_default_unit()[0], "AU")
         for i in range(len(data)):
@@ -199,8 +221,14 @@ def predict_polar(
 ):
     wf = open(output_file, 'a')
     for data in dataloader:
-        data = data.to(device)
-        data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+        if hasattr(data, "pbc") and data.pbc.any():
+            data.edge_index, data.shifts = radius_batch_pbc(
+                data.pos, data.pbc, data.lattice, cutoff, max_num_neighbors=max_edges
+            )
+            data = data.to(device)
+        else:
+            data = data.to(device)
+            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
         pred = model(data)
         pred *= unit_conversion(get_default_unit()[0], "AU")
         for i in range(len(data)):
@@ -230,7 +258,7 @@ def main():
         help="XequiNet checkpoint file. (XXX.pt containing 'model' and 'config')",
     )
     parser.add_argument(
-        "--batch-size", "-bz", type=int, default=64,
+        "--batch-size", "-b", type=int, default=64,
         help="Batch size.",
     )
     parser.add_argument(
@@ -238,7 +266,7 @@ def main():
         help="Whether testing force additionally when the output mode is 'scalar'",
     )
     parser.add_argument(
-        "--base-method", "-bm", type=str, default=None,
+        "--delta", "-d", type=str, default=None,
         help="Base semiempirical method for delta learning."
     )
     parser.add_argument(
@@ -261,7 +289,6 @@ def main():
 
     # open warning or not
     if not args.warning:
-        import warnings
         warnings.filterwarnings("ignore")
     
     # set device
@@ -286,7 +313,7 @@ def main():
     model.eval()
 
     # load input data
-    dataset = XYZDataset(xyz_file=args.inp, cutoff=config.cutoff)
+    dataset = TextDataset(xyz_file=args.inp)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=0)
     outp = f"{args.inp.split('/')[-1].split('.')[0]}.log" if args.output is None else args.output
 
@@ -306,7 +333,7 @@ def main():
             device=device,
             output_file=outp,
             atom_sp=atom_sp,
-            base_method=args.base_method,
+            base_method=args.delta,
             verbose=args.verbose,
         )
     elif config.output_mode == "grad":
@@ -318,7 +345,7 @@ def main():
             device=device,
             output_file=outp,
             atom_sp=atom_sp,
-            base_method=args.base_method,
+            base_method=args.delta,
             verbose=args.verbose,
         )
     elif config.output_mode == "vector":

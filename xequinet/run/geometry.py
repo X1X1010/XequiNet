@@ -1,15 +1,19 @@
+import warnings
 import argparse
 from copy import deepcopy
 
 import numpy as np
 import torch
-import torch_cluster
+import torch_cluster  # must import torch_cluster because it is used in the jit model
 
+from ase.io import read as ase_read
 from pyscf import gto
 from pyscf.geomopt import geometric_solver, as_pyscf_method
-import tblite.interface as xtb
+try:
+    import tblite.interface as xtb
+except:
+    warnings.warn("xtb is not installed, xtb calculation will not be performed.")
 
-from xequinet.utils.qc import ELEMENTS_LIST
 
 
 def read_xyz(xyz_file: str) -> tuple:
@@ -94,6 +98,24 @@ def calc_numerical_hessian(mol: gto.Mole, model: torch.nn.Module, device: torch.
     return energy, hessian
 
 
+def to_shermo(shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray):
+    with open(shm_file, 'w') as f:
+        f.write(f"*E\n    {energy:10.6f}\n")
+        f.write("wavenum\n")
+        # chage imaginary frequency to negative frequency
+        if np.iscomplexobj(wavenums):
+            wavenums = wavenums.real - abs(wavenums.imag)
+        for wavenum in wavenums:
+            f.write(f"    {wavenum:8.4f}\n")
+        f.write("*atoms\n")
+        elements = mol.elements
+        masses = mol.atom_mass_list()
+        coords = mol.atom_coords(unit="Angstrom")
+        for e, m, c in zip(elements, masses, coords):
+            f.write(f"{e: <2} {m:10.6f} {c[0]:10.6f} {c[1]:10.6f} {c[2]:10.6f}\n")
+        f.write("*elevel\n    0.000000   1\n")
+
+
 def main():
     # parse arguments
     parser = argparse.ArgumentParser(description="XequiNet geometry optimization script")
@@ -102,15 +124,15 @@ def main():
         help="Path to the checkpoint file. (XXX.jit)",
     )
     parser.add_argument(
-        "--base-method", "-bm", type=str, default=None,
+        "--delta", "-d", type=str, default=None,
         help="Base method for energy and force calculation.",
     )
     parser.add_argument(
-        "--max-steps", "-ms", type=int, default=100,
+        "--max-steps", type=int, default=100,
         help="Maximum number of optimization steps.",
     )
     parser.add_argument(
-        "--constraints", "-con", type=str, default=None,
+        "--cons", type=str, default=None,
         help="Constraints file for optimization.",
     )
     parser.add_argument(
@@ -118,8 +140,12 @@ def main():
         help="Calculate vibrational frequencies.",
     )
     parser.add_argument(
-        "--numerical", action="store_true",
+        "--numer", action="store_true",
         help="Calculate hessian with numerical second derivative.",
+    )
+    parser.add_argument(
+        "--shm", action="store_true",
+        help="Whether to write shermo input file.",
     )
     parser.add_argument(
         "--no-opt", action="store_true",
@@ -145,7 +171,6 @@ def main():
 
     # open warning or not
     if not args.warning:
-        import warnings
         warnings.filterwarnings("ignore")
 
     if args.freq:
@@ -162,41 +187,52 @@ def main():
     model = torch.jit.load(args.ckpt, map_location=device)
     model.eval()
 
-    mol_tokens, charges, spins = read_xyz(args.inp)
+    atoms_list = ase_read(args.inp, index=':')
     # loop over molecules
-    for mol_token, charge, spin in zip(mol_tokens, charges, spins):
+    for atoms in atoms_list:
+        # convert `ase.Atoms` to `pyscf.gto.Mole`
+        chem_symb = atoms.get_chemical_symbols()
+        positions = atoms.get_positions()
+        charge = atoms.info.get("charge", 0)
+        if "multiplicity" in atoms.info:
+            spin = atoms.info["multiplicity"] - 1
+        else:
+            spin = atoms.info.get("spin", 0)
         # load molecule
         mol = gto.M(
-            atom=mol_token,
+            atom=[(a, c) for a, c in zip(chem_symb, positions)],  # [(atom, ndarray[x, y, z]), ...]
             charge=charge,
             spin=spin,  # multiplicity = spin + 1
         )
         # create a fake method as pyscf method, which returns energy and gradient
-        fake_method = as_pyscf_method(mol, lambda mol: xeq_method(mol, model, device, args.base_method))
+        fake_method = as_pyscf_method(mol, lambda mol: xeq_method(mol, model, device, args.delta))
         if args.no_opt:  # given a optimized geometry, so copy the molecule
             conv = True
             new_mol = deepcopy(mol)
         else:            # optimize geometry and return a new molecule
-            conv, new_mol = geometric_solver.kernel(fake_method, constraints=args.constraints, maxsteps=args.max_steps)
+            conv, new_mol = geometric_solver.kernel(fake_method, constraints=args.cons, maxsteps=args.max_steps)
 
         if args.freq:
             # open freq output file
-            mol.stdout = open(freq_log, 'a')
-            if args.numerical or args.base_method is not None:
+            new_mol.stdout = open(freq_log, 'a')
+            if args.numer or args.delta is not None:
                 # calculate hessian with numerical second derivative
-                energy, hessian = calc_numerical_hessian(mol, model, device, args.base_method)
+                energy, hessian = calc_numerical_hessian(new_mol, model, device, args.delta)
             else:
                 # calculate hessian with analytical second derivative
-                energy, hessian = calc_analytical_hessian(mol, model, device)
+                energy, hessian = calc_analytical_hessian(new_mol, model, device)
             # do thermo calculation
-            results = thermo.harmonic_analysis(mol, hessian)
+            harmonic_res = thermo.harmonic_analysis(new_mol, hessian)
             if args.verbose >= 1:
-                thermo.dump_normal_mode(mol, results)   # dump normal modes in mol.stdout, i.e. freq output file
+                thermo.dump_normal_mode(new_mol, harmonic_res)   # dump normal modes in new_mol.stdout, i.e. freq output file
             setattr(fake_method, "e_tot", energy)
-            results = thermo.thermo(fake_method, results['freq_au'], args.temp)
-            thermo.dump_thermo(mol, results)   # dump thermo results in mol.stdout, i.e. freq output file
-            mol.stdout.write("\n\n")
-            mol.stdout.close()
+            thermo_res = thermo.thermo(fake_method, harmonic_res['freq_au'], args.temp)
+            thermo.dump_thermo(new_mol, thermo_res)            # dump thermo results in new_mol.stdout, i.e. freq output file
+            new_mol.stdout.write("\n\n")
+            new_mol.stdout.close()
+            if args.shm:
+                shm_file = args.inp.split(".")[0] + "_freq.shm"
+                to_shermo(shm_file, new_mol, energy, harmonic_res['freq_wavenumber'])
 
         # write optimized geometry
         if not args.no_opt:
@@ -204,10 +240,10 @@ def main():
             with open(opt_out, 'a') as f:
                 f.write(f"{new_mol.natm}\n")
                 if conv:
-                    energy, _ = xeq_method(new_mol, model, device, args.base_method)
+                    energy, _ = xeq_method(new_mol, model, device, args.delta)
                     f.write(f"Energy: {energy:10.10f}\n")
                 else:
                     f.write(f"Warning!! Optimization not converged!!\n")
-                for at_no, coord in zip(new_mol.atom_charges(), new_mol.atom_coords(unit="Angstrom")):
-                    f.write(f"{ELEMENTS_LIST[at_no]} {coord[0]:10.6f} {coord[1]:10.6f} {coord[2]:10.6f}\n")
+                for e, c in zip(new_mol.elements, new_mol.atom_coords(unit="Angstrom")):
+                    f.write(f"{e: <2} {c[0]:10.6f} {c[1]:10.6f} {c[2]:10.6f}\n")
     

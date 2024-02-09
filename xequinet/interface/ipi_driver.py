@@ -56,7 +56,10 @@ class iPIDriver:
         self.cutoff = kwargs.get("cutoff", 5.0)
         self.max_edges = kwargs.get("max_edges", 100)
         self.charge = kwargs.get("charge", 0)
-        self.spin = kwargs.get("multiplicity", 1) - 1
+        if "multiplicity" in kwargs:
+            self.spin = kwargs["multiplicity"] - 1
+        else:
+            self.spin = kwargs.get("spin", 0)
 
 
     def get_atomic_numbers(self, file: str) -> np.ndarray:

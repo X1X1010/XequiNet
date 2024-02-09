@@ -313,7 +313,7 @@ def main():
         help="Verbose level. (default: 0)",
     )
     parser.add_argument(
-        "--batch-size", "-bz", type=int, default=32,
+        "--batch-size", "-b", type=int, default=32,
         help="Batch size. (default: 32)",
     )
     parser.add_argument(
