@@ -162,16 +162,17 @@ def gen_atom_sp(atom_ref: str):
         m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
         for at_no, mult in enumerate(ATOM_MULT, start=1):
             calc = Calculator(
-                method=m_dict[atom_ref],
+                method=m_dict[atom_ref.lower()],
                 positions=np.array([[0.0, 0.0, 0.0]]),
                 numbers=np.array([at_no]),
+                uhf=mult - 1,
             )
             print(f"Calculating single point of atom {atom}")
             energy = calc.singlepoint().get("energy")
             atom_sp_dict[ELEMENTS_LIST[at_no]] = energy
     else:
         from pyscf import dft, scf, cc
-        if "xyg" in method or "xdh" in method:
+        if "xyg" in atom_ref or "xdh" in atom_ref:
             from pyscf import dh
         method, basis = atom_ref.split("/")
         if "def2" in basis:
