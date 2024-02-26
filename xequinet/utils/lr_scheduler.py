@@ -9,18 +9,18 @@ class SmoothReduceLROnPlateau(torch.optim.lr_scheduler.ReduceLROnPlateau):
     """
     def __init__(
         self,
-        optimizer,
-        mode="min",
-        factor=0.1,
-        patience=10,
-        threshold=1e-4,
-        threshold_mode="rel",
-        cooldown=0,
-        min_lr=0,
-        eps=1e-8,
-        verbose=False,
-        smoothing_factor=0.0,
-    ):
+        optimizer: torch.optim.Optimizer,
+        mode: str = "min",
+        factor: float = 0.1,
+        patience: int = 10,
+        threshold: float = 1e-4,
+        threshold_mode: str = "rel",
+        cooldown: int = 0,
+        min_lr: int = 0,
+        eps: float = 1e-8,
+        verbose: bool = False,
+        smoothing_factor: float = 0.0,
+    ) -> None:
         """
         Args:
             optimizer (Optimizer): Wrapped optimizer.
@@ -70,8 +70,8 @@ class SmoothReduceLROnPlateau(torch.optim.lr_scheduler.ReduceLROnPlateau):
         self.smoothing_factor = smoothing_factor
         self.ema_loss = None
 
-    def step(self, metrics, epoch=None):
-        current = float(metrics)
+    def step(self, metrics: float, epoch=None) -> None:
+        current = metrics
         if self.ema_loss is None:
             self.ema_loss = current
         else:

@@ -24,7 +24,7 @@ class XEmbedding(nn.Module):
         rbf_kernel: str = "bessel",
         cutoff: float = 5.0,
         cutoff_fn: str = "cosine",
-    ):
+    ) -> None:
         """
         Args:
             `embed_dim`: Embedding dimension. (default: 16s + 8p + 4d = 28)
@@ -91,7 +91,7 @@ class XPainnMessage(nn.Module):
         num_basis: int = 20,
         actfn: str = "silu",
         norm_type: str = "layer",
-    ):
+    ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
@@ -173,7 +173,7 @@ class XPainnUpdate(nn.Module):
         edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
         actfn: str = "silu",
         norm_type: str = "layer",
-    ):
+    ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
@@ -259,7 +259,7 @@ class EleEmbedding(nn.Module):
         x: torch.Tensor,
         ele: torch.Tensor,
         batch: torch.LongTensor,
-    ):
+    ) -> torch.Tensor:
         """
         Args:
             `x`: Node features.

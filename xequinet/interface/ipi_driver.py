@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Tuple
 import socket
 import numpy as np
 import torch
@@ -22,7 +22,7 @@ class iPIDriver:
         port: int = 31415,
         verbose: int = 0,
         **kwargs,
-    ): 
+    ) -> None: 
         # set verbosity
         self.verbose = verbose
         # Opens a socket to i-PI
@@ -67,7 +67,7 @@ class iPIDriver:
         return atoms.get_atomic_numbers()
     
 
-    def calculate(self):
+    def calculate(self) -> Tuple[float, np.ndarray, np.ndarray]:
         """Compute the energy, forces, and virial."""
         # convert the units from a.u. to the MD model's unit
         positions = self.coord * unit_conversion("Bohr", "Angstrom")
@@ -98,7 +98,7 @@ class iPIDriver:
         return energy, forces, virial
 
 
-    def init(self):
+    def init(self) -> None:
         """Deal with message from `INIT` motion."""
         rid = recv_data(self.socket, np.int32())
         initlen = recv_data(self.socket, np.int32())
@@ -108,7 +108,7 @@ class iPIDriver:
         self.f_init = True
 
 
-    def status(self):
+    def status(self) -> None:
         """Reply `STATUS`."""
         if not self.f_init:
             self.socket.sendall(Message("NEEDINIT"))
@@ -118,7 +118,7 @@ class iPIDriver:
             self.socket.sendall(Message("READY"))
 
 
-    def posdata(self):
+    def posdata(self) -> None:
         """Receive `POSDATA` and calculate."""
         # receives structural information
         self.cell = recv_data(self.socket, self.cell)
@@ -133,7 +133,7 @@ class iPIDriver:
         self.f_data = True
 
 
-    def getforce(self):
+    def getforce(self) -> None:
         """Reply `GETFORCE`."""
         self.socket.sendall(Message("FORCEREADY"))
         send_data(self.socket, np.float64(self.energy))
@@ -146,13 +146,13 @@ class iPIDriver:
         self.f_data = False
     
 
-    def exit(self):
+    def exit(self) -> None:
         """Exit the driver."""
         self.socket.close()
         raise SystemExit("Received exit message from i-PI. Bye bye!")
 
 
-    def parse(self):
+    def parse(self) -> None:
         """Reply the request from server."""
         header = self.socket.recv(HDRLEN)
         if header == Message("STATUS"):

@@ -33,18 +33,6 @@ class NetConfig(BaseModel):
     default_length_unit: str = "Angstrom"          # unit of the input coordinates
     default_property_unit: str = "eV"              # unit of the input properties
     default_dtype: str = "float32"                 # default data type
-    # additional configurations for n-order tensor output 
-    order: int = 2                                 # order of output tensor
-    required_symm: str = "ij"                      # indices symmetry of the tensor, "ij" for arbitary order 2 tensor etc.
-    # additional configurations about matrice output 
-    irreps_out: str = "3x0e + 2x1o + 1x2e"         # output layout corresponding to target basis set, default as def2-svp for 2nd period elements
-    mat_hidden_dim: int = 64                       # hidden dimension of each irrep feature in network
-    mat_block_dim: int = 32                        # dimension of each irrep feature in output
-    max_l: int = 4                                 # maximum angular momentum required in network
-    num_mat_conv: int = 4                          # number of convolution blocks applied in matrice network where num_action_block stands for number of read-out modules
-    target_basisname: str = "def2svp"              # name of the basis set used for calculating label QC matrices
-    possible_elements: List[str] = ["H", "C", "N", "O"]
-    full_edge_index: bool = False                  # whether to build sparse matrice output correspond to distance-cutoff edges
 
     # configurations about the dataset
     dataset_type: str = "normal"                   # dataset type (`memory` is for the dataset in memory, `disk` is for the dataset on disk)
@@ -93,7 +81,7 @@ class NetConfig(BaseModel):
     seed: Optional[int] = None                     # random seed
     num_workers: int = 0                           # number of the workers for the data loader
 
-    def model_hyper_params(self):
+    def model_hyper_params(self) -> dict:
         hyper_params = self.model_dump(include={
             "version", "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
             "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "max_edges", "action_blocks",
@@ -101,14 +89,6 @@ class NetConfig(BaseModel):
             "atom_ref", "batom_ref", "node_average", "default_property_unit", "default_length_unit",
             "default_dtype",
         })
-        if "mat" in self.version:
-            hyper_params.update(self.model_dump(include={
-                "irreps_out", "mat_hidden_dim", "mat_block_dim", "max_l", "num_mat_conv", "target_basisname",
-                "possible_elements", "full_edge_index",
-            }))
-            del hyper_params["output_mode"]; del hyper_params["output_dim"]
-            del hyper_params["order"]; del hyper_params["required_symm"]
-            del hyper_params["atom_ref"]; del hyper_params["batom_ref"]; del hyper_params["node_average"]
         return hyper_params
 
 

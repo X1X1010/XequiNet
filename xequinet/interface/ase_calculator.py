@@ -21,12 +21,12 @@ class XeqCalculator(Calculator):
         "spin": 0,
     }
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         self.model = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         Calculator.__init__(self, **kwargs)
     
-    def set(self, **kwargs):
+    def set(self, **kwargs) -> None:
         changed_parameters = Calculator.set(self, **kwargs)
         if changed_parameters:
             self.reset()
@@ -39,7 +39,7 @@ class XeqCalculator(Calculator):
         atoms=None,
         properties=None,
         system_changes=all_changes,
-    ):
+    ) -> None:
         if properties is None:
             properties = self.implemented_properties
 

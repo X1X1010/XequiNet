@@ -18,7 +18,7 @@ class Embedding(nn.Module):
         rbf_kernel: str = "bessel",
         cutoff: float = 5.0,
         cutoff_fn: str = "cosine",
-    ):
+    ) -> None:
         super().__init__()
         self.node_dim = node_dim
         if embed_basis == "one-hot":
@@ -37,7 +37,7 @@ class Embedding(nn.Module):
         at_no: torch.LongTensor,
         pos: torch.Tensor,
         edge_index: torch.LongTensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # calculate distance and relative position
         vec = pos[edge_index[1]] - pos[edge_index[0]]
         dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
@@ -59,7 +59,7 @@ class PainnMessage(nn.Module):
         edge_dim: int = 128,
         num_basis: int = 20,
         actfn: str = "silu",
-    ):
+    ) -> None:
         super().__init__()
         self.node_dim = node_dim
         self.edge_dim = edge_dim
@@ -114,7 +114,7 @@ class PainnUpdate(nn.Module):
         node_dim: int = 128,
         edge_dim: int = 128,
         actfn: str = "silu",
-    ):
+    ) -> None:
         super().__init__()
         assert node_dim == edge_dim, "node_dim must be equal to edge_dim"
         self.node_dim = node_dim

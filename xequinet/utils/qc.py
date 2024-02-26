@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 import warnings
 import re
 from pathlib import Path
@@ -43,7 +43,7 @@ unit_set = {
     "MOL", "ANGSTROM", "ANGS", "DEBYE", "MDEBYE", "FS", "PS",
 }
 
-def eval_unit(unit: str):
+def eval_unit(unit: str) -> float:
     # check if the unit is valid and safe
     split_unit = re.split(r"[+ | \- | * | / | ^ | ( | )]", unit)
     for u in split_unit:
@@ -60,7 +60,7 @@ def eval_unit(unit: str):
     return eval(unit)
 
 
-def unit_conversion(unit_in: Optional[str], unit_out: Optional[str]):
+def unit_conversion(unit_in: Optional[str], unit_out: Optional[str]) -> float:
     if unit_in is None or unit_out is None:
         return 1.
     unit_in = unit_in.upper()
@@ -72,12 +72,14 @@ def unit_conversion(unit_in: Optional[str], unit_out: Optional[str]):
 
     return value_out / value_in
 
-def set_default_unit(prop_unit: str, len_unit: str):
+
+def set_default_unit(prop_unit: str, len_unit: str) -> None:
     global PROP_UNIT, LEN_UNIT
     PROP_UNIT = prop_unit
     LEN_UNIT = len_unit
 
-def get_default_unit():
+
+def get_default_unit() -> Tuple[str, str]:
     return PROP_UNIT, LEN_UNIT
 
 
@@ -123,7 +125,7 @@ ATOM_MASS = torch.Tensor([0.0,
 ])
 
 
-def gen_int2c1e(embed_basis="gfn2-xtb", aux_basis="aux56"):
+def gen_int2c1e(embed_basis: str = "gfn2-xtb", aux_basis: str = "aux56") -> None:
     """
     Projection of atomic orbitals onto auxiliary basis.
     """
@@ -152,7 +154,7 @@ def gen_int2c1e(embed_basis="gfn2-xtb", aux_basis="aux56"):
     torch.save(int2c1e_dict, savefile)
 
 
-def gen_atom_sp(atom_ref: str):
+def gen_atom_sp(atom_ref: str) -> None:
     """
     Calculate the shift of the atomic energies for each element.
     """
@@ -216,7 +218,7 @@ def gen_atom_sp(atom_ref: str):
     torch.save(atom_sp_dict, PRE_FOLDER / f"{method}_{basis}_sp.pt")
 
 
-def get_embedding_tensor(embed_basis="gfn2-xtb", aux_basis="aux28") -> torch.Tensor:
+def get_embedding_tensor(embed_basis: str = "gfn2-xtb", aux_basis: str = "aux28") -> torch.Tensor:
     """
     Get embedding of atoms in a basis.
 
@@ -278,19 +280,6 @@ Cs Ba    Hf Ta W  Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn
             warnings.warn(warning_msg)
     
     return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
-
-
-def get_l_from_basis(basisname, ele):
-    if basisname == "hessian":
-        return [1]
-    if isinstance(ele, int):
-        ele = ELEMENTS_LIST[ele]
-    if (BASIS_FOLDER / f"{basisname}.dat").exists():
-        bf = str(BASIS_FOLDER / f"{basisname}.dat")
-    else:
-        bf = basisname
-    basis = gto.basis.load(bf, ele)
-    return [b[0] for b in basis]
 
 
 if __name__ == "__main__":

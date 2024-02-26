@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import numpy as np 
 
 
-def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float):
+def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float) -> nn.Module:
     if rbf_kernel == "bessel":
         return SphericalBesselj0(num_basis, cutoff)
     elif rbf_kernel == "gaussian":
@@ -16,7 +16,7 @@ def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float):
         raise NotImplementedError(f"rbf kernel {rbf_kernel} is not implemented")
 
 
-def resolve_cutoff(cutoff_fn: str, cutoff: float):
+def resolve_cutoff(cutoff_fn: str, cutoff: float) -> nn.Module:
     if cutoff_fn == "cosine":
         return CosineCutoff(cutoff)
     elif cutoff_fn == "polynomial":
@@ -28,7 +28,7 @@ def resolve_cutoff(cutoff_fn: str, cutoff: float):
 
 
 class CosineCutoff(nn.Module):
-    def __init__(self, cutoff: float):
+    def __init__(self, cutoff: float) -> None:
         super().__init__()
         self.cutoff = cutoff
 
@@ -37,7 +37,7 @@ class CosineCutoff(nn.Module):
 
 
 class PolynomialCutoff(nn.Module):
-    def __init__(self, cutoff: float, order: int = 3):
+    def __init__(self, cutoff: float, order: int = 3) -> None:
         super().__init__()
         self.cutoff = cutoff
         self.order = order
@@ -50,7 +50,7 @@ class PolynomialCutoff(nn.Module):
 
 
 class ExponentialCutoff(nn.Module):
-    def __init__(self, cutoff: float):
+    def __init__(self, cutoff: float) -> None:
         super().__init__()
         self.cutoff = cutoff 
     
@@ -61,7 +61,7 @@ class ExponentialCutoff(nn.Module):
     
 
 class GaussianSmearing(nn.Module):
-    def __init__(self, num_basis: int, cutoff: float, eps=1e-8):
+    def __init__(self, num_basis: int, cutoff: float, eps=1e-8) -> None:
         super().__init__()
         self.num_basis = num_basis
         self.cutoff = cutoff
@@ -70,7 +70,7 @@ class GaussianSmearing(nn.Module):
         self.std = torch.nn.Parameter(torch.empty((1, num_basis)))
         self._init_parameters()
 
-    def _init_parameters(self):
+    def _init_parameters(self) -> None:
         torch.nn.init.uniform_(self.mean, 0, self.cutoff)
         torch.nn.init.uniform_(self.std, 1.0 / self.num_basis, 1)
 
@@ -86,7 +86,7 @@ class SphericalBesselj0(nn.Module):
     """
     spherical Bessel function of the first kind.
     """
-    def __init__(self, num_basis: int, cutoff: float):
+    def __init__(self, num_basis: int, cutoff: float) -> None:
         super().__init__()
         self.num_basis = num_basis
         self.cutoff = cutoff
@@ -104,14 +104,14 @@ class SphericalBesselj0(nn.Module):
         return rbf
 
 
-def softplus_inverse(x: torch.Tensor):
+def softplus_inverse(x: torch.Tensor) -> torch.Tensor:
     if not isinstance(x, torch.Tensor):
         x = torch.tensor(x)
     return x + torch.log(-torch.expm1(-x))
 
 
 class ExponentialBernstein(nn.Module):
-    def __init__(self, num_basis:int, alpha:float=0.5):
+    def __init__(self, num_basis: int, alpha : float = 0.5) -> None:
         super().__init__() 
         self.num_basis = num_basis 
         self.alpha = alpha 
@@ -129,7 +129,7 @@ class ExponentialBernstein(nn.Module):
         self.register_parameter('_alpha', nn.Parameter(torch.tensor(1.0, dtype=self.dtype))) 
         self.reset_parameters()
     
-    def reset_parameters(self):
+    def reset_parameters(self) -> None:
         nn.init.constant_(self._alpha, softplus_inverse(self.alpha)) 
     
     def forward(self, dist:torch.Tensor) -> torch.Tensor:
@@ -138,4 +138,3 @@ class ExponentialBernstein(nn.Module):
         x = self.logc + self.n * x + self.v * torch.log(-torch.expm1(x))
         rbf = torch.exp(x)
         return rbf
-

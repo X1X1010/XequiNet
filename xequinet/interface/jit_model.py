@@ -16,7 +16,7 @@ class JitGradOut(nn.Module):
         node_dim: int = 128,
         hidden_dim: int = 64,
         actfn: str = "silu",
-    ):
+    ) -> None:
         """
         Args:
             `node_dim`: Dimension of node feature.
@@ -64,7 +64,7 @@ class JitPaiNN(nn.Module):
     """
     XPaiNN model for JIT script. This model does not consider batch.
     """
-    def __init__(self, config: NetConfig):
+    def __init__(self, config: NetConfig) -> None:
         super().__init__()
         self.embed = XEmbedding(
             node_dim=config.node_dim,
@@ -135,7 +135,7 @@ class JitEleEmbedding(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-    ):
+    ) -> None:
         super().__init__()
         self.node_dim = node_dim
         self.sqrt_dim = math.sqrt(node_dim)
@@ -167,7 +167,7 @@ class JitEleEmbedding(nn.Module):
 
 class JitPaiNNEle(JitPaiNN):
     """XPaiNN-ele model for JIT script. This model does not consider batch."""
-    def __init__(self, config: NetConfig):
+    def __init__(self, config: NetConfig) -> None:
         super().__init__(config)
         self.charge_ebd = nn.ModuleList([
             JitEleEmbedding(node_dim=config.node_dim)

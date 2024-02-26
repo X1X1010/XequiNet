@@ -5,6 +5,7 @@ import numpy as np
 
 import torch
 
+from ase import Atoms
 from ase import units
 from ase.io import read as ase_read, write as ase_write
 from ase.io import Trajectory
@@ -49,7 +50,7 @@ default_settings = {
 }
 
 
-def traj2xyz(trajectory, traj_xyz, columns=["symbols", "positions"]):
+def traj2xyz(trajectory: str, traj_xyz: str, columns: list = ["symbols", "positions"]) -> None:
     """
     Convert trajectory file to extend xyz file.
     """
@@ -65,7 +66,7 @@ def traj2xyz(trajectory, traj_xyz, columns=["symbols", "positions"]):
         )
 
 
-def resolve_ensemble(atoms, **kwargs):
+def resolve_ensemble(atoms: Atoms, **kwargs):
     ensemble = kwargs["ensemble"]
     dynamics = kwargs["dynamics"]
     if ensemble == "NVE":

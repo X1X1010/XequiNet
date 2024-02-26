@@ -19,7 +19,7 @@ class Invariant(nn.Module):
         irreps_in: Union[str, o3.Irreps, Iterable],
         squared: bool = False,
         eps: float = 1e-6,
-    ):
+    ) -> None:
         """
         Args:
             `irreps_in`: Input irreps.
@@ -31,7 +31,7 @@ class Invariant(nn.Module):
         self.eps = eps
         self.invariant = o3.Norm(irreps_in, squared=squared)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.squared:
             x = self.invariant(x)
         else:
@@ -43,7 +43,7 @@ class Gate(nn.Module):
     def __init__(
         self,
         irreps_in: Union[str, o3.Irreps, Iterable],
-    ):
+    ) -> None:
         super().__init__()
         irreps_in = o3.Irreps(irreps_in).simplify()
         self.invariant = Invariant(irreps_in)
@@ -57,49 +57,12 @@ class Gate(nn.Module):
         return x_out
 
 
-# from QHNet
-class NormGate(torch.nn.Module):
-    """
-    NormGate activation module.
-    """
-    def __init__(self, irreps:o3.Irreps, actfn:str="silu"):
-        super().__init__()
-        self.irreps = irreps
-        self.norm = o3.Norm(self.irreps)
-        self.activation = resolve_actfn(actfn)
-
-        num_mul, num_mul_wo_0 = 0, 0
-        for mul, ir in self.irreps:
-            num_mul += mul
-            if ir.l != 0:
-                num_mul_wo_0 += mul
-
-        self.mul = o3.ElementwiseTensorProduct(
-            self.irreps[1:], o3.Irreps(f"{num_mul_wo_0}x0e"))
-        self.fc = nn.Sequential(
-            nn.Linear(num_mul, num_mul),
-            # nn.SiLU(),
-            self.activation,
-            nn.Linear(num_mul, num_mul)
-        )
-        self.num_mul = num_mul
-        self.num_mul_wo_0 = num_mul_wo_0
-
-    def forward(self, x):
-        norm_x = self.norm(x)[:, self.irreps.slices()[0].stop:]
-        f0 = torch.cat([x[:, self.irreps.slices()[0]], norm_x], dim=-1)
-        gates = self.fc(f0)
-        gated = self.mul(x[:, self.irreps.slices()[0].stop:], gates[:, self.irreps.slices()[0].stop:])
-        x = torch.cat([gates[:, self.irreps.slices()[0]], gated], dim=-1)
-        return x
-
-
 class Int2c1eEmbedding(nn.Module):
     def __init__(
         self,
         embed_basis: str = "gfn2-xtb",
         aux_basis: str = "aux28",
-    ):
+    ) -> None:
         """
         Args:
             `embed_basis`: Type of the embedding basis.
@@ -110,7 +73,7 @@ class Int2c1eEmbedding(nn.Module):
         self.register_buffer("embed_ten", embed_ten)
         self.embed_dim = embed_ten.shape[1]
     
-    def forward(self, at_no):
+    def forward(self, at_no: torch.Tensor) -> torch.Tensor:
         """
         Args:
             `at_no`: Atomic numbers.
@@ -139,7 +102,7 @@ class EquivariantDot(nn.Module):
         self.irreps_out = irreps_out.simplify()
         self.input_dim = self.irreps_in.dim
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.irreps_in})"
     
     def forward(self, features1: torch.Tensor, features2: torch.Tensor) -> torch.Tensor:
@@ -150,7 +113,7 @@ class EquivariantDot(nn.Module):
 
 
 class EquivariantLayerNorm(nn.Module):
-    def __init__(self, irreps, eps=1e-5, affine=True):
+    def __init__(self, irreps, eps=1e-5, affine=True) -> None:
         super().__init__()
 
         self.irreps = o3.Irreps(irreps)

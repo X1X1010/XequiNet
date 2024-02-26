@@ -30,7 +30,7 @@ def predict_scalar(
     atom_sp: torch.Tensor,
     base_method: str = None,
     verbose: int = 0,
-):
+) -> None:
     wf = open(output_file, 'a')
     for data in dataloader:
         if hasattr(data, "pbc") and data.pbc.any():
@@ -100,7 +100,7 @@ def predict_grad(
     atom_sp: torch.Tensor,
     base_method: str = None,
     verbose: int = 0,
-):
+) -> None:
     wf = open(output_file, 'a')
     for data in dataloader:
         if hasattr(data, "pbc") and data.pbc.any():
@@ -179,7 +179,7 @@ def predict_vector(
     device: torch.device,
     output_file: str,
     verbose: int = 0,
-):
+) -> None:
     wf = open(output_file, 'a')
     for data in dataloader:
         if hasattr(data, "pbc") and data.pbc.any():
@@ -218,7 +218,7 @@ def predict_polar(
     device: torch.device,
     output_file: str,
     verbose: int = 0,
-):
+) -> None:
     wf = open(output_file, 'a')
     for data in dataloader:
         if hasattr(data, "pbc") and data.pbc.any():

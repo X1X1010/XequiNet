@@ -44,7 +44,7 @@ class TextDataset(Dataset):
         self,
         file: str,
         transform: Optional[Callable] = None,
-    ):
+    ) -> None:
         """
         Args:
             `file`: Path of file.
@@ -58,7 +58,7 @@ class TextDataset(Dataset):
         self.process()
 
 
-    def process(self):
+    def process(self) -> None:
         atoms_list = ase_read(self._file, index=":")
         for atoms in atoms_list:
             at_no = torch.from_numpy(atoms.get_atomic_numbers()).to(torch.long)
@@ -78,11 +78,11 @@ class TextDataset(Dataset):
             self.data_list.append(data)
 
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.data_list)
 
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> Data:
         data = self.data_list[idx]
         if self._transform is not None:
             data = self._transform(data)

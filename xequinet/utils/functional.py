@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Tuple
 from copy import deepcopy
 from contextlib import contextmanager
 import torch
@@ -31,7 +31,7 @@ def distributed_zero_first(local_rank: int = None):
 def calculate_stats(
     dataloader: DataLoader,
     divided_by_atoms: bool = True,
-):
+) -> Tuple[float, float]:
     """
     Aovid using atom_wise_mean when the dataset is too large.
     First, it will cost a lot of time to calculate the mean atomic energy.
@@ -62,23 +62,6 @@ def calculate_stats(
     return mean.item(), std.item()
 
 
-class MatCriterion(nn.Module):
-    """
-    MAE + RMSE
-    """
-    def __init__(self):
-        super().__init__()
-        self.mae_loss = nn.L1Loss()
-        self.mse_loss = nn.MSELoss()
-    
-    def forward(self, pred, target):
-        mae = self.mae_loss(pred, target)
-        mse = self.mse_loss(pred, target)
-        rmse = torch.sqrt(mse)
-        loss = mae + rmse 
-        return loss
-
-
 def resolve_lossfn(lossfn: str) -> nn.Module:
     """Helper function to return loss function"""
     lossfn = lossfn.lower()
@@ -88,8 +71,6 @@ def resolve_lossfn(lossfn: str) -> nn.Module:
         return nn.L1Loss()
     elif lossfn == "smoothl1":
         return nn.SmoothL1Loss()
-    elif lossfn == "matloss":
-        return MatCriterion()
     else:
         raise NotImplementedError(f"Unsupported loss function {lossfn}")
 

@@ -23,7 +23,7 @@ class MDEmbedding(XEmbedding):
         rbf_kernel: str = "bessel",
         cutoff: float = 5.0,
         cutoff_fn: str = "cosine",
-    ):
+    ) -> None:
         super().__init__(
             node_dim, edge_irreps, embed_basis, aux_basis,
             num_basis, rbf_kernel, cutoff, cutoff_fn,
@@ -70,7 +70,7 @@ class MDGradOut(nn.Module):
         node_dim: int = 128,
         hidden_dim: int = 64,
         actfn: str = "silu",
-    ):
+    ) -> None:
         """
         Args:
             `node_dim`: Dimension of node feature.
@@ -130,7 +130,7 @@ class MDGradOut(nn.Module):
 
 
 class MDPaiNN(nn.Module):
-    def __init__(self, config: NetConfig):
+    def __init__(self, config: NetConfig) -> None:
         super().__init__()
         self.embed = MDEmbedding(
             node_dim=config.node_dim,

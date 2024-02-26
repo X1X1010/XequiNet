@@ -15,31 +15,6 @@ except:
     warnings.warn("xtb is not installed, xtb calculation will not be performed.")
 
 
-
-def read_xyz(xyz_file: str) -> tuple:
-    """Read a continuous xyz file and return a list of molecule tokens."""
-    mol_tokens = []
-    charges, spins = [], []
-    with open(xyz_file, 'r') as f:
-        while True:
-            line = f.readline().strip()
-            if not line: break
-            n_atoms = int(line)
-            comment = f.readline()
-            try:
-                charge, multiplicity = list(map(int, comment.strip().split()))
-            except:
-                charge, multiplicity = 0, 1
-            charges.append(charge)
-            spins.append(multiplicity - 1)
-            mol_token = []
-            for _ in range(n_atoms):
-                line = f.readline().strip()
-                mol_token.append(line)
-            mol_tokens.append("\n".join(mol_token))
-    return mol_tokens, charges, spins
-
-
 def xeq_method(mol: gto.Mole, model: torch.jit.ScriptModule, device: torch.device, base_method: str = None) -> tuple:
     """Xequinet method for energy and gradient calculation."""
     at_no = torch.tensor(mol.atom_charges(), dtype=torch.long, device=device)
@@ -98,7 +73,7 @@ def calc_numerical_hessian(mol: gto.Mole, model: torch.nn.Module, device: torch.
     return energy, hessian
 
 
-def to_shermo(shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray):
+def to_shermo(shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray) -> None:
     with open(shm_file, 'w') as f:
         f.write(f"*E\n    {energy:10.6f}\n")
         f.write("*wavenum\n")

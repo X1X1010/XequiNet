@@ -18,19 +18,24 @@ from ..utils import (
 )
 
 
-def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
+def set_init_attr(
+    dataset: Dataset,
+    config: NetConfig,
+    mode: str = "train",
+    transform: Optional[Callable] = None,
+    pre_transform: Optional[Callable] = None,
+) -> None:
     """
     Set the initial attributes of the dataset.
     """
-    dataset._mode: str = kwargs.get("mode", "train")
-    assert dataset._mode in ["train", "valid", "test"]
+    assert mode in ["train", "valid", "test"]
+    dataset._mode = mode
     dataset._pbc = True if "pbc" in config.version else False
-    dataset._mat = True if "mat" in config.version else False
     dataset._cutoff = config.cutoff
     dataset._max_edges = config.max_edges
     dataset._mem_process = config.mem_process
-    dataset.transform: Callable = kwargs.get("transform", None)
-    dataset.pre_transform: Callable = kwargs.get("pre_transform", None)
+    dataset.transform = transform
+    dataset.pre_transform = pre_transform
 
     dataset._prop_dict = {'y': config.label_name}
     if config.blabel_name is not None:
@@ -39,36 +44,18 @@ def set_init_attr(dataset: Dataset, config: NetConfig, **kwargs):
         dataset._prop_dict['force'] = config.force_name
         if config.bforce_name is not None:
             dataset._prop_dict['base_force'] = config.bforce_name
-    
-    if dataset._mat:
-        dataset._prop_dict["target_irreps"] = config.irreps_out
-        dataset._prop_dict["possible_elements"] = config.possible_elements
-        dataset._prop_dict["basisname"] = config.target_basisname
-        dataset._prop_dict["full_edge_index"] = config.full_edge_index
-
-    # virtual dimension is for batch collation
-    # e.g. shape of dipole moment is (3,) for a single molecule
-    # we need to add a virtual dimension to make it (1, 3), so the pyg `Data` will collate
-    # along the first dimension, and the shape of the collated dipole moment will be (N, 3)
-    dataset._virtual_dim = True
-    if "atomic" in config.output_mode:
-        dataset._virtual_dim = False
-    
+   
     if dataset._pbc:
         dataset._process_h5 = process_pbch5
-    elif dataset._mat:
-        dataset._process_h5 = process_math5
     else:
         dataset._process_h5 = process_h5
 
 
-def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwargs):
+def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, max_edges: int = 100) -> Iterable[Data]:
     """
     process the hdf5 file of molecular data
     """
     len_unit = get_default_unit()[1]
-    max_edges = kwargs.get("max_edges", 100)
-    virtual_dim = kwargs.get("virtual_dim", True)
     # loop over samples
     for mol_name in f_h5[mode].keys():
         mol_grp = f_h5[mode][mol_name]
@@ -95,19 +82,16 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, **kwar
                 p_val = torch.tensor(mol_grp[p_name][()][icfm])
                 if p_val.dim() == 0:
                     p_val = p_val.unsqueeze(0)
-                if virtual_dim and p_attr in ["y", "base_y"]:
-                    p_val = p_val.unsqueeze(0)
+                p_val = p_val.unsqueeze(0)
                 setattr(data, p_attr, p_val)
             yield data
 
 
-def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **kwargs):
+def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, max_edges: int = 100) -> Iterable[Data]:
     """
     process the hdf5 file of system with periodic boundary condition
     """
     len_unit = get_default_unit()[1]
-    max_edges = kwargs.get("max_edges", 100)
-    virtual_dim = kwargs.get("virtual_dim", True)
     # loop over samples
     for pbc_name in f_h5[mode].keys():
         pbc_grp = f_h5[mode][pbc_name]
@@ -157,89 +141,8 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, **
                 p_val = torch.tensor(pbc_grp[p_name][()][icfm])
                 if p_val.dim() == 0:
                     p_val = p_val.unsqueeze(0)
-                if virtual_dim and p_attr in ["y", "base_y"]:
-                    p_val = p_val.unsqueeze(0)
+                p_val = p_val.unsqueeze(0)
                 setattr(data, p_attr, p_val)
-            yield data
-
-
-def process_math5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict, **kwargs):
-    """
-    process the hdf5 file of matirx data
-    """
-    from ..utils import Mat2GraphLabel, TwoBodyBlockMask 
-    len_unit = get_default_unit()[1]
-    max_edges = kwargs.get("max_edges", 100)
-    mat2graph = Mat2GraphLabel(prop_dict["target_irreps"], prop_dict["possible_elements"], prop_dict["basisname"])
-    genmask = TwoBodyBlockMask(prop_dict["target_irreps"], prop_dict["possible_elements"], prop_dict["basisname"])
-    full_edge_index: bool = prop_dict["full_edge_index"]
-    # loop over samples
-    for mol_name in f_h5[mode].keys():
-        mol_grp = f_h5[mode][mol_name]
-        at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
-        if "coordinates_A" in mol_grp.keys():
-            coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
-            coords *= unit_conversion("Angstrom", len_unit)
-        elif "coordinates_bohr" in mol_grp.keys():
-            coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
-            coords *= unit_conversion("Bohr", len_unit)
-        else:
-            raise ValueError("Coordinates not found in the hdf5 file.")
-        for icfm, coord in enumerate(coords):
-            edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
-            data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
-            matrice_target = torch.from_numpy(
-                mol_grp[prop_dict['y']][()][icfm].copy()
-            ).to(torch.get_default_dtype())
-            if full_edge_index:
-                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, at_no, edge_index)
-                mole_node_mask, mole_edge_mask = genmask(at_no, edge_index)
-            else:
-                # fully connected 
-                mole_node_label, mole_edge_label = mat2graph(data, matrice_target, at_no)
-                mole_node_mask, mole_edge_mask = genmask(at_no, data.fc_edge_index)
-            if mode == "test":
-                data.target_matrice = matrice_target
-            data.node_label = mole_node_label.to(torch.get_default_dtype())
-            data.edge_label = mole_edge_label.to(torch.get_default_dtype())
-            data.onsite_mask = mole_node_mask
-            data.offsite_mask = mole_edge_mask
-            yield data
-
-
-def process_hessh5(f_h5: h5py.File, mode: str, cutoff: float, **kwargs):
-    """
-    process of the hdf5 file of hessian data
-    """
-    len_unit = get_default_unit()[1]
-    max_edges = kwargs.get("max_edges", 100)
-    # loop over samples
-    for mol_name in f_h5[mode].keys():
-        mol_grp = f_h5[mode][mol_name]
-        at_no = torch.LongTensor(mol_grp["atomic_numbers"][()])
-        if "coordinates_A" in mol_grp.keys():
-            coords = torch.Tensor(mol_grp["coordinates_A"][()]).to(torch.get_default_dtype())
-            coords *= unit_conversion("Angstrom", len_unit)
-        elif "coordinates_bohr" in mol_grp.keys():
-            coords = torch.Tensor(mol_grp["coordinates_bohr"][()]).to(torch.get_default_dtype())
-            coords *= unit_conversion("Bohr", len_unit)
-        else:
-            raise ValueError("Coordinates not found in the hdf5 file.")
-        for icfm, coord in enumerate(coords):
-            edge_index = radius_graph(coord, r=cutoff, max_num_neighbors=max_edges)
-            data = Data(at_no=at_no, pos=coord, edge_index=edge_index)
-            hess_ii = torch.from_numpy(
-                mol_grp["hii"][()][icfm].copy()
-            ).to(torch.get_default_dtype())
-            hess_ij = torch.from_numpy(
-                mol_grp["hij"][()][icfm].copy()
-            ).to(torch.get_default_dtype())
-            fc_edge_index = torch.from_numpy(
-                mol_grp["edge_index"][()][icfm].copy()
-            ).view(2, -1).long()
-            setattr(data, "node_label", hess_ii)
-            setattr(data, "edge_label", hess_ij)
-            setattr(data, "fc_edge_index", fc_edge_index)
             yield data
 
 
@@ -250,10 +153,12 @@ class H5Dataset(Dataset):
     def __init__(
         self,
         config: NetConfig,
-        **kwargs,
-    ):
+        mode: str = "train",
+        transform: Optional[Callable] = None,
+        pre_transform: Optional[Callable] = None,
+    ) -> None:
         super().__init__()
-        set_init_attr(self, config, **kwargs)
+        set_init_attr(self, config, mode=mode, transform=transform, pre_transform=pre_transform)
         
         root = config.data_root
         data_files = config.data_files
@@ -267,7 +172,7 @@ class H5Dataset(Dataset):
         self.data_list = []
         self.process()
 
-    def process(self):
+    def process(self) -> None:
         for raw_path in self._raw_paths:
             # read by memory io-buffer or by disk directly
             if self._mem_process:
@@ -284,9 +189,8 @@ class H5Dataset(Dataset):
                 continue
             data_iter = self._process_h5(
                 f_h5=f_h5, mode=self._mode, cutoff=self._cutoff,
-                max_edges=self._max_edges,
                 prop_dict=self._prop_dict,
-                virtual_dim=self._virtual_dim
+                max_edges=self._max_edges,
             )
             for data in data_iter:
                 if self.pre_transform is not None:
@@ -297,10 +201,10 @@ class H5Dataset(Dataset):
                 f_disk.close(); io_mem.close()
             f_h5.close()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.data_list)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Data:
         data = self.data_list[index]
         if self.transform is not None:
             data = self.transform(data)
@@ -314,9 +218,11 @@ class H5MemDataset(InMemoryDataset):
     def __init__(
         self,
         config: NetConfig,
-        **kwargs,
-    ):
-        set_init_attr(self, config, **kwargs)
+        mode: str = "train",
+        transform: Optional[Callable] = None,
+        pre_transform: Optional[Callable] = None,
+    ) -> None:
+        set_init_attr(self, config, mode=mode, transform=transform, pre_transform=pre_transform)
 
         root = config.data_root
         data_files = config.data_files
@@ -341,7 +247,7 @@ class H5MemDataset(InMemoryDataset):
     def processed_file_names(self) -> str:
         return self._processed_file
 
-    def process(self):
+    def process(self) -> None:
         data_list = []
         for raw_path in self.raw_paths:
             # read by memory io-buffer or by disk directly
@@ -383,9 +289,11 @@ class H5DiskDataset(DiskDataset):
     def __init__(
         self,
         config: NetConfig,
-        **kwargs,
-    ):
-        set_init_attr(self, config, **kwargs)
+        mode: str = "train",
+        transform: Optional[Callable] = None,
+        pre_transform: Optional[Callable] = None,
+    ) -> None:
+        set_init_attr(self, config, mode=mode, transform=transform, pre_transform=pre_transform)
 
         root = config.data_root
         data_files = config.data_files
@@ -411,7 +319,7 @@ class H5DiskDataset(DiskDataset):
     def processed_file_names(self) -> str:
         return self._processed_folder
 
-    def process(self):
+    def process(self) -> None:
         data_dir = os.path.join(self.processed_dir, self._processed_folder)
         idx = 0  # count of data
         for raw_path in self.raw_paths:
@@ -447,7 +355,7 @@ class H5DiskDataset(DiskDataset):
             f_h5.close()
         self._num_data = idx
     
-    def len(self):
+    def len(self) -> int:
         if self._num_data is None:
             data_dir = os.path.join(self.processed_dir, self._processed_folder)
             max_dir = os.path.join(
@@ -458,7 +366,7 @@ class H5DiskDataset(DiskDataset):
             self._num_data = int(data_file.split(".")[0]) + 1
         return self._num_data
         
-    def get(self, idx):
+    def get(self, idx) -> Data:
         data = torch.load(os.path.join(
             self.processed_dir,
             self._processed_folder,
@@ -493,24 +401,11 @@ def data_unit_transform(
     return new_data
 
 
-def mat_data_unit_transform(data: Data, label_unit: Optional[str] = None) -> Data:
-    """
-    Create a deep copy of the data and transform the units of the copy.
-    """
-    new_data = data.clone()
-    prop_unit, _ = get_default_unit()
-    if hasattr(new_data, "node_label"):
-        new_data.node_label *= unit_conversion(label_unit, prop_unit)
-    if hasattr(new_data, "edge_label"):
-        new_data.edge_label *= unit_conversion(label_unit, prop_unit)
-    return new_data
-
-
 def atom_ref_transform(
     data: Data,
     atom_sp: torch.Tensor,
     batom_sp: torch.Tensor,
-):
+) -> Data:
     """
     Create a deep copy of the data and subtract the atomic energy.
     """
@@ -534,18 +429,13 @@ def atom_ref_transform(
     return new_data
 
 
-def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = None):
+def create_dataset(config: NetConfig, mode: str = "train", local_rank: int = None) -> Dataset:
     with distributed_zero_first(local_rank):
         # set transform function
-        if "mat" in config.version:
-            pre_transform = lambda data: mat_data_unit_transform(
-                data=data, label_unit=config.label_unit,
-            )
-        else:
-            pre_transform = lambda data: data_unit_transform(
-                data=data, y_unit=config.label_unit, by_unit=config.blabel_unit,
-                force_unit=config.force_unit, bforce_unit=config.bforce_unit,
-            )
+        pre_transform = lambda data: data_unit_transform(
+            data=data, y_unit=config.label_unit, by_unit=config.blabel_unit,
+            force_unit=config.force_unit, bforce_unit=config.bforce_unit,
+        )
         atom_sp = get_atomic_energy(config.atom_ref)
         batom_sp = get_atomic_energy(config.batom_ref)
         transform = lambda data: atom_ref_transform(
