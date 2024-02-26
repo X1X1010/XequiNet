@@ -313,7 +313,7 @@ def main():
     model.eval()
 
     # load input data
-    dataset = TextDataset(xyz_file=args.inp)
+    dataset = TextDataset(file=args.inp)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=0)
     outp = f"{args.inp.split('/')[-1].split('.')[0]}.log" if args.output is None else args.output
 

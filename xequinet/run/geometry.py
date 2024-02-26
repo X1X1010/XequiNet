@@ -101,7 +101,7 @@ def calc_numerical_hessian(mol: gto.Mole, model: torch.nn.Module, device: torch.
 def to_shermo(shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray):
     with open(shm_file, 'w') as f:
         f.write(f"*E\n    {energy:10.6f}\n")
-        f.write("wavenum\n")
+        f.write("*wavenum\n")
         # chage imaginary frequency to negative frequency
         if np.iscomplexobj(wavenums):
             wavenums = wavenums.real - abs(wavenums.imag)
