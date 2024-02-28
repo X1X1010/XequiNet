@@ -84,7 +84,7 @@ def to_shermo(shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray)
             f.write(f"    {wavenum:8.4f}\n")
         f.write("*atoms\n")
         elements = mol.elements
-        masses = mol.atom_mass_list()
+        masses = mol.atom_mass_list(isotope_avg=True)
         coords = mol.atom_coords(unit="Angstrom")
         for e, m, c in zip(elements, masses, coords):
             f.write(f"{e: <2} {m:10.6f} {c[0]:10.6f} {c[1]:10.6f} {c[2]:10.6f}\n")

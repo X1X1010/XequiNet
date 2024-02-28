@@ -119,7 +119,8 @@ class JitPaiNN(nn.Module):
         coord.requires_grad_(True)
         coord = coord * self.len_unit_conv
         edge_index = radius_graph(coord, r=self.cutoff, max_num_neighbors=self.max_edges)
-        x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index)
+        shifts = torch.zeros((edge_index.shape[1], 3), device=coord.device)
+        x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index, shifts)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for msg, upd in zip(self.message, self.update):
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
@@ -190,7 +191,8 @@ class JitPaiNNEle(JitPaiNN):
         spin_t = torch.tensor([[spin]], dtype=coord.dtype, device=coord.device)
         coord = coord * self.len_unit_conv
         edge_index = radius_graph(coord, r=self.cutoff, max_num_neighbors=self.max_edges)
-        x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index)
+        shifts = torch.zeros((edge_index.shape[1], 3), device=coord.device)
+        x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index, shifts)
         x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
         for ce, se, msg, upd in zip(self.charge_ebd, self.spin_ebd, self.message, self.update):
             x_scalar = x_scalar + ce(x_scalar, charge_t) + se(x_scalar, spin_t)
