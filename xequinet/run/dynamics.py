@@ -95,12 +95,14 @@ def resolve_ensemble(atoms: Atoms, **kwargs):
             )
         elif dynamics == "Nose-Hoover":      # Nose-Hoover NVT is NPT with no pressure
             from ase.md.npt import NPT
+            if np.all(atoms.cell == 0):  # if cell is not set
+                atoms.set_cell(np.eye(3) * 100.0)
             return NPT(
                 atoms, timestep=kwargs["timestep"] * units.fs, temperature_K=kwargs["temperature"],
-                ttime=kwargs["taut"] * units.fs,
+                externalstress=0.0, ttime=kwargs["taut"] * units.fs,
                 trajectory=kwargs["trajectory"], logfile=kwargs["logfile"],
                 loginterval=kwargs["loginterval"], append_trajectory=kwargs["append_trajectory"],
-            )  
+            )
         elif dynamics == "Berendsen":
             from ase.md.nvtberendsen import NVTBerendsen
             return NVTBerendsen(
