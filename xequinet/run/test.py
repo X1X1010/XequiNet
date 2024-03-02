@@ -1,9 +1,7 @@
 import argparse
 
 import torch
-import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
-from torch_scatter import scatter_sum 
 
 from xequinet.data import create_dataset
 from xequinet.nn import resolve_model
@@ -216,10 +214,6 @@ def main():
         help="Whether not testing force when the output mode is 'grad'",
     )
     parser.add_argument(
-        "--diag", default=False, action="store_true",
-        help="Whether to diagonalize the Fock matrix for orbital energy and wavefunction.",
-    )
-    parser.add_argument(
         "--verbose", "-v", type=int, default=0, choices=[0, 1, 2],
         help="Verbose level. (default: 0)",
     )
@@ -242,7 +236,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # load checkpoint and config
-    config = NetConfig.model_validate(args.config)
+    with open(args.config, 'r') as json_file:
+        config = NetConfig.model_validate_json(json_file.read())
     ckpt = torch.load(args.ckpt, map_location=device)
     config.model_validate(ckpt["config"])
     
@@ -270,7 +265,7 @@ def main():
     output_file = f"{config.run_name}_test.log"
         
     with open(output_file, 'w') as wf:
-        wf.write("XequiNet testing\n")
+        wf.write("XequiNet Testing\n")
         wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
     if config.output_mode == "grad":

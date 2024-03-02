@@ -1,6 +1,5 @@
 import warnings
 import argparse
-from copy import deepcopy
 
 import numpy as np
 import torch
@@ -183,7 +182,7 @@ def main():
         fake_method = as_pyscf_method(mol, lambda mol: xeq_method(mol, model, device, args.delta))
         if args.no_opt:  # given a optimized geometry, so copy the molecule
             conv = True
-            new_mol = deepcopy(mol)
+            new_mol = mol.copy()
         else:            # optimize geometry and return a new molecule
             conv, new_mol = geometric_solver.kernel(fake_method, constraints=args.cons, maxsteps=args.max_steps)
 

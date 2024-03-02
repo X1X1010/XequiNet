@@ -80,9 +80,10 @@ def process_h5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: str, max_ed
                 if p_name not in mol_grp.keys():
                     continue
                 p_val = torch.tensor(mol_grp[p_name][()][icfm])
-                if p_val.dim() == 0:
+                if p_val.dim() == 0:  # add a dimension for 0-d tensor
                     p_val = p_val.unsqueeze(0)
-                p_val = p_val.unsqueeze(0)
+                if p_attr in ["y", "base_y"]:
+                    p_val = p_val.unsqueeze(0)
                 setattr(data, p_attr, p_val)
             yield data
 
@@ -139,9 +140,10 @@ def process_pbch5(f_h5: h5py.File, mode: str, cutoff: float, prop_dict: dict, ma
             data = Data(at_no=at_no, pos=coord, edge_index=edge_index, shifts=shifts, charge=charge, spin=spin)
             for p_attr, p_name in prop_dict.items():
                 p_val = torch.tensor(pbc_grp[p_name][()][icfm])
-                if p_val.dim() == 0:
+                if p_val.dim() == 0:  # add a dimension for 0-d tensor
                     p_val = p_val.unsqueeze(0)
-                p_val = p_val.unsqueeze(0)
+                if p_attr in ["y", "base_y"]:
+                    p_val = p_val.unsqueeze(0)
                 setattr(data, p_attr, p_val)
             yield data
 

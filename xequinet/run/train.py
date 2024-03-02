@@ -38,7 +38,8 @@ def main():
     
     # load config
     if os.path.isfile(args.config):
-        config = NetConfig.model_validate_json(args.config)
+        with open(args.config, "r") as json_file:
+            config = NetConfig.model_validate_json(json_file.read())
     else:
         Warning(f"Config file {args.config} not found. Default config will be used.")
         config = NetConfig()
