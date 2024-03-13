@@ -1,4 +1,4 @@
-from typing import Iterable, Union, Tuple
+from typing import Iterable, Union, Tuple, Optional
 
 import math
 
@@ -20,6 +20,7 @@ class ScalarOut(nn.Module):
         out_dim: int = 1,
         actfn: str = "silu",
         node_bias: float = 0.0,
+        reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
@@ -28,6 +29,7 @@ class ScalarOut(nn.Module):
             `out_dim`: Output dimension.
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
+            `reduce_op`: Reduce operation for the output.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -40,6 +42,7 @@ class ScalarOut(nn.Module):
         )
         nn.init.zeros_(self.out_mlp[0].bias)
         nn.init.constant_(self.out_mlp[2].bias, node_bias)
+        self.reduce_op = reduce_op
     
     def forward(
         self,
@@ -56,8 +59,9 @@ class ScalarOut(nn.Module):
             `res`: Scalar output.
         """
         batch = data.batch
-        atom_out = self.out_mlp(x_scalar)
-        res = scatter(atom_out, batch, dim=0)
+        res = self.out_mlp(x_scalar)
+        if self.reduce_op is not None:
+            res = scatter(res, batch, dim=0, reduce=self.reduce_op)
         return res
 
 
@@ -68,6 +72,7 @@ class NegGradOut(ScalarOut):
         hidden_dim: int = 64,
         actfn: str = "silu",
         node_bias: float = 0.0,
+        reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
@@ -75,8 +80,9 @@ class NegGradOut(ScalarOut):
             `hidden_dim`: Dimension of hidden layer.
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
+            `reduce_op`: Reduce operation for the output.
         """
-        super().__init__(node_dim, hidden_dim, 1, actfn, node_bias)
+        super().__init__(node_dim, hidden_dim, 1, actfn, node_bias, reduce_op)
 
     def forward(
         self,
@@ -94,10 +100,11 @@ class NegGradOut(ScalarOut):
             `neg_grad`: Negative gradient.
         """
         batch = data.batch; coord = data.pos
-        atom_out = self.out_mlp(x_scalar)
-        res =  scatter(atom_out, batch, dim=0)
+        res = self.out_mlp(x_scalar)
+        if self.reduce_op is not None:
+            res =  scatter(res, batch, dim=0, reduce=self.reduce_op)
         grad = torch.autograd.grad(
-            [atom_out.sum(),],
+            [res.sum(),],
             [coord,],
             retain_graph=True,
             create_graph=True,
@@ -114,6 +121,7 @@ class VectorOut(nn.Module):
         hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1o",
         output_dim: int = 3,
         actfn: str = "silu",
+        reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
@@ -144,6 +152,7 @@ class VectorOut(nn.Module):
         if output_dim != 3 and output_dim != 1:
             raise ValueError(f"output dimension must be either 1 or 3, but got {output_dim}")
         self.output_dim = output_dim
+        self.reduce_op = reduce_op
 
     def forward(
         self,
@@ -162,8 +171,9 @@ class VectorOut(nn.Module):
         batch = data.batch
         spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
         scalar_out = self.scalar_out_mlp(x_scalar)
-        atom_out = spherical_out * scalar_out
-        res = scatter(atom_out, batch, dim=0)
+        res = spherical_out * scalar_out
+        if self.reduce_op is not None:
+            res = scatter(res, batch, dim=0, reduce=self.reduce_op)
         if self.output_dim == 1:
             res = torch.linalg.norm(res, dim=-1, keepdim=True)
         return res
@@ -178,6 +188,7 @@ class PolarOut(nn.Module):
         hidden_irreps: Union[str, o3.Irreps, Iterable] = "64x0e + 16x2e",
         output_dim: int = 9,
         actfn: str = "silu",
+        reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
@@ -211,6 +222,7 @@ class PolarOut(nn.Module):
         if output_dim != 9 and output_dim != 1:
             raise ValueError(f"output dimension must be either 1 or 9, but got {output_dim}")
         self.output_dim = output_dim
+        self.reduce_op = reduce_op
 
     def forward(
         self,
@@ -229,10 +241,11 @@ class PolarOut(nn.Module):
         batch = data.batch
         spherical_out = self.spherical_out_mlp(x_spherical)
         scalar_out = self.scalar_out_mlp(x_scalar)
-        atom_out = self.rsh_conv(spherical_out, scalar_out)
-        mol_out = scatter(atom_out, batch, dim=0)
-        zero_order = mol_out[:, 0:1]
-        second_order = mol_out[:, 1:6]
+        polar_out = self.rsh_conv(spherical_out, scalar_out)
+        if self.reduce_op is not None:
+            polar_out = scatter(polar_out, batch, dim=0, reduce=self.reduce_op)
+        zero_order = polar_out[:, 0:1]
+        second_order = polar_out[:, 1:6]
         # build zero order output
         zero_out = torch.diag_embed(torch.repeat_interleave(zero_order, 3, dim=-1))
         # build second order output
@@ -260,6 +273,7 @@ class SpatialOut(nn.Module):
         node_dim: int = 128,
         hidden_dim: int = 64,
         actfn: str = "silu",
+        reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
@@ -279,6 +293,7 @@ class SpatialOut(nn.Module):
         )
         nn.init.zeros_(self.scalar_out_mlp[0].bias)
         nn.init.zeros_(self.scalar_out_mlp[2].bias)
+        self.reduce_op = reduce_op
 
     def forward(
         self,
@@ -300,7 +315,9 @@ class SpatialOut(nn.Module):
         coord -= centroids[batch]
         scalar_out = self.scalar_out_mlp(x_scalar)
         spatial = torch.square(coord).sum(dim=1, keepdim=True)
-        res = scatter(scalar_out * spatial, batch, dim=0)
+        res = scalar_out * spatial
+        if self.reduce_op is not None:
+            res = scatter(res, batch, dim=0, reduce=self.reduce_op)
         return res
 
 
@@ -312,6 +329,7 @@ def resolve_output(config: NetConfig):
             out_dim=config.output_dim,
             actfn=config.activation,
             node_bias=config.node_average,
+            reduce_op=config.reduce_op,
         )
     elif config.output_mode == "grad":
         return NegGradOut(
@@ -319,6 +337,7 @@ def resolve_output(config: NetConfig):
             hidden_dim=config.hidden_dim,
             actfn=config.activation,
             node_bias=config.node_average,
+            reduce_op=config.reduce_op,
         )
     elif config.output_mode == "vector":
         return VectorOut(
@@ -328,6 +347,7 @@ def resolve_output(config: NetConfig):
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
             actfn=config.activation,
+            reduce_op=config.reduce_op,
         )
     elif config.output_mode == "polar":
         return PolarOut(
@@ -337,12 +357,14 @@ def resolve_output(config: NetConfig):
             hidden_irreps=config.hidden_irreps,
             output_dim=config.output_dim,
             actfn=config.activation,
+            reduce_op=config.reduce_op,
         )
     elif config.output_mode == "spatial":
         return SpatialOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
             actfn=config.activation,
-        )
+            reduce_op=config.reduce_op,
+       )
     else:
         raise NotImplementedError(f"output mode {config.output_mode} is not implemented")

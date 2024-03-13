@@ -27,6 +27,7 @@ class NetConfig(BaseModel):
     norm_type: str = "nonorm"                      # normalization layer type
     output_mode: str = "scalar"                    # task type (`scalar` is for energy like, `grad` is for force like, etc.)
     output_dim: int = 1                            # output dimension of multi-task (only for `scalar` mode)
+    reduce_op: str = "sum"                         # reduce operation for the output
     atom_ref: Optional[Union[str, dict]] = None    # atomic reference (only for `scalar` mode)
     batom_ref: Optional[Union[str, dict]] = None   # base atomic reference (only for `scalar` mode)
     node_average: Union[bool, float] = False       # whether to add the node average to the output (only for `scalar` mode)
