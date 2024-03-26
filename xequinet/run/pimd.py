@@ -2,29 +2,12 @@ import argparse
 import xml.etree.ElementTree as ET
 import json
 
-from xequinet.interface import iPIDriver
+from ..interface import iPIDriver
 
 
-def main():
-    # parse arguments
-    parser = argparse.ArgumentParser(description="XequiNet i-PI driver")
-    parser.add_argument(
-        "--warning", "-w", action="store_true",
-        help="Whether to show warning messages",
-    )
-    parser.add_argument(
-        "xml",
-        help="XML input file"
-    )
-    args = parser.parse_args()
-
-    # open warning or not
-    if not args.warning:
-        import warnings
-        warnings.filterwarnings("ignore")
-    
+def run_pimd(args: argparse.Namespace) -> None:
     # parse the XML file
-    tree = ET.parse(args.xml)
+    tree = ET.parse(args.inp)
     root = tree.getroot()
     kwargs = {
         "ckpt_file": "model.jit",

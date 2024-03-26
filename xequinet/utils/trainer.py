@@ -23,26 +23,26 @@ from .qc import get_default_unit
 
 
 class loss2file:
-    def __init__(self, loss: float, ptfile: str, epoch: int):
+    def __init__(self, loss: float, ptfile: str, epoch: int) -> None:
         self.loss = loss
         self.ptfile = ptfile
         self.epoch = epoch
 
-    def __lt__(self, other: "loss2file"):
+    def __lt__(self, other: "loss2file") -> bool:
         # overloading __lt__ inversely to realize max heap
         return self.loss > other.loss
 
 
 class AverageMeter:
-    def __init__(self, device: torch.device):
+    def __init__(self, device: torch.device) -> None:
         self.device = device
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.sum = torch.zeros((1,), device=self.device)
         self.cnt = torch.zeros((1,), dtype=torch.int32, device=self.device)
     
-    def update(self, val: float, n: int = 1):
+    def update(self, val: float, n: int = 1) -> None:
         self.sum += val
         self.cnt += n
     
@@ -58,14 +58,14 @@ class AverageMeter:
 class EarlyStopping:
     def __init__(
         self, patience: int = None, min_delta: float = 0.0, min_lr: float = 1e-6,
-    ):
+    ) -> None:
         self.patience = patience if patience is not None else float("inf")
         self.min_delta = min_delta
         self.min_lr = 1e-6 if min_lr == 0.0 else min_lr
         self.counter = 0
         self.stop = False
 
-    def __call__(self, val_loss: float, best_loss: float, lr: float):
+    def __call__(self, val_loss: float, best_loss: float, lr: float) -> bool:
         if val_loss - best_loss > self.min_delta:
             self.counter += 1
             if self.counter >= self.patience:
@@ -90,7 +90,7 @@ class Trainer:
         valid_loader: DataLoader,
         dist_sampler: Optional[DistributedSampler],
         log: ZeroLogger,
-    ):
+    ) -> None:
         """
         Args:
             `model`: DistributedDataParallel model
@@ -165,7 +165,7 @@ class Trainer:
             self._load_params(config.ckpt_file)
 
 
-    def _load_params(self, ckpt_file: str):
+    def _load_params(self, ckpt_file: str) -> None:
         state = torch.load(ckpt_file, map_location=self.device)
         self.model.module.load_state_dict(state["model"], strict=False)
         if self.config.resume:
@@ -180,7 +180,7 @@ class Trainer:
         self.log.f.info(f" --- Loaded checkpoint from {ckpt_file}")
 
 
-    def _save_params(self, model: nn.Module, ckpt_file: str, loss: float = None):
+    def _save_params(self, model: nn.Module, ckpt_file: str, loss: float = None) -> None:
         state = {
             "model": model.state_dict(),
             "epoch": self.epoch,
@@ -193,7 +193,7 @@ class Trainer:
         torch.save(state, ckpt_file)
 
 
-    def save_best_k(self, model: nn.Module, curr_loss: float):
+    def save_best_k(self, model: nn.Module, curr_loss: float) -> None:
         if curr_loss < self.best_l2fs[0].loss:
             l2f = heapq.heappop(self.best_l2fs)
             l2f.loss = curr_loss
@@ -202,7 +202,7 @@ class Trainer:
             heapq.heappush(self.best_l2fs, l2f)
 
 
-    def train1epoch(self):
+    def train1epoch(self) -> None:
         self.model.train()
         self.dist_sampler.set_epoch(self.epoch)
         for step, data in enumerate(self.train_loader, start=1):
@@ -214,6 +214,7 @@ class Trainer:
             loss = self.lossfn(pred, real)
             # backward propagation
             self.optimizer.zero_grad()
+            # with torch.autograd.detect_anomaly():
             loss.backward()
             # gradient clipping
             if self.config.grad_clip is not None:
@@ -245,16 +246,16 @@ class Trainer:
                     )
                 )
     
-    def validate(self):
+    @torch.no_grad()
+    def validate(self) -> None:
         self.model.eval()
         self.meter.reset()
-        with torch.no_grad():
-            for data in self.valid_loader:
-                data = data.to(self.device)
-                pred = self.model(data)
-                real = data.y - data.base_y if hasattr(data, "base_y") else data.y
-                l1loss = F.l1_loss(pred, real, reduction="sum")
-                self.meter.update(l1loss.item(), real.numel())
+        for data in self.valid_loader:
+            data = data.to(self.device)
+            pred = self.model(data)
+            real = data.y - data.base_y if hasattr(data, "base_y") else data.y
+            l1loss = F.l1_loss(pred, real, reduction="sum")
+            self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
         if self.epoch % self.config.log_epoch == 0:
             self.log.f.info(f"Validation MAE: {mae:10.7f}")
@@ -267,18 +268,18 @@ class Trainer:
         self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
 
 
-    def ema_validate(self):
+    @torch.no_grad()
+    def ema_validate(self) -> None:
         if self.ema_model is None:
             return
         self.ema_model.eval()
         self.meter.reset()
-        with torch.no_grad():
-            for data in self.valid_loader:
-                data = data.to(self.device)
-                pred = self.ema_model(data)
-                real = data.y - data.base_y if hasattr(data, "base_y") else data.y
-                l1loss = F.l1_loss(pred, real, reduction="sum")
-                self.meter.update(l1loss.item(), real.numel())
+        for data in self.valid_loader:
+            data = data.to(self.device)
+            pred = self.ema_model(data)
+            real = data.y - data.base_y if hasattr(data, "base_y") else data.y
+            l1loss = F.l1_loss(pred, real, reduction="sum")
+            self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
         if self.epoch % self.config.log_epoch == 0:
             self.log.f.info("EMA Valid MAE: {mae:10.7f}".format(mae=mae))
@@ -291,7 +292,7 @@ class Trainer:
         self._save_params(self.ema_model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
 
 
-    def start(self):
+    def start(self) -> None:
         prop_unit, len_unit = get_default_unit()
         self.log.f.info(" --- Start training")
         self.log.f.info(f" --- Task Name: {self.config.run_name}")
@@ -315,15 +316,15 @@ class Trainer:
 
 
 class WithForceMeter:
-    def __init__(self, device: torch.device):
+    def __init__(self, device: torch.device) -> None:
         self.device = device
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.sum = torch.zeros((2,), device=self.device)
         self.cnt = torch.zeros((2,), dtype=torch.int32, device=self.device)
 
-    def update(self, energy: float, force: float, n_ene: int, n_frc: int):
+    def update(self, energy: float, force: float, n_ene: int, n_frc: int) -> None:
         self.sum[0] += energy; self.sum[1] += force
         self.cnt[0] += n_ene; self.cnt[1] += n_frc
 
@@ -349,7 +350,7 @@ class GradTrainer(Trainer):
         valid_loader: DataLoader,
         dist_sampler: DistributedSampler,
         log: ZeroLogger,
-    ):
+    ) -> None:
         """
         Args:
             `model`: DistributedDataParallel model
@@ -367,7 +368,7 @@ class GradTrainer(Trainer):
         self.meter = WithForceMeter(self.device)
 
     
-    def train1epoch(self):
+    def train1epoch(self) -> None:
         self.model.train()
         self.dist_sampler.set_epoch(self.epoch)
         for step, data in enumerate(self.train_loader, start=1):
@@ -419,7 +420,7 @@ class GradTrainer(Trainer):
                     )
                 )
     
-    def validate(self):
+    def validate(self) -> None:
         self.model.eval()
         self.meter.reset()
         for data in self.valid_loader:
@@ -448,7 +449,7 @@ class GradTrainer(Trainer):
 
 
     
-    def ema_validate(self):
+    def ema_validate(self) -> None:
         if self.ema_model is None:
             return
         self.ema_model.eval()
@@ -475,4 +476,159 @@ class GradTrainer(Trainer):
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.ema_model.module, mae)
+        self._save_params(self.ema_model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
+
+
+
+class GraphMeter:
+    """
+    Meter class for evaluating error metrics containing both node and edge labels.
+    """
+    def __init__(self, device: torch.device) -> None:
+        self.device = device
+        self.reset()
+    
+    def reset(self) -> None:
+        self.sum = torch.zeros((2,), device=self.device)
+        self.cnt = torch.zeros((2,), device=self.device, dtype=torch.int32)
+
+    def update(
+        self,
+        node_datum: float, edge_datum: float,
+        num_node: int, num_edge: int,
+    ) -> None:
+        self.sum += torch.tensor([node_datum, edge_datum], device=self.device)
+        self.cnt += torch.tensor([num_node, num_edge], device=self.device, dtype=torch.int32)
+    
+    def reduce(self) -> Tuple[float, float, float]:
+        tmp_sum = self.sum.clone()
+        tmp_cnt = self.cnt.clone()
+        dist.all_reduce(tmp_sum, op=dist.ReduceOp.SUM)
+        dist.all_reduce(tmp_cnt, op=dist.ReduceOp.SUM)
+        avg = tmp_sum / tmp_cnt
+        avg_tot = tmp_sum.sum() / tmp_cnt.sum()
+        return avg[0].item(), avg[1].item(), avg_tot.item()
+    
+
+
+class MatTrainer(Trainer):
+    """
+    Trainer class for general matrix properties calculated from quantum chemistry method
+    with a given basis set layout.
+    """
+    def __init__(
+        self,
+        model: nn.parallel.DistributedDataParallel,
+        config: NetConfig,
+        device: torch.device,
+        train_loader: DataLoader,
+        valid_loader: DataLoader,
+        dist_sampler: DistributedSampler,
+        log: ZeroLogger,
+    ) -> None:
+        super().__init__(model, config, device, train_loader, valid_loader, dist_sampler, log)
+        self.meter = GraphMeter(self.device)
+
+    def train1epoch(self) -> None:
+        self.model.train()
+        self.dist_sampler.set_epoch(self.epoch)
+
+        for step, data in enumerate(self.train_loader, start=1):
+            self.meter.reset()
+            data = data.to(self.device)
+            # forward propagation
+            pred_node_padded, pred_edge_padded = self.model(data)
+            node_mask, edge_mask = data.node_mask, data.edge_mask
+            pred_node, pred_edge = pred_node_padded[node_mask], pred_edge_padded[edge_mask]
+            real_node, real_edge = data.node_label[node_mask], data.edge_label[edge_mask]
+            batch_pred = torch.cat([pred_node, pred_edge], dim=0)
+            batch_real = torch.cat([real_node, real_edge], dim=0)
+            loss = self.lossfn(batch_pred, batch_real)
+            # back propagation
+            self.optimizer.zero_grad()
+            loss.backward()
+            # gradient clipping
+            if self.config.grad_clip is not None:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip, error_if_nonfinite=True)
+            # update EMA model
+            if self.ema_model is not None:
+                self.ema_model.update_parameters(self.model)
+            # update learning rate
+            if self.config.lr_scheduler != "plateau":
+                with self.warmup_scheduler.dampening():
+                    self.lr_scheduler.step()
+            # record l1 loss
+            with torch.no_grad():
+                l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
+                l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
+                self.meter.update(
+                    l1loss_node.item(), l1loss_edge.item(), real_node.size(0), real_edge.size(0),
+                )
+            # logging
+            if (self.epoch % self.config.log_epoch == 0 and
+                (step % self.config.log_step == 0 or
+                 step == len(self.train_loader))):
+                node_mae, edge_mae, total_mae = self.meter.reduce()
+                self.log.f.info(
+                    "Epoch: [{iepoch:>4}][{step:4d}/{nstep}]   lr: {lr:3e}   train MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}".format(
+                        iepoch=self.epoch,
+                        step=step,
+                        nstep=len(self.train_loader),
+                        lr=self.optimizer.param_groups[0]["lr"],
+                        node_mae=node_mae,
+                        edge_mae=edge_mae,
+                        total_mae=total_mae,
+                    )
+                )
+    
+    @torch.no_grad()
+    def validate(self) -> None:
+        self.model.eval()
+        self.meter.reset()
+        for data in self.valid_loader:
+            data = data.to(self.device)
+            pred_node_padded, pred_edge_padded = self.model(data)
+            node_mask, edge_mask = data.node_mask, data.edge_mask
+            pred_node, pred_edge = pred_node_padded[node_mask], pred_edge_padded[edge_mask]
+            real_node, real_edge = data.node_label[node_mask], data.edge_label[edge_mask]
+            l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
+            l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
+            self.meter.update(
+                l1loss_node.item(), l1loss_edge.item(), real_node.size(0), real_edge.size(0),
+            )
+        node_mae, edge_mae, total_mae = self.meter.reduce()
+        self.log.f.info(f"Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}")
+        if self.config.lr_scheduler == "plateau":
+            with self.warmup_scheduler.dampening():
+                self.lr_scheduler.step(total_mae)
+            lr = self.optimizer.param_groups[0]["lr"]
+            self.early_stop(total_mae, self.best_l2fs[0].loss, lr)
+        self.save_best_k(self.model.module, total_mae)
+        self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
+    
+    @torch.no_grad()
+    def ema_validate(self) -> None:
+        if self.ema_model is None:
+            return
+        self.ema_model.eval()
+        self.meter.reset()
+        for data in self.valid_loader:
+            data = data.to(self.device)
+            pred_node_padded, pred_edge_padded = self.ema_model(data)
+            node_mask, edge_mask = data.node_mask, data.edge_mask
+            pred_node, pred_edge = pred_node_padded[node_mask], pred_edge_padded[edge_mask]
+            real_node, real_edge = data.node_label[node_mask], data.edge_label[edge_mask]
+            l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
+            l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
+            self.meter.update(
+                l1loss_node.item(), l1loss_edge.item(), real_node.size(0), real_edge.size(0),
+            )
+        node_mae, edge_mae, total_mae = self.meter.reduce()
+        self.log.f.info(f"EMA Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}")
+        if self.config.lr_scheduler == "plateau":
+            with self.warmup_scheduler.dampening():
+                self.lr_scheduler.step(total_mae)
+            lr = self.optimizer.param_groups[0]["lr"]
+            self.early_stop(total_mae, self.best_l2fs[0].loss, lr)
+        self.save_best_k(self.ema_model.module, total_mae)
         self._save_params(self.ema_model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")

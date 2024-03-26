@@ -102,7 +102,7 @@ def _get_polynomial_decay_schedule_lambda(
 
 def get_polynomial_decay_schedule(
     optimizer, num_training_steps, lr_end=1e-7, power=1.0, last_epoch=-1
-) -> torch.optim.lr_scheduler._LRScheduler:
+) -> torch.optim.lr_scheduler.LRScheduler:
     """
     Create a schedule with a learning rate that decreases as a polynomial decay from the initial lr set in the
     optimizer to end lr defined by *lr_end*.

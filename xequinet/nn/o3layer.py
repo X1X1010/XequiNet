@@ -1,4 +1,4 @@
-from typing import Iterable, Union
+from typing import Iterable
 
 import torch
 import torch.nn as nn
@@ -10,44 +10,50 @@ from e3nn.util.jit import compile_mode
 from ..utils import get_embedding_tensor
 
 
-class Invariant(nn.Module):
-    """
-    Invariant layer.
-    """
-    def __init__(
-        self,
-        irreps_in: Union[str, o3.Irreps, Iterable],
-        squared: bool = False,
-        eps: float = 1e-6,
-    ) -> None:
-        """
-        Args:
-            `irreps_in`: Input irreps.
-            `squared`: Whether to square the norm.
-            `eps`: Epsilon for numerical stability.
-        """
-        super().__init__()
-        self.squared = squared
-        self.eps = eps
-        self.invariant = o3.Norm(irreps_in, squared=squared)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.squared:
-            x = self.invariant(x)
-        else:
-            x = self.invariant(x + self.eps ** 2) - self.eps
-        return x
+def resolve_actfn(actfn: str, devide_x: bool = False) -> nn.Module:
+    """Helper function to return activation function"""
+    actfn = actfn.lower()
+    actfn_div_x = {"silu": "sigmoid", "relu": "identity", "leakyrelu": "identity"}
+    if devide_x and actfn in actfn_div_x:
+        actfn = actfn_div_x[actfn]
+    if actfn == "relu":
+        return nn.ReLU()
+    elif actfn == "leakyrelu":
+        return nn.LeakyReLU()
+    elif actfn == "softplus":
+        return nn.Softplus()
+    elif actfn == "sigmoid":
+        return nn.Sigmoid()
+    elif actfn == "silu":
+        return nn.SiLU()
+    elif actfn == "tanh":
+        return nn.Tanh()
+    elif actfn == "identity":
+        return nn.Identity()
+    else:
+        raise NotImplementedError(f"Unsupported activation function {actfn}")
 
 
 class Gate(nn.Module):
     def __init__(
         self,
-        irreps_in: Union[str, o3.Irreps, Iterable],
+        irreps_in: Iterable,
+        actfn: str = "silu",
+        refine: bool = False,
     ) -> None:
         super().__init__()
         irreps_in = o3.Irreps(irreps_in).simplify()
-        self.invariant = Invariant(irreps_in)
-        self.activation = nn.Sigmoid()
+        self.invariant = o3.Norm(irreps_in)
+        if refine:
+            self.activation = nn.Sequential(
+                nn.Linear(irreps_in.num_irreps, irreps_in.num_irreps),
+                resolve_actfn(actfn, devide_x=True),
+                nn.Linear(irreps_in.num_irreps, irreps_in.num_irreps),
+            )
+            nn.init.zeros_(self.activation[0].bias)
+            nn.init.zeros_(self.activation[2].bias)
+        else:
+            self.activation = resolve_actfn(actfn, devide_x=True)
         self.scalar_mul = o3.ElementwiseTensorProduct(irreps_in, f"{irreps_in.num_irreps}x0e")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -87,7 +93,7 @@ class Int2c1eEmbedding(nn.Module):
 class EquivariantDot(nn.Module):
     def __init__(
         self,
-        irreps_in: Union[str, o3.Irreps, Iterable],
+        irreps_in: Iterable,
     ):
         super().__init__()
 
@@ -113,12 +119,11 @@ class EquivariantDot(nn.Module):
 
 
 class EquivariantLayerNorm(nn.Module):
-    def __init__(self, irreps, eps=1e-5, affine=True) -> None:
+    def __init__(self, irreps, affine=True) -> None:
         super().__init__()
 
         self.irreps = o3.Irreps(irreps)
         self.dim = self.irreps.dim
-        self.eps = eps
 
         self.num_scalar = sum(mul for mul, ir in self.irreps if ir.l == 0 and ir.p == 1)
         self.num_features = self.irreps.num_irreps
@@ -130,7 +135,7 @@ class EquivariantLayerNorm(nn.Module):
             ix += ir.dim * mul
         self.register_buffer('scalar_index', torch.LongTensor(scalar_index))
 
-        self.invariant = Invariant(self.irreps)
+        self.invariant = o3.Norm(self.irreps)
         self.scalar_mul = o3.ElementwiseTensorProduct(self.irreps, f"{self.num_features}x0e")
 
         weight = torch.ones(self.num_features)
@@ -168,27 +173,6 @@ class EquivariantLayerNorm(nn.Module):
         return node_input
 
 
-def resolve_actfn(actfn: str) -> nn.Module:
-    """Helper function to return activation function"""
-    actfn = actfn.lower()
-    if actfn == "relu":
-        return nn.ReLU()
-    elif actfn == "leakyrelu":
-        return nn.LeakyReLU()
-    elif actfn == "softplus":
-        return nn.Softplus()
-    elif actfn == "sigmoid":
-        return nn.Sigmoid()
-    elif actfn == "silu":
-        return nn.SiLU()
-    elif actfn == "tanh":
-        return nn.Tanh()
-    elif actfn == "identity":
-        return nn.Identity()
-    else:
-        raise NotImplementedError(f"Unsupported activation function {actfn}")
-
-
 def resolve_norm(
     norm_type: str,
     num_features: int,
@@ -214,7 +198,7 @@ def resolve_norm(
 
 def resolve_o3norm(
     norm_type: str,
-    irreps: Union[str, o3.Irreps, Iterable],
+    irreps: Iterable,
     affine: bool = True,
 ) -> nn.Module:
     """Helper function to return equivariant normalization layer"""

@@ -132,7 +132,7 @@ class ExponentialBernstein(nn.Module):
     def reset_parameters(self) -> None:
         nn.init.constant_(self._alpha, softplus_inverse(self.alpha)) 
     
-    def forward(self, dist:torch.Tensor) -> torch.Tensor:
+    def forward(self, dist: torch.Tensor) -> torch.Tensor:
         alpha = F.softplus(self._alpha)
         x = - alpha * dist 
         x = self.logc + self.n * x + self.v * torch.log(-torch.expm1(x))

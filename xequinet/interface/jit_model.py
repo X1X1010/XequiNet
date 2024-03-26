@@ -68,7 +68,7 @@ class JitPaiNN(nn.Module):
         super().__init__()
         self.embed = XEmbedding(
             node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
+            node_irreps=config.node_irreps,
             embed_basis=config.embed_basis,
             aux_basis=config.aux_basis,
             num_basis=config.num_basis,
@@ -79,7 +79,7 @@ class JitPaiNN(nn.Module):
         self.message = nn.ModuleList([
             XPainnMessage(
                 node_dim=config.node_dim,
-                edge_irreps=config.edge_irreps,
+                node_irreps=config.node_irreps,
                 num_basis=config.num_basis,
                 actfn=config.activation,
                 norm_type=config.norm_type,
@@ -89,7 +89,7 @@ class JitPaiNN(nn.Module):
         self.update = nn.ModuleList([
             XPainnUpdate(
                 node_dim=config.node_dim,
-                edge_irreps=config.edge_irreps,
+                node_irreps=config.node_irreps,
                 actfn=config.activation,
                 norm_type=config.norm_type,
             )
@@ -141,9 +141,7 @@ class JitEleEmbedding(nn.Module):
         self.node_dim = node_dim
         self.sqrt_dim = math.sqrt(node_dim)
         self.q_linear = nn.Linear(node_dim, node_dim)
-        nn.init.zeros_(self.q_linear.bias)
         self.k_linear = nn.Linear(1, node_dim)
-        nn.init.zeros_(self.k_linear.bias)
         self.v_linear = nn.Linear(1, node_dim, bias=False)
 
     def forward(

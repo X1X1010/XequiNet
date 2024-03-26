@@ -1,8 +1,0 @@
-README.md
-setup.py
-XequiNet.egg-info/PKG-INFO
-XequiNet.egg-info/SOURCES.txt
-XequiNet.egg-info/dependency_links.txt
-XequiNet.egg-info/entry_points.txt
-XequiNet.egg-info/top_level.txt
-xequinet/__init__.py

@@ -1,11 +1,13 @@
 from typing import Union, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class NetConfig(BaseModel):
     """
     Network configuration
-    """  
+    """
+    model_config = ConfigDict(extra="allow")
+    
     # non-essential
     run_name: str = "my_task"                      # name of the run
 
@@ -14,7 +16,7 @@ class NetConfig(BaseModel):
     embed_basis: str = "gfn2-xtb"                  # embedding basis type
     aux_basis: str = "aux56"                       # auxiliary basis type
     node_dim: int = 128                            # node irreps for the input
-    edge_irreps: str = "128x0e + 64x1o + 32x2e"    # edge irreps for the input
+    node_irreps: str = "128x0e + 64x1o + 32x2e"    # edge irreps for the input
     hidden_dim: int = 64                           # hidden dimension for the output
     hidden_irreps: str = "64x0e + 32x1o + 16x2e"   # hidden irreps for the output
     rbf_kernel: str = "bessel"                     # radial basis function type
@@ -34,6 +36,19 @@ class NetConfig(BaseModel):
     default_length_unit: str = "Angstrom"          # unit of the input coordinates
     default_property_unit: str = "eV"              # unit of the input properties
     default_dtype: str = "float32"                 # default data type
+
+    # additional configurations for n-order tensor output
+    order: int = 2                                 # order of the output tensor
+    symmetry: str = "ij"                           # indices symmetry of the tensor, "ij" for arbitary order 2 tensor etc.
+    hidden_channels: int = 64                      # hidden channels for each `Irrep`
+
+    # additional configurations for matrice output
+    mat_conv_blocks: int = 4                       # number of the matconv blocks
+    node_channels: int = 128                       # channels for each node `Irrep`
+    max_l: int = 4                                 # maximum angular momentum
+    possible_elements: List[Union[str, int]] = ['H', 'C', 'N', 'O', 'F']  # possible elements
+    target_basis: str = "def2-svp"                 # target basis set
+    require_full_edges: bool = True                # whether to require full edges in matrix output
 
     # configurations about the dataset
     dataset_type: str = "normal"                   # dataset type (`memory` is for the dataset in memory, `disk` is for the dataset on disk)
@@ -84,12 +99,21 @@ class NetConfig(BaseModel):
 
     def model_hyper_params(self) -> dict:
         hyper_params = self.model_dump(include={
-            "version", "embed_basis", "aux_basis", "node_dim", "edge_irreps", "hidden_dim", "hidden_irreps",
+            "version", "embed_basis", "aux_basis", "node_dim", "node_irreps", "hidden_dim", "hidden_irreps",
             "rbf_kernel", "num_basis", "cutoff", "cutoff_fn", "max_edges", "action_blocks",
-            "activation", "norm_type", "output_mode", "output_dim", "order", "required_symm",
+            "activation", "norm_type", "output_mode", "output_dim", "reduce_op",
             "atom_ref", "batom_ref", "node_average", "default_property_unit", "default_length_unit",
             "default_dtype",
         })
+        if self.output_mode == "cartesian":
+            hyper_params.update(self.model_dump(include={
+                "order", "symmetry", "hidden_channels",
+            }))
+        elif self.version == "xqhnet":
+            hyper_params.update(self.model_dump(include={
+                "mat_conv_blocks", "node_channels", "hidden_channels", "max_l",
+                "possible_elements", "target_basis", "require_full_edges",
+            }))
         return hyper_params
 
 

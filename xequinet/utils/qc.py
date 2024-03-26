@@ -1,4 +1,5 @@
 from typing import Optional, Union, Tuple
+from math import pi
 import warnings
 import re
 from pathlib import Path
@@ -8,40 +9,68 @@ import numpy as np
 import torch
 
 
-# Atomic Units
-AU = 1.0
-Bohr = BOHR = 1.0
-Hartree = HARTREE = EH = HA = 1.0
+def gen_units_dict():
+    """
+    Function that creates a dictionary containing all units previously hard
+    """
+    # constants from the NIST CODATA 2018, unit in SI
+    _c = 299792458.            # speed of light, m/s     Exact
+    _mu0 = 4.0e-7 * pi         # permeability of vacuum  Exact
+    _Grav = 6.67430e-11        # gravitational constant  +/- 0.000_15e-11
+    _hplanck = 6.62607015e-34  # Planck constant         Exact
+    _e = 1.602176634e-19       # elementary charge       Exact
+    _me = 9.1093837015e-31     # electron mass           +/- 0.000_000_0028e-31
+    _mp = 1.67262192369e-27    # proton mass             +/- 0.000_000_000_51e-27
+    _NA = 6.02214076e23        # Avogadro number         Exact
+    _kB = 1.380649e-23         # Boltzmann constant      Exact
+    _amu = 1.66053906660e-27   # atomic mass unit, kg    +/- 0.000_000_000_50e-27
+    
+    # derived from the CODATA values
+    _eps0 = 1 / _mu0 / _c**2     # permittivity of vacuum
+    _hbar = _hplanck / (2 * pi)  # Planck constant / 2pi, J s
 
-# energy
-eV = EV = 27.211386024367243
-mHartree = MHARTREE = Hartree * 1000
-meV = MEV = eV * 1000
-# energy per mole, for convienence
-mol = MOL = 1.0
-kcal = KCAL = 627.5094738898777
-kJ = KJ = 2625.499638
-J = kJ * 1000
+    u = {}
+    # Atomic Units
+    u["AU"] = u["a.u."] = 1.0
+    # amount of substance
+    u["mol"] = _NA
+    # charge
+    u['e'] = 1.0
+    u["Coloumb"] = u['C'] = 1 / _e
+    # length
+    u["Bohr"] = u["a0"] = 1.0
+    u["meter"] = u["m"] = (_me * _e**2) / (4 * pi * _eps0 * _hbar**2)
+    u["Angstrom"] = u["Ang"] = u['m'] * 1e-10
+    u["cm"] = u["m"] * 1e-2
+    u["nm"] = u["Angstrom"] * 10
+    # energy
+    u["Hartree"] = u["Ha"] = u["Eh"] = 1.0
+    u["Joule"] = u['J'] = (4 * pi * _eps0 * _hbar)**2 / (_me * _e**4)
+    u["kJoule"] = u["kJ"] = u['J'] * 1000
+    u["eV"] = u['J'] * _e
+    u["meV"] = u["eV"] / 1000
+    u["cal"] = u['J'] * 4.184
+    u["kcal"] = u["cal"] * 1000
+    # dipole
+    u["Debye"] = u['D'] = 1e21 * (4 * pi * _eps0 * _hbar**2 * _c) / (_me * _e)
+    # time
+    u["second"] = u['s'] = (_me * _e**4) / (4 * pi * _eps0)**2 / _hbar**3
+    u["fs"] = u["s"] * 1e-15
+    u["ps"] = u["fs"] * 1000
+    # pressure
+    u["Pascal"] = u["Pa"] = u['J'] / u['m']**3
+    u["GPa"] = u["Pa"] * 1e9
+    u["bar"] = u["Pa"] * 1e5
+    u["kbar"] = u["bar"] * 1e3
+    return u
 
-# length
-Angstrom = ANGSTROM = ANGS = 0.5291772105638411
-
-# dipole
-Debye = DEBYE = 2.5417464157449032
-mDebye = MDEBYE = Debye * 1000
-
-# time
-fs = FS = 41.34137457575126
-ps = PS = fs * 1000
+units = gen_units_dict()
+globals().update(units)
 
 
 PROP_UNIT = None
 LEN_UNIT = "Angstrom"
 
-unit_set = {
-    "AU", "BOHR", "HARTREE", "EH", "HA", "EV", "MHARTREE", "MEV", "KCAL", "KJ", "J",
-    "MOL", "ANGSTROM", "ANGS", "DEBYE", "MDEBYE", "FS", "PS",
-}
 
 def eval_unit(unit: str) -> float:
     # check if the unit is valid and safe
@@ -49,7 +78,7 @@ def eval_unit(unit: str) -> float:
     for u in split_unit:
         if u == '':
             continue
-        elif u in unit_set:
+        elif u in units:
             continue
         elif u.isdigit():
             continue
@@ -63,14 +92,12 @@ def eval_unit(unit: str) -> float:
 def unit_conversion(unit_in: Optional[str], unit_out: Optional[str]) -> float:
     if unit_in is None or unit_out is None:
         return 1.
-    unit_in = unit_in.upper()
-    unit_out = unit_out.upper()
     if unit_in == unit_out:
         return 1.
     value_in = eval_unit(unit_in)
     value_out = eval_unit(unit_out)
 
-    return value_out / value_in
+    return value_in / value_out
 
 
 def set_default_unit(prop_unit: str, len_unit: str) -> None:

@@ -1,14 +1,16 @@
 import argparse
 
 import torch
+import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 
-from xequinet.data import create_dataset
-from xequinet.nn import resolve_model
-from xequinet.utils import (
+from ..data import create_dataset
+from ..nn import resolve_model
+from ..utils import (
     NetConfig,
     unit_conversion, set_default_unit, get_default_unit,
     gen_3Dinfo_str,
+    MatToolkit,
 )
 
 
@@ -34,13 +36,13 @@ def test_scalar(
         error = real - pred
         sum_loss += error.abs().sum(dim=0)
         if verbose >= 1:
-            for imol in range(len(data.y)):
-                at_no = data.at_no[data.batch == imol]
-                coord = data.pos[data.batch == imol] * unit_conversion(l_unit, "Angstrom")
+            for imol in range(len(data)):
+                datum = data[imol]
+                coord = datum.pos * unit_conversion(l_unit, "Angstrom")
                 wf.write(f"mol {num_mol + imol + 1}\n")
                 if verbose >= 2:  # print atom coordinates
-                    wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
-                    wf.write(f"Charge {int(data.charge[imol].item())}   Multiplicity {int(data.spin[imol].item()) + 1}\n")
+                    wf.write(gen_3Dinfo_str(datum.at_no, coord, title="Coordinates (Angstrom)"))
+                    wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
                 wf.write(f"Real:")
                 wf.write("".join([f"{r.item():15.9f} " for r in real[imol]]))
                 wf.write(f"    Predict:")
@@ -49,7 +51,7 @@ def test_scalar(
                 wf.write("".join([f"{l.item():15.9f}" for l in error[imol]]))
                 wf.write(f"    ({p_unit})\n\n")
                 wf.flush()
-        num_mol += len(data.y)
+        num_mol += len(data)
     avg_loss = sum_loss / num_mol
     wf.write(f"Test MAE:")
     wf.write("".join([f"{l:15.9f}" for l in avg_loss]))
@@ -82,10 +84,10 @@ def test_grad(
             sum_lossE += errorE.abs().sum()
             sum_lossF += errorF.abs().sum()
         if verbose >= 1:
-            for imol in range(len(data.y)):
+            for imol in range(len(data)):
                 idx = (data.batch == imol)
-                at_no = data.at_no[idx]
-                coord = data.pos[idx] * unit_conversion(l_unit, "Angstrom")
+                datum = data[imol]
+                coord = datum.pos * unit_conversion(l_unit, "Angstrom")
                 wf.write(f"mol {num_mol + imol + 1}\n")
                 if verbose >= 2:  # print atom coordinates
                     info_3ds = [coord, predF[idx], realF[idx], errorF[idx]]
@@ -96,8 +98,8 @@ def test_grad(
                         f"Error Forces ({p_unit}/{l_unit})"
                     ]
                     precisions = [6, 9, 9, 9]
-                    wf.write(gen_3Dinfo_str(at_no, info_3ds, titles, precisions))
-                    wf.write(f"Charge {int(data.charge[imol].item())}   Multiplicity {int(data.spin[imol].item()) + 1}\n")
+                    wf.write(gen_3Dinfo_str(datum.at_no, info_3ds, titles, precisions))
+                    wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
                 wf.write(f"Energy | Real: {realE[imol].item():15.9f}    ")
                 wf.write(f"Predict: {predE[imol].item():15.9f}    ")
                 wf.write(f"Error: {errorE[imol].item():15.9f}    {p_unit}\n")
@@ -129,13 +131,13 @@ def test_vector(
         error = real - pred
         sum_loss += error.abs().sum().item()
         if verbose >= 1:
-            for imol in range(len(data.y)):
-                at_no = data.at_no[data.batch == imol]
-                coord = data.pos[data.batch == imol] * unit_conversion(l_unit, "Angstrom")
+            for imol in range(len(data)):
+                datum = data[imol]
+                coord = datum.pos * unit_conversion(l_unit, "Angstrom")
                 wf.write(f"mol {num_mol + imol + 1}\n")
                 if verbose >= 2:  # print atom coordinates
-                    wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
-                    wf.write(f"Charge {int(data.charge[imol].item())}   Multiplicity {int(data.spin[imol].item()) + 1}\n")
+                    wf.write(gen_3Dinfo_str(datum.at_no, coord, title="Coordinates (Angstrom)"))
+                    wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
                 values = [
                     f"X{vec[imol][0].item():12.6f}  Y{vec[imol][1].item():12.6f}  Z{vec[imol][2].item():12.6f}"
                     for vec in [real, pred, error]
@@ -145,7 +147,7 @@ def test_vector(
                 wf.write("    ".join(filled_t) + "\n")
                 wf.write("    ".join(values) + "\n\n")
                 wf.flush()
-        num_mol += len(data.y)
+        num_mol += len(data)
     wf.write(f"Test MAE: {sum_loss / num_mol / 3 :12.6f} {p_unit}\n")
     wf.close()
 
@@ -170,12 +172,12 @@ def test_polar(
         sum_loss += error.abs().sum().item()
         if verbose >= 1:
             for imol in range(len(data.y)):
-                at_no = data.at_no[data.batch == imol]
-                coord = data.pos[data.batch == imol] * unit_conversion(l_unit, "Angstrom")
+                datum = data[imol]
+                coord = datum.pos * unit_conversion(l_unit, "Angstrom")
                 wf.write(f"mol {num_mol + imol + 1}\n")
                 if verbose >= 2:  # print atom coordinates
-                    wf.write(gen_3Dinfo_str(at_no, coord, title="Coordinates (Angstrom)"))
-                    wf.write(f"Charge {int(data.charge[imol].item())}   Multiplicity {int(data.spin[imol].item()) + 1}\n")
+                    wf.write(gen_3Dinfo_str(datum.at_no, coord, title="Coordinates (Angstrom)"))
+                    wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
                 tri_values = []
                 for i, D in enumerate(['X', 'Y', 'Z']):
                     tri_values.append([
@@ -189,49 +191,101 @@ def test_polar(
                     wf.write("    ".join(values) + "\n")
                 wf.write("\n")
                 wf.flush()
-        num_mol += len(data.y)
+        num_mol += len(data)
     wf.write(f"Test MAE: {(sum_loss / num_mol / 9) :12.6f} {p_unit}\n")
     wf.close()
 
 
-def main():
-    # parse config
-    parser = argparse.ArgumentParser(description="XequiNet test script")
-    parser.add_argument(
-        "--config", "-C", type=str, default="config.json",
-        help="Configuration file (default: config.json).",
-    )
-    parser.add_argument(
-        "--ckpt", "-c", type=str, required=True,
-        help="Xequinet checkpoint file. (XXX.pt containing 'model' and 'config')",
-    )
-    parser.add_argument(
-        "--force", "-f", action="store_true",
-        help="Whether testing force additionally when the output mode is 'scalar'",
-    )
-    parser.add_argument(
-        "--no-force", "-nf", action="store_true",
-        help="Whether not testing force when the output mode is 'grad'",
-    )
-    parser.add_argument(
-        "--verbose", "-v", type=int, default=0, choices=[0, 1, 2],
-        help="Verbose level. (default: 0)",
-    )
-    parser.add_argument(
-        "--batch-size", "-b", type=int, default=32,
-        help="Batch size. (default: 32)",
-    )
-    parser.add_argument(
-        "--warning", "-w", action="store_true",
-        help="Whether to show warning messages",
-    )
-    args = parser.parse_args()
-    
-    # open warning or not
-    if not args.warning:
-        import warnings
-        warnings.filterwarnings("ignore")
-    
+@torch.no_grad()
+def test_tensor(
+    model: torch.nn.Module,
+    test_loader: DataLoader,
+    device: torch.device,
+    outfile: str,
+    verbose: int = 0,
+) -> None:
+    """
+    For tensor output, the situation is more complicated.
+    So we save the results in a file and do not print them, when verbose >= 1.
+    """
+    p_unit, _ = get_default_unit()
+    sum_loss = 0.0
+    tot_numel = 0
+    wf = open(outfile, 'a')
+    if verbose >= 1:
+        X, Y = [], []
+    for data in test_loader:
+        data = data.to(device)
+        pred = model(data)
+        real = data.y
+        sum_loss += F.l1_loss(pred, real, reduction="sum").item()
+        tot_numel += real.numel()
+        if verbose >= 1:
+            X.append(pred.cpu())
+            Y.append(real.cpu())
+    if verbose >= 1:
+        outpt = f"{outfile.rsplit('.', 1)[0]}.pt"
+        X = torch.cat(X, dim=0)
+        Y = torch.cat(Y, dim=0)
+        torch.save({"X": X, "Y": Y}, outpt)
+    wf.write(f"Test MAE: {sum_loss / tot_numel :12.6f} {p_unit}\n")
+
+
+@torch.no_grad()
+def test_matrix(
+    model: torch.nn.Module,
+    test_loader: DataLoader,
+    device: torch.device,
+    outfile: str,
+    mat_toolkit: MatToolkit,
+    verbose: int = 0,
+) -> None:
+    """
+    For matrix output, the size of the output may be large.
+    So we save the results in a file and do not print them, when verbose >= 1.
+    """
+    p_unit, _ = get_default_unit()
+    loss_node, loss_edge = 0.0, 0.0
+    num_node, num_edge = 0, 0
+    wf = open(outfile, 'a')
+    if verbose >= 1:
+        X, Y = [], []
+    for data in test_loader:
+        data = data.to(device)
+        pred_node_padded, pred_edge_padded = model(data)
+        node_mask, edge_mask = data.node_mask, data.edge_mask
+        pred_node, pred_edge = pred_node_padded[node_mask], pred_edge_padded[edge_mask]
+        real_node, real_edge = data.node_label[node_mask], data.edge_label[edge_mask]
+        loss_node += F.l1_loss(pred_node, real_node, reduction="sum").item()
+        loss_edge += F.l1_loss(pred_edge, real_edge, reduction="sum").item()
+        num_node += real_node.size(0)
+        num_edge += real_edge.size(0)
+        if verbose >= 1:
+            # steal the sky and change the sun
+            data.node_label = pred_edge_padded
+            data.edge_label = pred_edge_padded
+            for imol in range(len(data)):
+                datum = data[imol]
+                node_blocks = datum.node_blocks
+                edge_blocks = datum.edge_blocks
+                if hasattr(datum, "edge_index_full"):
+                    mat_edge_index = datum.edge_index_full
+                else:
+                    mat_edge_index = datum.edge_index
+                pred_matrix = mat_toolkit.assemble_blocks(node_blocks, edge_blocks, mat_edge_index)
+                X.append(pred_matrix.cpu())
+                real_matrix = datum.target_matrix
+                Y.append(real_matrix.cpu())
+    if verbose >= 1:
+        outpt = f"{outfile.rsplit('.', 1)[0]}.pt"
+        torch.save({"X": X, "Y": Y}, outpt)
+    wf.write(f"Node  MAE: {loss_node / num_node :12.6f} {p_unit}\n")
+    wf.write(f"Edge  MAE: {loss_edge / num_edge :12.6f} {p_unit}\n")
+    wf.write(f"Total MAE: {(loss_edge+loss_node) / (num_node+num_edge) :12.6f} {p_unit}\n")            
+
+
+
+def run_test(args: argparse.Namespace) -> None:
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -262,21 +316,23 @@ def main():
     model.eval()
 
     # test
-    output_file = f"{config.run_name}_test.log"
+    if args.output is None:
+        output_file = f"{config.run_name}_test.log"
         
     with open(output_file, 'w') as wf:
         wf.write("XequiNet Testing\n")
         wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
-    if config.output_mode == "grad":
+    if "mat" in config.version:
+        mat_toolkit = MatToolkit(config.target_basis, config.possible_elements)
+        test_matrix(model, test_loader, device, output_file, mat_toolkit, args.verbose)
+    elif config.output_mode == "grad":
         test_grad(model, test_loader, device, output_file, args.verbose)
-    elif config.output_mode == "vector" and config.output_dim == 3:
+    elif config.output_mode == "vector":
         test_vector(model, test_loader, device, output_file, args.verbose)
-    elif config.output_mode == "polar" and config.output_dim == 9:
+    elif config.output_mode == "polar":
         test_polar(model, test_loader, device, output_file, args.verbose)
+    elif config.output_mode == "cartesian":
+        test_tensor(model, test_loader, device, output_file, args.verbose)
     else:
         test_scalar(model, test_loader, device, output_file, config.output_dim, args.verbose)
-
-
-if __name__ == "__main__":
-    main()

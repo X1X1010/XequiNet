@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Union, Iterable
+from typing import Dict, Tuple, Iterable
 
 import torch
 import torch.nn as nn
@@ -16,7 +16,7 @@ class MDEmbedding(XEmbedding):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
+        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         embed_basis: str = "gfn2-xtb",
         aux_basis: str = "aux56",
         num_basis: int = 20,
@@ -25,7 +25,7 @@ class MDEmbedding(XEmbedding):
         cutoff_fn: str = "cosine",
     ) -> None:
         super().__init__(
-            node_dim, edge_irreps, embed_basis, aux_basis,
+            node_dim, node_irreps, embed_basis, aux_basis,
             num_basis, rbf_kernel, cutoff, cutoff_fn,
         )
 
@@ -134,7 +134,7 @@ class MDPaiNN(nn.Module):
         super().__init__()
         self.embed = MDEmbedding(
             node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
+            node_irreps=config.node_irreps,
             embed_basis=config.embed_basis,
             aux_basis=config.aux_basis,
             num_basis=config.num_basis,
@@ -145,7 +145,7 @@ class MDPaiNN(nn.Module):
         self.message = nn.ModuleList([
             XPainnMessage(
                 node_dim=config.node_dim,
-                edge_irreps=config.edge_irreps,
+                node_irreps=config.node_irreps,
                 num_basis=config.num_basis,
                 actfn=config.activation,
                 norm_type=config.norm_type,
@@ -155,7 +155,7 @@ class MDPaiNN(nn.Module):
         self.update = nn.ModuleList([
             XPainnUpdate(
                 node_dim=config.node_dim,
-                edge_irreps=config.edge_irreps,
+                node_irreps=config.node_irreps,
                 actfn=config.activation,
                 norm_type=config.norm_type,
             )

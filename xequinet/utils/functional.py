@@ -62,6 +62,20 @@ def calculate_stats(
     return mean.item(), std.item()
 
 
+class MatCriterion(nn.Module):
+    """MSE + RMSE"""
+    def __init__(self) -> None:
+        super().__init__()
+        self.mae_loss = nn.L1Loss()
+        self.mse_loss = nn.MSELoss()
+    
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        mae = self.mae_loss(pred, target)
+        mse = self.mse_loss(pred, target)
+        loss = mae + torch.sqrt(mse)
+        return loss
+
+
 def resolve_lossfn(lossfn: str) -> nn.Module:
     """Helper function to return loss function"""
     lossfn = lossfn.lower()
@@ -71,6 +85,8 @@ def resolve_lossfn(lossfn: str) -> nn.Module:
         return nn.L1Loss()
     elif lossfn == "smoothl1":
         return nn.SmoothL1Loss()
+    elif lossfn == "matloss":
+        return MatCriterion()
     else:
         raise NotImplementedError(f"Unsupported loss function {lossfn}")
 

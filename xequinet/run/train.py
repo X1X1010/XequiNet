@@ -9,33 +9,16 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
-from xequinet.nn import resolve_model
-from xequinet.utils import (
+from ..nn import resolve_model
+from ..utils import (
     NetConfig, ZeroLogger, set_default_unit,
     calculate_stats, distributed_zero_first,
 )
-from xequinet.data import create_dataset
+from ..data import create_dataset
 
 
-def main():
+def run_train(args: argparse.Namespace) -> None:
     # ------------------- set up ------------------- #
-    # parse config
-    parser = argparse.ArgumentParser(description="XequiNet distributed training script")
-    parser.add_argument(
-        "--config", "-C", type=str, default="config.json",
-        help="Configuration file (default: config.json).",
-    )
-    parser.add_argument(
-        "--warning", "-w", action="store_true",
-        help="Whether to show warning messages",
-    )
-    args = parser.parse_args()
-
-    # open warning or not
-    if not args.warning:
-        import warnings
-        warnings.filterwarnings("ignore")
-    
     # load config
     if os.path.isfile(args.config):
         with open(args.config, "r") as json_file:
@@ -118,7 +101,7 @@ def main():
     # record the number of parameters
     n_params = 0
     for name, param in ddp_model.named_parameters():
-        if config.finetune and "embed.node_lin" not in name:
+        if config.finetune and ("embed" in name or "output" in name):
             param.requires_grad = False
             log.s.info(f"{name}: {param.numel()} (frozen)")
         else:
@@ -127,13 +110,11 @@ def main():
     log.s.info(f"Total number of parameters to be optimized: {n_params}")
     
     # -------------------  train model ------------------- #
-    if config.output_mode == "grad":
+    if "mat" in config.version:
+        from xequinet.utils import MatTrainer as MyTrainer
+    elif config.output_mode == "grad":
         from xequinet.utils import GradTrainer as MyTrainer
     else:
         from xequinet.utils import Trainer as MyTrainer
     trainer = MyTrainer(ddp_model, config, device, train_loader, valid_loader, train_sampler, log)
     trainer.start()
-    
-
-if __name__ == "__main__":
-    main()

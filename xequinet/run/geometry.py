@@ -90,63 +90,7 @@ def to_shermo(shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray)
         f.write("*elevel\n    0.000000   1\n")
 
 
-def main():
-    # parse arguments
-    parser = argparse.ArgumentParser(description="XequiNet geometry optimization script")
-    parser.add_argument(
-        "--ckpt", "-c", type=str, required=True,
-        help="Path to the checkpoint file. (XXX.jit)",
-    )
-    parser.add_argument(
-        "--delta", "-d", type=str, default=None,
-        help="Base method for energy and force calculation.",
-    )
-    parser.add_argument(
-        "--max-steps", type=int, default=100,
-        help="Maximum number of optimization steps.",
-    )
-    parser.add_argument(
-        "--cons", type=str, default=None,
-        help="Constraints file for optimization.",
-    )
-    parser.add_argument(
-        "--freq", action="store_true",
-        help="Calculate vibrational frequencies.",
-    )
-    parser.add_argument(
-        "--numer", action="store_true",
-        help="Calculate hessian with numerical second derivative.",
-    )
-    parser.add_argument(
-        "--shm", action="store_true",
-        help="Whether to write shermo input file.",
-    )
-    parser.add_argument(
-        "--no-opt", action="store_true",
-        help="Do not perform optimization.",
-    )
-    parser.add_argument(
-        "--temp", "-T", type=float, default=298.15,
-        help="Temperature for vibrational frequencies.",
-    )
-    parser.add_argument(
-        "--verbose", "-v", type=int, default=0,
-        help="Verbosity level.",
-    )
-    parser.add_argument(
-        "--warning", "-w", action="store_true",
-        help="Whether to show warning messages",
-    )
-    parser.add_argument(
-        "inp", type=str,
-        help="Input xyz file."
-    )
-    args = parser.parse_args()
-
-    # open warning or not
-    if not args.warning:
-        warnings.filterwarnings("ignore")
-
+def run_opt(args: argparse.Namespace) -> None:
     if args.freq:
         # create a new freq log file
         freq_log = args.inp.split(".")[0] + "_freq.log"
@@ -220,4 +164,3 @@ def main():
                     f.write(f"Warning!! Optimization not converged!!\n")
                 for e, c in zip(new_mol.elements, new_mol.atom_coords(unit="Angstrom")):
                     f.write(f"{e: <2} {c[0]:10.6f} {c[1]:10.6f} {c[2]:10.6f}\n")
-    

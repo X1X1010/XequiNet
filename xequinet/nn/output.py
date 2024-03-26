@@ -1,4 +1,4 @@
-from typing import Iterable, Union, Tuple, Optional
+from typing import Iterable, Tuple, Optional
 
 import math
 
@@ -9,7 +9,10 @@ from torch_scatter import scatter
 from e3nn import o3
 
 from .o3layer import Gate, resolve_actfn
-from ..utils.config import NetConfig
+from .xe3net import SelfMixTP, Sph2Cart
+from .tp import get_feasible_tp
+from ..utils import NetConfig
+from ..utils.qc import ATOM_MASS
 
 
 class ScalarOut(nn.Module):
@@ -40,7 +43,6 @@ class ScalarOut(nn.Module):
             resolve_actfn(actfn),
             nn.Linear(self.hidden_dim, self.out_dim),
         )
-        nn.init.zeros_(self.out_mlp[0].bias)
         nn.init.constant_(self.out_mlp[2].bias, node_bias)
         self.reduce_op = reduce_op
     
@@ -116,25 +118,25 @@ class VectorOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
+        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
-        hidden_irreps: Union[str, o3.Irreps, Iterable] = "32x1o",
-        output_dim: int = 3,
+        hidden_irreps: Iterable = "32x1o",
+        if_norm: bool = False,
         actfn: str = "silu",
         reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
-            `edge_irreps`: Edge irreps.
+            `node_irreps`: Node irreps.
             `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
-            `output_dim`: Output dimension. (3 for vector and 1 for norm of the vector)
+            `if_norm`: Whether to normalize the output.
             `actfn`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
-        self.edge_irreps = o3.Irreps(edge_irreps)
+        self.node_irreps = o3.Irreps(node_irreps)
         self.hidden_dim = hidden_dim
         self.hidden_irreps = o3.Irreps(hidden_irreps)
         self.scalar_out_mlp = nn.Sequential(
@@ -142,16 +144,12 @@ class VectorOut(nn.Module):
             resolve_actfn(actfn),
             nn.Linear(self.hidden_dim, 1),
         )
-        nn.init.zeros_(self.scalar_out_mlp[0].bias)
-        nn.init.zeros_(self.scalar_out_mlp[2].bias)
         self.spherical_out_mlp = nn.Sequential(
-            o3.Linear(self.edge_irreps, self.hidden_irreps),
-            Gate(self.hidden_irreps),
+            o3.Linear(self.node_irreps, self.hidden_irreps),
+            Gate(self.hidden_irreps, actfn=actfn),
             o3.Linear(self.hidden_irreps, "1x1o"),
         )
-        if output_dim != 3 and output_dim != 1:
-            raise ValueError(f"output dimension must be either 1 or 3, but got {output_dim}")
-        self.output_dim = output_dim
+        self.if_norm = if_norm
         self.reduce_op = reduce_op
 
     def forward(
@@ -174,7 +172,7 @@ class VectorOut(nn.Module):
         res = spherical_out * scalar_out
         if self.reduce_op is not None:
             res = scatter(res, batch, dim=0, reduce=self.reduce_op)
-        if self.output_dim == 1:
+        if self.if_norm:
             res = torch.linalg.norm(res, dim=-1, keepdim=True)
         return res
 
@@ -183,17 +181,17 @@ class PolarOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
+        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
-        hidden_irreps: Union[str, o3.Irreps, Iterable] = "64x0e + 16x2e",
-        output_dim: int = 9,
+        hidden_irreps: Iterable = "64x0e + 16x2e",
+        if_iso: bool = False,
         actfn: str = "silu",
         reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
-            `edge_irreps`: Edge irreps.
+            `node_irreps`: Node irreps.
             `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
             `output_dim`: Output dimension. (9 for 3x3 matrix and 1 for trace of the matrix)
@@ -201,7 +199,7 @@ class PolarOut(nn.Module):
         """
         super().__init__()
         self.node_dim = node_dim
-        self.edge_irreps = o3.Irreps(edge_irreps)
+        self.node_irreps = o3.Irreps(node_irreps)
         self.hidden_dim = hidden_dim
         self.hidden_irreps = o3.Irreps(hidden_irreps)
         self.scalar_out_mlp = nn.Sequential(
@@ -209,19 +207,13 @@ class PolarOut(nn.Module):
             resolve_actfn(actfn),
             nn.Linear(self.hidden_dim, 2),
         )
-        nn.init.zeros_(self.scalar_out_mlp[0].bias)
-        nn.init.zeros_(self.scalar_out_mlp[2].bias)
         self.spherical_out_mlp = nn.Sequential(
-            o3.Linear(self.edge_irreps, self.hidden_irreps, biases=True),
-            Gate(self.hidden_irreps),
+            o3.Linear(self.node_irreps, self.hidden_irreps, biases=True),
+            Gate(self.hidden_irreps, actfn=actfn),
             o3.Linear(self.hidden_irreps, "1x0e + 1x2e", biases=True),
         )
-        nn.init.zeros_(self.spherical_out_mlp[0].bias)
-        nn.init.zeros_(self.spherical_out_mlp[2].bias)
         self.rsh_conv = o3.ElementwiseTensorProduct("1x0e + 1x2e", "2x0e")
-        if output_dim != 9 and output_dim != 1:
-            raise ValueError(f"output dimension must be either 1 or 9, but got {output_dim}")
-        self.output_dim = output_dim
+        self.if_iso = if_iso
         self.reduce_op = reduce_op
 
     def forward(
@@ -262,8 +254,8 @@ class PolarOut(nn.Module):
         second_out[:, 0, 2] = second_out[:, 2, 0] = dzx
         # add together
         res = zero_out + second_out
-        if self.output_dim == 1:
-            res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3
+        if self.if_iso == 1:
+            res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
         return res
 
 
@@ -282,17 +274,14 @@ class SpatialOut(nn.Module):
             `actfn`: Activation function type.
         """
         super().__init__()
-        from ..utils.qc import ATOM_MASS
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
-        self.register_buffer("masses", ATOM_MASS)
+        self.register_buffer("masses", torch.Tensor(ATOM_MASS))
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
             nn.Linear(self.hidden_dim, 1),
         )
-        nn.init.zeros_(self.scalar_out_mlp[0].bias)
-        nn.init.zeros_(self.scalar_out_mlp[2].bias)
         self.reduce_op = reduce_op
 
     def forward(
@@ -321,8 +310,96 @@ class SpatialOut(nn.Module):
         return res
 
 
+class CartTensorOut(nn.Module):
+    """
+    Output Module for order n tensor via tensor product of input hidden irreps and cartesian transform. 
+    """
+    def __init__(
+        self,
+        node_dim: int = 128,
+        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
+        hidden_dim: int = 64,
+        hidden_mul: int = 32,
+        order: int = 2,
+        symmetry: str = "ij",
+        # vector_space: Optional[Dict[str, str]] = None,
+        if_iso: bool = False,
+        actfn: str = "silu",
+        norm_type: str = "layer",
+        reduce_op: Optional[str] = "sum",
+    ) -> None:
+        super().__init__()
+        # self-mix tensor product layer to generize high `l`
+        self.selfmix_tp = SelfMixTP(node_irreps, hidden_mul, norm_type)
+        self.mixed_irreps = self.selfmix_tp.irreps_out
+
+        # spherical to cartesian transform
+        # vec_space = vector_space if vector_space is not None else {i: "1o" for i in indices}
+        self.sph2cart = Sph2Cart(formula=symmetry)
+        self.rtp_irreps = self.sph2cart.rtp_irreps
+
+        # tensor product to form spherical output
+        self.hidden_dim = hidden_dim
+        sph_irreps, instruct = get_feasible_tp(
+            self.mixed_irreps, self.mixed_irreps, self.rtp_irreps, "uuw"
+        )
+        print(self.rtp_irreps, sph_irreps)
+        self.tp = o3.TensorProduct(
+            self.mixed_irreps,
+            self.mixed_irreps,
+            sph_irreps,
+            instruct,
+            internal_weights=False,
+            shared_weights=False,
+        )
+        self.weight_mlp = nn.Sequential(
+            nn.Linear(node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, self.tp.weight_numel),
+        )
+        if sph_irreps != self.rtp_irreps:
+            self.post_lin = o3.Linear(sph_irreps, self.rtp_irreps, biases=False)
+        else:
+            self.post_lin = None
+
+        self.reduce_op = reduce_op
+        self.if_trace = if_iso and order == 2
+
+
+    def forward(
+        self,
+        data: Data,
+        x_scalar: torch.Tensor,
+        x_spherical: torch.Tensor
+    ) -> torch.Tensor:
+        # self mix to expand the spherical features
+        x_mix = self.selfmix_tp(x_spherical)
+        # get the weight for tensor product
+        tp_weight = self.weight_mlp(x_scalar)
+        # tensor product
+        x_sph = self.tp(x_mix, x_mix, tp_weight)
+        if self.post_lin is not None:
+            x_sph = self.post_lin(x_sph)
+        # cartesian transform
+        x_cart = self.sph2cart(x_sph)
+        if self.reduce_op is not None:
+            x_cart = scatter(x_cart, data.batch, dim=0, reduce=self.reduce_op)
+        if self.if_trace:
+            res = torch.diagonal(x_cart, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
+        else:
+            # [y, z, x] -> [x, y, z]
+            for i_dim in range(1, x_cart.dim()):
+                x_cart = x_cart.roll(shifts=1, dims=i_dim)
+            res = x_cart
+        return res
+    
+
 def resolve_output(config: NetConfig):
-    if config.output_mode == "scalar":
+    if '-' in config.output_mode:
+        output_mode, extra = config.output_mode.split('-')
+    else:
+        output_mode, extra = config.output_mode, ''
+    if output_mode == "scalar":
         return ScalarOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
@@ -331,7 +408,7 @@ def resolve_output(config: NetConfig):
             node_bias=config.node_average,
             reduce_op=config.reduce_op,
         )
-    elif config.output_mode == "grad":
+    elif output_mode == "grad":
         return NegGradOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
@@ -339,32 +416,45 @@ def resolve_output(config: NetConfig):
             node_bias=config.node_average,
             reduce_op=config.reduce_op,
         )
-    elif config.output_mode == "vector":
+    elif output_mode == "vector":
         return VectorOut(
             node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
+            node_irreps=config.node_irreps,
             hidden_dim=config.hidden_dim,
             hidden_irreps=config.hidden_irreps,
-            output_dim=config.output_dim,
+            if_norm=(extra == "norm"),
             actfn=config.activation,
             reduce_op=config.reduce_op,
         )
-    elif config.output_mode == "polar":
+    elif output_mode == "polar":
         return PolarOut(
             node_dim=config.node_dim,
-            edge_irreps=config.edge_irreps,
+            node_irreps=config.node_irreps,
             hidden_dim=config.hidden_dim,
             hidden_irreps=config.hidden_irreps,
-            output_dim=config.output_dim,
+            if_iso=(extra == "iso"),
             actfn=config.activation,
             reduce_op=config.reduce_op,
         )
-    elif config.output_mode == "spatial":
+    elif output_mode == "spatial":
         return SpatialOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
             actfn=config.activation,
             reduce_op=config.reduce_op,
        )
+    elif output_mode == "cartesian":
+        return CartTensorOut(
+            node_dim=config.node_dim,
+            node_irreps=config.node_irreps,
+            hidden_dim=config.hidden_dim,
+            hidden_mul=config.hidden_channels,
+            order=config.order,
+            symmetry=config.symmetry,
+            if_iso=(extra == "iso"),
+            actfn=config.activation,
+            norm_type=config.norm_type,
+            reduce_op=config.reduce_op,
+        )
     else:
         raise NotImplementedError(f"output mode {config.output_mode} is not implemented")

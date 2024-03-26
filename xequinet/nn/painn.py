@@ -56,26 +56,23 @@ class PainnMessage(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_dim: int = 128,
+        vec_dim: int = 128,
         num_basis: int = 20,
         actfn: str = "silu",
     ) -> None:
         super().__init__()
         self.node_dim = node_dim
-        self.edge_dim = edge_dim
+        self.vec_dim = vec_dim
         self.num_basis = num_basis
-        self.hidden_dim = self.node_dim + self.edge_dim * 2
+        self.hidden_dim = self.node_dim + self.vec_dim * 2
         # scalar feature
         self.scalar_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.node_dim),
             resolve_actfn(actfn),
             nn.Linear(self.node_dim, self.hidden_dim),
         )
-        nn.init.zeros_(self.scalar_mlp[0].bias)
-        nn.init.zeros_(self.scalar_mlp[2].bias)
         # vector feature
         self.rbf_lin = nn.Linear(self.num_basis, self.hidden_dim)
-        nn.init.zeros_(self.rbf_lin.bias)
 
     def forward(
         self,
@@ -93,7 +90,7 @@ class PainnMessage(nn.Module):
         
         message_scalar, gate_edge_vector, gate_state_vector = torch.split(
             filter_out,
-            [self.node_dim, self.edge_dim, self.edge_dim],
+            [self.node_dim, self.vec_dim, self.vec_dim],
             dim=-1,
         )
         message_vector = x_vector[edge_index[1]] * gate_state_vector.unsqueeze(1)
@@ -112,26 +109,24 @@ class PainnUpdate(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_dim: int = 128,
+        vec_dim: int = 128,
         actfn: str = "silu",
     ) -> None:
         super().__init__()
-        assert node_dim == edge_dim, "node_dim must be equal to edge_dim"
+        assert node_dim == vec_dim, "node_dim must be equal to vec_dim"
         self.node_dim = node_dim
-        self.edge_dim = edge_dim
-        self.hidden_dim = self.node_dim * 2 + self.edge_dim
+        self.vec_dim = vec_dim
+        self.hidden_dim = self.node_dim * 2 + self.vec_dim
         # vector feature
-        self.update_U = nn.Linear(self.edge_dim, self.edge_dim, bias=False)
-        self.update_V = nn.Linear(self.edge_dim, self.edge_dim, bias=False)
+        self.update_U = nn.Linear(self.vec_dim, self.vec_dim, bias=False)
+        self.update_V = nn.Linear(self.vec_dim, self.vec_dim, bias=False)
 
         # scalar feature
         self.update_mlp = nn.Sequential(
-            nn.Linear(self.node_dim + self.edge_dim, self.node_dim),
+            nn.Linear(self.node_dim + self.vec_dim, self.node_dim),
             resolve_actfn(actfn),
             nn.Linear(self.node_dim, self.hidden_dim),
         )
-        nn.init.zeros_(self.update_mlp[0].bias)
-        nn.init.zeros_(self.update_mlp[2].bias)
 
     def forward(
         self,
@@ -147,7 +142,7 @@ class PainnUpdate(nn.Module):
 
         a_ss, a_vv, a_sv = torch.split(
             mlp_out,
-            [self.node_dim, self.edge_dim, self.node_dim],
+            [self.node_dim, self.vec_dim, self.node_dim],
             dim=-1
         )
         d_vector = a_vv.unsqueeze(1) * U_vector

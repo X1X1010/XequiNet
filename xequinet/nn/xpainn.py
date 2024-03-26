@@ -1,5 +1,5 @@
 import math
-from typing import Iterable, Tuple, Union
+from typing import Iterable, Tuple
 
 import torch
 import torch.nn as nn
@@ -7,7 +7,7 @@ from torch_geometric.utils import softmax
 from e3nn import o3
 
 from .o3layer import (
-    Invariant, EquivariantDot, Int2c1eEmbedding,
+    EquivariantDot, Int2c1eEmbedding,
     resolve_actfn, resolve_norm, resolve_o3norm,
 )
 from .rbf import resolve_cutoff, resolve_rbf
@@ -17,7 +17,7 @@ class XEmbedding(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
+        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         embed_basis: str = "gfn2-xtb",
         aux_basis: str = "aux56",
         num_basis: int = 20,
@@ -29,7 +29,7 @@ class XEmbedding(nn.Module):
         Args:
             `embed_dim`: Embedding dimension. (default: 16s + 8p + 4d = 28)
             `node_dim`: Node dimension.
-            `edge_irreps`: Edge irreps.
+            `node_irreps`: Node irreps.
             `num_basis`: Number of the radial basis functions.
             `rbf_kernel`: Radial basis function type.
             `cutoff`: Cutoff distance for the neighbor atoms.
@@ -37,13 +37,13 @@ class XEmbedding(nn.Module):
         """
         super().__init__()
         self.node_dim = node_dim
-        self.edge_irreps = o3.Irreps(edge_irreps)
-        self.edge_num_irreps = self.edge_irreps.num_irreps
+        self.node_irreps = o3.Irreps(node_irreps)
+        self.node_num_irreps = self.node_irreps.num_irreps
         # self.embedding = nn.Embedding(100, self.node_dim)
         self.int2c1e = Int2c1eEmbedding(embed_basis, aux_basis)
         self.node_lin = nn.Linear(self.int2c1e.embed_dim, self.node_dim)
         nn.init.zeros_(self.node_lin.bias)
-        self.sph_harm = o3.SphericalHarmonics(self.edge_irreps, normalize=True, normalization="component")
+        self.sph_harm = o3.SphericalHarmonics(self.node_irreps, normalize=True, normalization="component")
         self.rbf = resolve_rbf(rbf_kernel, num_basis, cutoff)
         self.cutoff_fn = resolve_cutoff(cutoff_fn, cutoff)
 
@@ -87,7 +87,7 @@ class XPainnMessage(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
+        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         num_basis: int = 20,
         actfn: str = "silu",
         norm_type: str = "layer",
@@ -95,15 +95,15 @@ class XPainnMessage(nn.Module):
         """
         Args:
             `node_dim`: Node dimension.
-            `edge_irreps`: Edge irreps.
+            `node_irreps`: Node irreps.
             `num_basis`: Number of the radial basis functions.
             `actfn`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
-        self.edge_irreps = o3.Irreps(edge_irreps)
-        self.edge_num_irreps = self.edge_irreps.num_irreps
-        self.hidden_dim = self.node_dim + self.edge_num_irreps * 2
+        self.node_irreps = o3.Irreps(node_irreps)
+        self.node_num_irreps = self.node_irreps.num_irreps
+        self.hidden_dim = self.node_dim + self.node_num_irreps * 2
         self.num_basis = num_basis
         # scalar feature
         self.scalar_mlp = nn.Sequential(
@@ -111,16 +111,13 @@ class XPainnMessage(nn.Module):
             resolve_actfn(actfn),
             nn.Linear(self.node_dim, self.hidden_dim),
         )
-        nn.init.zeros_(self.scalar_mlp[0].bias)
-        nn.init.zeros_(self.scalar_mlp[2].bias)
         # spherical feature
         self.rbf_lin = nn.Linear(self.num_basis, self.hidden_dim, bias=True)
-        nn.init.zeros_(self.rbf_lin.bias)
         # elementwise tensor product
-        self.rsh_conv = o3.ElementwiseTensorProduct(self.edge_irreps, f"{self.edge_num_irreps}x0e")
+        self.rsh_conv = o3.ElementwiseTensorProduct(self.node_irreps, f"{self.node_num_irreps}x0e")
         # normalization
         self.norm = resolve_norm(norm_type, self.node_dim)
-        self.o3norm = resolve_o3norm(norm_type, self.edge_irreps)
+        self.o3norm = resolve_o3norm(norm_type, self.node_irreps)
 
 
     def forward(
@@ -170,39 +167,37 @@ class XPainnUpdate(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
-        edge_irreps: Union[str, o3.Irreps, Iterable] = "128x0e + 64x1o + 32x2e",
+        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         actfn: str = "silu",
         norm_type: str = "layer",
     ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
-            `edge_irreps`: Edge irreps.
+            `node_irreps`: Node irreps.
             `actfn`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
-        self.edge_irreps = o3.Irreps(edge_irreps)
-        self.edge_num_irreps = self.edge_irreps.num_irreps
+        self.node_irreps = o3.Irreps(node_irreps)
+        self.node_num_irreps = self.node_irreps.num_irreps
         self.hidden_dim = self.node_dim * 2 + self.edge_num_irreps
         # spherical feature
-        self.update_U = o3.Linear(self.edge_irreps, self.edge_irreps, biases=True)
-        self.update_V = o3.Linear(self.edge_irreps, self.edge_irreps, biases=True)
-        self.invariant = Invariant(self.edge_irreps)
-        self.equidot = EquivariantDot(self.edge_irreps)
-        self.dot_lin = nn.Linear(self.edge_num_irreps, self.node_dim, bias=False)
-        self.rsh_conv = o3.ElementwiseTensorProduct(self.edge_irreps, f"{self.edge_num_irreps}x0e")
+        self.update_U = o3.Linear(self.node_irreps, self.node_irreps, biases=True)
+        self.update_V = o3.Linear(self.node_irreps, self.node_irreps, biases=True)
+        self.invariant = o3.Norm(self.node_irreps)
+        self.equidot = EquivariantDot(self.node_irreps)
+        self.dot_lin = nn.Linear(self.node_num_irreps, self.node_dim, bias=False)
+        self.rsh_conv = o3.ElementwiseTensorProduct(self.node_irreps, f"{self.node_num_irreps}x0e")
         # scalar feature
         self.update_mlp = nn.Sequential(
-            nn.Linear(self.node_dim + self.edge_num_irreps, self.node_dim),
+            nn.Linear(self.node_dim + self.node_num_irreps, self.node_dim),
             resolve_actfn(actfn),
             nn.Linear(self.node_dim, self.hidden_dim),
         )
-        nn.init.zeros_(self.update_mlp[0].bias)
-        nn.init.zeros_(self.update_mlp[2].bias)
         # normalization
         self.norm = resolve_norm(norm_type, self.node_dim)
-        self.o3norm = resolve_o3norm(norm_type, self.edge_irreps)
+        self.o3norm = resolve_o3norm(norm_type, self.node_irreps)
 
 
     def forward(
@@ -249,9 +244,7 @@ class EleEmbedding(nn.Module):
         self.node_dim = node_dim
         self.sqrt_dim = math.sqrt(node_dim)
         self.q_linear = nn.Linear(node_dim, node_dim)
-        nn.init.zeros_(self.q_linear.bias)
         self.k_linear = nn.Linear(1, node_dim)
-        nn.init.zeros_(self.k_linear.bias)
         self.v_linear = nn.Linear(1, node_dim, bias=False)
 
     def forward(

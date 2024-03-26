@@ -13,7 +13,7 @@ from ase.md.velocitydistribution import (
     MaxwellBoltzmannDistribution, Stationary, ZeroRotation
 )
 
-from xequinet.interface import XeqCalculator
+from ..interface import XeqCalculator
 
 
 default_settings = {
@@ -138,28 +138,11 @@ def resolve_ensemble(atoms: Atoms, **kwargs):
         raise NotImplementedError(f"Unknown ensemble: {ensemble}")
 
 
-def main():
-    # parse arguments
-    parser = argparse.ArgumentParser(description="XequiNet molecular dynamics script")
-    parser.add_argument(
-        "settings", type=str, default=None,
-        help="Setting file for the molecular dynamics. (md.json)",
-    )
-    parser.add_argument(
-        "--warning", "-w", action="store_true",
-        help="Whether to show warning messages",
-    )
-    args = parser.parse_args()
-
-    # open warning or not
-    if not args.warning:
-        import warnings
-        warnings.filterwarnings("ignore")
-    
+def run_md(args: argparse.Namespace) -> None:
     # dump settings
     settings = default_settings.copy()
-    if args.settings is not None:
-        with open(args.settings, 'r') as f:
+    if args.inp is not None:
+        with open(args.inp, 'r') as f:
             settings.update(json.load(f))
 
     # set random seed
@@ -200,7 +183,3 @@ def main():
     # convert trajectory to xyz
     if settings["traj_xyz"] is not None:
         traj2xyz(settings["trajectory"], settings["traj_xyz"], settings["columns"])
-
-
-if __name__ == "__main__":
-    main()
