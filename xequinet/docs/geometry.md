@@ -3,7 +3,7 @@ We use JIT model for geometry optimization and molecular dynamics and the two ty
 
 One can JIT compile a model for geometry optimization by running
 ```shell
-xeqjit -c example.pt
+xeq jit -c example.pt
 ```
 Then one can get `example.jit`, which can be used like this:
 ```python
@@ -22,7 +22,7 @@ gradient = result["gradient"]  # nuclear gradient in Hartree/Bohr: torch.Tensor[
 ```
 The other type is for molecular dynamics which can be obtained by running
 ```shell
-xeqjit -c example.jit --md
+xeq jit -c example.jit --md
 ```
 Similarly, one can get `example.jit`, which is a little bit more complex to use.
 ```python
@@ -45,11 +45,11 @@ virials = result["virials"]   # atomic virials in eV: torch.Tensor[natom, 3, 3]
 ## Geometry Optimization
 Any input format that can be recognized by ASE can be used. For example, to optimize molecule written in `ABC.xyz`, one can run
 ```shell
-xeqopt -c example.jit ABC.xyz
+xeq opt -c example.jit -in ABC.xyz
 ```
 Then the optimized struct will be written in `ABC_opt.xyz`. We can further do vibrational frequency analysis by
 ```shell
-xeqopt -c example.jit --freq ABC.xyz
+xeq opt -c example.jit --freq -in ABC.xyz
 ```
 Additional file `ABC_freq.log` will be written to show the thermodynamic result.
 ```shell
@@ -78,7 +78,7 @@ Check out `xequinet/run/dynamics.py` for detailed parameters.
 
 Then start running MD by
 ```shell
-xeqmd md_set.json
+xeq md -in md_set.json
 ```
 For PIMD, we use **i-PI** through socket. For **i-PI**, see https://ipi-code.org/
 
@@ -104,5 +104,5 @@ Add the following settings to **i-PI** input file `pimd_set.xml`
 ```
 Then start PIMD by running
 ```shell
-i-pi pimd_set.xml & xeqipi pimd_set.xml
+i-pi pimd_set.xml & xeq ipi -in pimd_set.xml
 ```

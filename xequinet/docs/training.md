@@ -71,7 +71,7 @@ Firstly, set the training configuration file `config.json` in working directory 
 ```
 Then simply run the following command according to your GPUs and port.
 ```
-torchrun --nproc_per_node=${n_gpu} --master_port=${port} --no-python xeqtrain --config config.json
+torchrun --nproc_per_node=${n_gpu} --master_port=${port} --no-python xeq train --config config.json
 ```
 `--config` can be abbreviated to `-C`. If you don't specify it, it will read `config.json` by default.
 
@@ -80,10 +80,10 @@ During training, `loss.log` , `run_name_k.pt` and `run_name_last.pt` will be aut
 ### Test
 Similarily, prepare the dataset and configuration file `config.json`. Run
 ```
-xeqtest --config config.json --ckpt run_name_0.pt
+xeq test --config config.json --ckpt run_name_0.pt
 ```
 You can obtain the detailed arguments by
 ```
-xeqtest -h
+xeq -h
 ```
 Test result will be recorded in `run_name_test.log`.

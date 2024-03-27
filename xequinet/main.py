@@ -11,7 +11,7 @@ def main() -> None:
     # task selection
     parser.add_argument(
         "task", type=str,
-        choices=["train", "test", "infer", "opt", "jit", "md", "pimd"],
+        choices=["train", "test", "infer", "opt", "jit", "md", "ipi"],
         help="Task selection.",
     )    
     # common arguments
@@ -117,7 +117,7 @@ def main() -> None:
         run_opt(args)
     elif args.task == "md":
         run_md(args)
-    elif args.task == "pimd":
+    elif args.task == "ipi":
         run_pimd(args)
     else:
         raise NotImplementedError(f"Unknown task: {args.task}")

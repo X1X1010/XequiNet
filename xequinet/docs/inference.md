@@ -33,10 +33,10 @@ Specially, one can use `charge=?` and `multiplicity=?` to denote the properties 
 
 **Run inference**
 ```
-xeqinfer -c run_name_k.pt inf_mol.xyz
+xeq infer -c run_name_k.pt -in inf_mol.xyz
 ```
 The prediction result will be writen in `example.log`. Use
 ```
-xeqinfer -h
+xeq -h
 ```
 for detailed arguments.
