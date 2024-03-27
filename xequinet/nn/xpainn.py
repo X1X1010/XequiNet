@@ -7,7 +7,7 @@ from torch_geometric.utils import softmax
 from e3nn import o3
 
 from .o3layer import (
-    EquivariantDot, Int2c1eEmbedding,
+    Invariant, EquivariantDot, Int2c1eEmbedding,
     resolve_actfn, resolve_norm, resolve_o3norm,
 )
 from .rbf import resolve_cutoff, resolve_rbf
@@ -140,15 +140,15 @@ class XPainnMessage(nn.Module):
             `new_scalar`: New scalar features.
             `new_spherical`: New spherical features.
         """
-        scalar_in: torch.Tensor = self.norm(x_scalar)
-        spherical_in: torch.Tensor = self.o3norm(x_spherical)
+        scalar_in = self.norm(x_scalar)
+        spherical_in = self.o3norm(x_spherical)
         scalar_out = self.scalar_mlp(scalar_in)
         filter_weight = self.rbf_lin(rbf) * fcut
         filter_out = scalar_out[edge_index[1]] * filter_weight
         
         gate_state_spherical, gate_edge_spherical, message_scalar = torch.split(
             filter_out,
-            [self.edge_num_irreps, self.edge_num_irreps, self.node_dim],
+            [self.node_num_irreps, self.node_num_irreps, self.node_dim],
             dim=-1,
         )
         message_spherical = self.rsh_conv(spherical_in[edge_index[1]], gate_state_spherical)
@@ -181,11 +181,11 @@ class XPainnUpdate(nn.Module):
         self.node_dim = node_dim
         self.node_irreps = o3.Irreps(node_irreps)
         self.node_num_irreps = self.node_irreps.num_irreps
-        self.hidden_dim = self.node_dim * 2 + self.edge_num_irreps
+        self.hidden_dim = self.node_dim * 2 + self.node_num_irreps
         # spherical feature
         self.update_U = o3.Linear(self.node_irreps, self.node_irreps, biases=True)
         self.update_V = o3.Linear(self.node_irreps, self.node_irreps, biases=True)
-        self.invariant = o3.Norm(self.node_irreps)
+        self.invariant = Invariant(self.node_irreps)
         self.equidot = EquivariantDot(self.node_irreps)
         self.dot_lin = nn.Linear(self.node_num_irreps, self.node_dim, bias=False)
         self.rsh_conv = o3.ElementwiseTensorProduct(self.node_irreps, f"{self.node_num_irreps}x0e")
@@ -224,7 +224,7 @@ class XPainnUpdate(nn.Module):
 
         a_vv, a_sv, a_ss = torch.split(
             mlp_out,
-            [self.edge_num_irreps, self.node_dim, self.node_dim],
+            [self.node_num_irreps, self.node_dim, self.node_dim],
             dim=-1
         )
         d_spherical = self.rsh_conv(U_spherical, a_vv)

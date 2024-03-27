@@ -1,3 +1,4 @@
+import warnings
 import argparse
 from xequinet.run import (
     run_train, run_test, run_infer, compile_model,
@@ -26,6 +27,11 @@ def main() -> None:
         "--verbose", "-v", type=int, default=0, choices=[0, 1, 2],
         help="Verbose level (default: 0).",
     )
+    # train
+    parser.add_argument(
+        "--only-process", action="store_true",
+        help="Whether to only process the data.",
+    )
     # test
     parser.add_argument(
         "--ckpt", "-c", type=str, default=None,
@@ -36,7 +42,7 @@ def main() -> None:
         help="Batch size for testing or inference. (default: 32)",
     )
     parser.add_argument(
-        "--no-force", action="store_true",
+        "--no-force", "-nf", action="store_true",
         help="Whether testing without force when output mode is 'grad'.",
     )
     parser.add_argument(
@@ -88,7 +94,7 @@ def main() -> None:
     )
     # input
     parser.add_argument(
-        "inp", type=str, default=None,
+        "--input", "-in", type=str, default=None,
         help="""Input file.
             For inference and optimization, it should be xyz file.
             For molecular dynamics, it should be settings file.    
@@ -96,9 +102,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     
-    if not args.warning:
-        import warnings
-        warnings.filterwarnings("ignore")
+    if args.warning:
+        warnings.filterwarnings("once")
 
     if args.task == "train":
         run_train(args)

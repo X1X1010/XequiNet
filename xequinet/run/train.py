@@ -63,6 +63,10 @@ def run_train(args: argparse.Namespace) -> None:
     train_dataset = create_dataset(config, "train", local_rank)
     valid_dataset = create_dataset(config, "valid", local_rank)
     
+    if args.only_process:
+        log.s.info("Data processed.")
+        return
+    
     # set dataloader
     train_sampler = DistributedSampler(train_dataset, world_size, local_rank, shuffle=True)
     valid_sampler = DistributedSampler(valid_dataset, world_size, local_rank, shuffle=False)

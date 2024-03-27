@@ -104,7 +104,7 @@ class NegGradOut(ScalarOut):
         batch = data.batch; coord = data.pos
         res = self.out_mlp(x_scalar)
         if self.reduce_op is not None:
-            res =  scatter(res, batch, dim=0, reduce=self.reduce_op)
+            res = scatter(res, batch, dim=0, reduce=self.reduce_op)
         grad = torch.autograd.grad(
             [res.sum(),],
             [coord,],

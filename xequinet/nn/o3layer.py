@@ -10,6 +10,35 @@ from e3nn.util.jit import compile_mode
 from ..utils import get_embedding_tensor
 
 
+@compile_mode("trace")
+class Invariant(nn.Module):
+    """Modolus of each irrep in a direct sum of irreps."""
+    def __init__(self, irreps_in: Iterable, squared: bool = False, eps: float = 1e-5) -> None:
+        super().__init__()
+
+        irreps_in = o3.Irreps(irreps_in).simplify()
+        irreps_out = o3.Irreps([(mul, "0e") for mul, _ in irreps_in])
+
+        instr = [(i, i, i, "uuu", False, ir.dim) for i, (mul, ir) in enumerate(irreps_in)]
+
+        self.tp = o3.TensorProduct(irreps_in, irreps_in, irreps_out, instr, irrep_normalization="component")
+
+        self.irreps_in = irreps_in
+        self.irreps_out = irreps_out.simplify()
+        self.squared = squared
+        self.eps = eps
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.irreps_in})"
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.tp(x, x)
+        if self.squared:
+            return out
+        else:
+            return torch.sqrt(out + self.eps**2) - self.eps
+
+
 def resolve_actfn(actfn: str, devide_x: bool = False) -> nn.Module:
     """Helper function to return activation function"""
     actfn = actfn.lower()
@@ -43,7 +72,7 @@ class Gate(nn.Module):
     ) -> None:
         super().__init__()
         irreps_in = o3.Irreps(irreps_in).simplify()
-        self.invariant = o3.Norm(irreps_in)
+        self.invariant = Invariant(irreps_in)
         if refine:
             self.activation = nn.Sequential(
                 nn.Linear(irreps_in.num_irreps, irreps_in.num_irreps),
@@ -119,7 +148,7 @@ class EquivariantDot(nn.Module):
 
 
 class EquivariantLayerNorm(nn.Module):
-    def __init__(self, irreps, affine=True) -> None:
+    def __init__(self, irreps, affine: bool = True, eps: float = 1e-5) -> None:
         super().__init__()
 
         self.irreps = o3.Irreps(irreps)
@@ -135,7 +164,7 @@ class EquivariantLayerNorm(nn.Module):
             ix += ir.dim * mul
         self.register_buffer('scalar_index', torch.LongTensor(scalar_index))
 
-        self.invariant = o3.Norm(self.irreps)
+        self.invariant = Invariant(self.irreps)
         self.scalar_mul = o3.ElementwiseTensorProduct(self.irreps, f"{self.num_features}x0e")
 
         weight = torch.ones(self.num_features)
@@ -147,6 +176,7 @@ class EquivariantLayerNorm(nn.Module):
             self.register_buffer('affine_weight', weight)
             self.register_buffer('affine_bias', bias)
 
+        self.eps = eps
 
     def forward(self, node_input: torch.Tensor) -> torch.Tensor:
         assert node_input.shape[-1] == self.dim, "Input tensor must have the same last dimension as the irreps"
@@ -160,8 +190,8 @@ class EquivariantLayerNorm(nn.Module):
         )
 
         input_norm = self.invariant(node_input)
-        input_1_rms = torch.reciprocal(torch.sqrt(torch.square(input_norm).mean(dim=1, keepdim=True)))
-        node_input = node_input * input_1_rms
+        input_inv_rms = torch.reciprocal(torch.sqrt(torch.square(input_norm).mean(dim=1, keepdim=True) + self.eps))
+        node_input = node_input * input_inv_rms
         
         node_input = self.scalar_mul(node_input, self.affine_weight.unsqueeze(0))
         node_input = node_input.index_add(

@@ -9,9 +9,9 @@ from e3nn import o3
 from torch_scatter import scatter
 
 from .rbf import resolve_rbf, resolve_cutoff
-from .o3layer import resolve_actfn
+from .o3layer import resolve_actfn, EquivariantDot, Int2c1eEmbedding, Gate
+from .xpainn import EleEmbedding
 from .tp import get_feasible_tp
-from .o3layer import EquivariantDot, Int2c1eEmbedding, Gate
 from .matlayer import SelfLayer, PairLayer, Expansion
 
 
@@ -157,21 +157,14 @@ class NodewiseInteraction(nn.Module):
     ) -> torch.Tensor:
         if self.not_first_layer:
             pre_x = self.lin_node0(node_feat)
+            x_scalar = pre_x[:, : self.num_scalar]
             s0 = self.inner_dot(pre_x[edge_index[0]], pre_x[edge_index[1]])[:, self.num_scalar :]
-            s0 = torch.cat([
-                pre_x[edge_index[0]][:, : self.num_scalar],
-                pre_x[edge_index[1]][:, : self.num_scalar],
-                s0
-            ], dim=-1)
             x = self.lin_node1(self.gate(node_feat))
         else:
             x = node_feat
+            x_scalar = x[:, : self.num_scalar]
             s0 = self.inner_dot(x[edge_index[0]], x[edge_index[1]])[:, self.num_scalar :]
-            s0 = torch.cat([
-                x[edge_index[0]][:, : self.num_scalar],
-                x[edge_index[1]][:, : self.num_scalar],
-                s0
-            ], dim=-1)
+        s0 = torch.cat([x_scalar[edge_index[0]], x_scalar[edge_index[1]], s0], dim=-1)
         x_j = x[edge_index[1]]
         tp_weight = self.mlp_edge_scalar(s0) * self.mlp_edge_rbf(edge_attr)
         msg_j = self.tp(x_j, edge_rsh, tp_weight)
@@ -267,3 +260,56 @@ class MatrixOut(nn.Module):
         offdiagnol_block_T = torch.index_select(offdiagnol_block.transpose(-1, -2), dim=0, index=src_indices)
         offdiagnol_block = 0.5 * (offdiagnol_block + offdiagnol_block_T)
         return diagnol_block, offdiagnol_block
+    
+
+class NodeInterWithEle(NodewiseInteraction):
+    """
+    E(3) Graph Convolution Module with electron embedding.
+    """
+    def __init__(
+        self,
+        irreps_node_in: Iterable,
+        irreps_node_out: Iterable,
+        edge_attr_dim: int = 20,
+        actfn: str = "silu",
+    ) -> None:
+        super().__init__(
+            irreps_node_in, irreps_node_out, edge_attr_dim, actfn,
+        )
+        self.charge_ebd = EleEmbedding(self.num_scalar)
+        self.spin_ebd = EleEmbedding(self.num_scalar)
+
+    def forward(
+        self,
+        node_feat: torch.Tensor,
+        edge_attr: torch.Tensor,
+        edge_rsh: torch.Tensor,
+        edge_index: torch.Tensor,
+        batch: torch.Tensor,
+        charge: torch.Tensor,
+        spin: torch.Tensor
+    ) -> torch.Tensor:
+        if self.not_first_layer:
+            pre_x = self.lin_node0(node_feat)
+            s0 = self.inner_dot(pre_x[edge_index[0]], pre_x[edge_index[1]])[:, self.num_scalar :]
+            x_scalar = pre_x[:, : self.num_scalar]
+        else:
+            x = node_feat
+            x_scalar = x[:, : self.num_scalar]
+            s0 = self.inner_dot(x[edge_index[0]], x[edge_index[1]])[:, self.num_scalar :]
+        x_scalar += (
+            self.charge_ebd(x_scalar, charge, batch) + self.spin_ebd(x_scalar, spin, batch)
+        )
+        s0 = torch.cat([x_scalar[edge_index[0]], x_scalar[edge_index[1]], s0], dim=-1)
+        x_j = x[edge_index[1]]
+        tp_weight = self.mlp_edge_scalar(s0) * self.mlp_edge_rbf(edge_attr)
+        msg_j = self.tp(x_j, edge_rsh, tp_weight)
+        accu_msg = scatter(msg_j, edge_index[0], dim=0, dim_size=x.shape[0])
+
+        if self.not_first_layer:
+            accu_msg += x
+        out = self.lin_node2(accu_msg)
+
+        if self.not_first_layer:
+            out += node_feat
+        return out

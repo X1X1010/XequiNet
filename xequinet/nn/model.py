@@ -12,7 +12,8 @@ from .painn import (
 )
 from .xe3net import LTCEmbeding
 from .xqhnet import (
-    MatEmbedding, NodewiseInteraction, MatrixTrans, MatrixOut
+    MatEmbedding, NodewiseInteraction, NodeInterWithEle,
+    MatrixTrans, MatrixOut,
 )
 from .output import resolve_output
 from ..utils import NetConfig, MatToolkit
@@ -243,7 +244,7 @@ class XPaiNNLTC(nn.Module):
         return result
 
 
-class XQHNet(nn.Module):
+class MatNetBase(nn.Module):
     def __init__(self, config: NetConfig) -> None:
         super().__init__()
         assert config.mat_conv_blocks >= config.action_blocks
@@ -260,16 +261,6 @@ class XQHNet(nn.Module):
         )
         config.node_irreps = f"{self.embed.node_irreps}"  # for hyper parameter saving, not important
         self.mat_conv = nn.ModuleList()
-        for idx in range(config.mat_conv_blocks):
-            irreps_in = f"{config.node_dim}x0e" if idx == 0 else config.node_irreps
-            self.mat_conv.append(
-                NodewiseInteraction(
-                    irreps_node_in=irreps_in,
-                    irreps_node_out=config.node_irreps,
-                    edge_attr_dim=config.num_basis,
-                    actfn=config.activation,
-                )
-            )
         self.mat_trans = nn.ModuleList([
             MatrixTrans(
                 node_channels=config.node_channels,
@@ -288,7 +279,21 @@ class XQHNet(nn.Module):
             max_l=config.max_l,
             actfn=config.activation,
         )
-    
+
+
+class XQHNet(MatNetBase):
+    def __init__(self, config: NetConfig) -> None:
+        super().__init__(config)
+        for idx in range(config.mat_conv_blocks):
+            irreps_in = f"{config.node_dim}x0e" if idx == 0 else config.node_irreps
+            self.mat_conv.append(
+                NodewiseInteraction(
+                    irreps_node_in=irreps_in,
+                    irreps_node_out=config.node_irreps,
+                    edge_attr_dim=config.num_basis,
+                    actfn=config.activation,
+                )
+            )
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -308,17 +313,51 @@ class XQHNet(nn.Module):
         return self.output(fii, fij, node_0, edge_index_full)
 
 
+class XQHNetEle(MatNetBase):
+    def __init__(self, config: NetConfig) -> None:
+        super().__init__(config)
+        for idx in range(config.mat_conv_blocks):
+            irreps_in = f"{config.node_dim}x0e" if idx == 0 else config.node_irreps
+            self.mat_conv.append(
+                NodeInterWithEle(
+                    irreps_node_in=irreps_in,
+                    irreps_node_out=config.node_irreps,
+                    edge_attr_dim=config.num_basis,
+                    actfn=config.activation,
+                )
+            )
+    def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            `data`: Input data.
+        Returns:
+            `result`: Tuple[diagnol, off-diagnol].
+        """
+        at_no = data.at_no; pos = data.pos; batch = data.batch
+        charge = data.charge; spin = data.spin
+        edge_index = data.edge_index; edge_index_full = data.edge_index_full
+        node_feat, rbf, rsh, rbf_full = self.embed(at_no, pos, edge_index, edge_index_full)
+        node_0, fii, fij = node_feat, None, None
+        for pre_conv in self.mat_conv[:self.num_pre_conv]:
+            node_feat = pre_conv(node_feat, rbf, rsh, edge_index, batch, charge, spin)
+        for mat_conv, mat_trans in zip(self.mat_conv[self.num_pre_conv:], self.mat_trans):
+            node_feat = mat_conv(node_feat, rbf, rsh, edge_index, batch, charge, spin)
+            fii, fij = mat_trans(node_feat, rbf_full, edge_index_full, fii, fij)
+        return self.output(fii, fij, node_0, edge_index_full)
+
 
 def resolve_model(config: NetConfig) -> nn.Module:
     if config.version.lower() in ["xpainn", "xpainn-pbc"]:
         return XPaiNN(config)
     elif config.version.lower() in ["xpainn-ele", "xpainn-ele-pbc"]:
         return XPaiNNEle(config)
+    elif config.version.lower() == "xqhnet-mat":
+        return XQHNet(config)
+    elif config.version.lower() == "xqhnet-mat-ele":
+        return XQHNetEle(config)
     elif config.version.lower() == "xpainn-ltc-pbc":
         return XPaiNNLTC(config)
     elif config.version.lower() == "painn":
         return PaiNN(config)
-    elif config.version.lower() == "xqhnet-mat":
-        return XQHNet(config)
     else:
         raise NotImplementedError(f"Unsupported model {config.version}")
