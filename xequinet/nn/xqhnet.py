@@ -291,15 +291,15 @@ class NodeInterWithEle(NodewiseInteraction):
     ) -> torch.Tensor:
         if self.not_first_layer:
             pre_x = self.lin_node0(node_feat)
-            s0 = self.inner_dot(pre_x[edge_index[0]], pre_x[edge_index[1]])[:, self.num_scalar :]
             x_scalar = pre_x[:, : self.num_scalar]
+            s0 = self.inner_dot(pre_x[edge_index[0]], pre_x[edge_index[1]])[:, self.num_scalar :]
+            x = self.lin_node1(self.gate(node_feat))
         else:
             x = node_feat
             x_scalar = x[:, : self.num_scalar]
             s0 = self.inner_dot(x[edge_index[0]], x[edge_index[1]])[:, self.num_scalar :]
-        x_scalar += (
-            self.charge_ebd(x_scalar, charge, batch) + self.spin_ebd(x_scalar, spin, batch)
-        )
+        x_electron = self.charge_ebd(x_scalar, charge, batch) + self.spin_ebd(x_scalar, spin, batch)
+        x_scalar = x_electron + x_scalar
         s0 = torch.cat([x_scalar[edge_index[0]], x_scalar[edge_index[1]], s0], dim=-1)
         x_j = x[edge_index[1]]
         tp_weight = self.mlp_edge_scalar(s0) * self.mlp_edge_rbf(edge_attr)

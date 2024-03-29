@@ -272,7 +272,7 @@ def test_matrix(
                     mat_edge_index = datum.edge_index_full
                 else:
                     mat_edge_index = datum.edge_index
-                pred_matrix = mat_toolkit.assemble_blocks(node_blocks, edge_blocks, mat_edge_index)
+                pred_matrix = mat_toolkit.assemble_blocks(datum.at_no, node_blocks, edge_blocks, mat_edge_index)
                 X.append(pred_matrix.cpu())
                 real_matrix = datum.target_matrix
                 Y.append(real_matrix.cpu())

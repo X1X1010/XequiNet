@@ -141,8 +141,8 @@ def resolve_ensemble(atoms: Atoms, **kwargs):
 def run_md(args: argparse.Namespace) -> None:
     # dump settings
     settings = default_settings.copy()
-    if args.inp is not None:
-        with open(args.inp, 'r') as f:
+    if args.input is not None:
+        with open(args.input, 'r') as f:
             settings.update(json.load(f))
 
     # set random seed

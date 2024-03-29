@@ -282,7 +282,7 @@ class Trainer:
             self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
         if self.epoch % self.config.log_epoch == 0:
-            self.log.f.info("EMA Valid MAE: {mae:10.7f}".format(mae=mae))
+            self.log.f.info(f"EMA Valid MAE: {mae:10.7f}")
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
@@ -546,10 +546,12 @@ class MatTrainer(Trainer):
             loss = self.lossfn(batch_pred, batch_real)
             # back propagation
             self.optimizer.zero_grad()
+            # with torch.autograd.detect_anomaly():
             loss.backward()
             # gradient clipping
             if self.config.grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip, error_if_nonfinite=True)
+            self.optimizer.step()
             # update EMA model
             if self.ema_model is not None:
                 self.ema_model.update_parameters(self.model)
@@ -597,7 +599,8 @@ class MatTrainer(Trainer):
                 l1loss_node.item(), l1loss_edge.item(), real_node.size(0), real_edge.size(0),
             )
         node_mae, edge_mae, total_mae = self.meter.reduce()
-        self.log.f.info(f"Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}")
+        if self.epoch % self.config.log_epoch == 0:
+            self.log.f.info(f"Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}")
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(total_mae)
@@ -624,7 +627,8 @@ class MatTrainer(Trainer):
                 l1loss_node.item(), l1loss_edge.item(), real_node.size(0), real_edge.size(0),
             )
         node_mae, edge_mae, total_mae = self.meter.reduce()
-        self.log.f.info(f"EMA Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}")
+        if self.epoch % self.config.log_epoch == 0:
+            self.log.f.info(f"EMA Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}")
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(total_mae)

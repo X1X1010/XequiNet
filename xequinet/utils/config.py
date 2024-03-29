@@ -109,7 +109,7 @@ class NetConfig(BaseModel):
             hyper_params.update(self.model_dump(include={
                 "order", "symmetry", "hidden_channels",
             }))
-        elif self.version == "xqhnet":
+        elif "mat" in self.version:
             hyper_params.update(self.model_dump(include={
                 "mat_conv_blocks", "node_channels", "hidden_channels", "max_l",
                 "possible_elements", "target_basis", "require_full_edges",

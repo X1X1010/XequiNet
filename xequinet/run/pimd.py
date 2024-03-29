@@ -7,7 +7,7 @@ from ..interface import iPIDriver
 
 def run_pimd(args: argparse.Namespace) -> None:
     # parse the XML file
-    tree = ET.parse(args.inp)
+    tree = ET.parse(args.input)
     root = tree.getroot()
     kwargs = {
         "ckpt_file": "model.jit",

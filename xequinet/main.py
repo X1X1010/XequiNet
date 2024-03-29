@@ -2,7 +2,7 @@ import warnings
 import argparse
 from xequinet.run import (
     run_train, run_test, run_infer, compile_model,
-    run_opt, run_md, run_pimd,
+    run_opt, run_md, run_pimd, run_std_from_fock
 )
 
 def main() -> None:
@@ -11,7 +11,7 @@ def main() -> None:
     # task selection
     parser.add_argument(
         "task", type=str,
-        choices=["train", "test", "infer", "opt", "jit", "md", "ipi"],
+        choices=["train", "test", "infer", "opt", "jit", "md", "ipi", "stda"],
         help="Task selection.",
     )    
     # common arguments
@@ -92,6 +92,11 @@ def main() -> None:
         "--temp", "-T", type=float, default=298.15,
         help="Temperature for vibrational frequencies.",
     )
+    # stda
+    parser.add_argument(
+        "--nstates", type=int, default=5,
+        help="Number of states for sTDA.",
+    )
     # input
     parser.add_argument(
         "--input", "-in", type=str, default=None,
@@ -119,6 +124,8 @@ def main() -> None:
         run_md(args)
     elif args.task == "ipi":
         run_pimd(args)
+    elif args.task == "stda":
+        run_std_from_fock(args)
     else:
         raise NotImplementedError(f"Unknown task: {args.task}")
 

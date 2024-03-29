@@ -273,9 +273,9 @@ def run_infer(args: argparse.Namespace) -> None:
     model.eval()
 
     # load input data
-    dataset = TextDataset(file=args.inp)
+    dataset = TextDataset(file=args.input)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=0)
-    outp = f"{args.inp.split('/')[-1].split('.')[0]}.log" if args.output is None else args.output
+    outp = f"{args.input.split('/')[-1].split('.')[0]}.log" if args.output is None else args.output
 
     # get atom reference
     atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)

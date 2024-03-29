@@ -125,7 +125,7 @@ class MatToolkit:
         Pad the matrix with zeros.
         """
         num_atoms = at_no.shape[0]
-        padded_mat = torch.zeros((num_atoms * self.basis_irreps.dim, num_atoms * self.basis_irreps.dim), dtype=mat.dtype)
+        padded_mat = torch.zeros((num_atoms * self.basis_irreps.dim, num_atoms * self.basis_irreps.dim), dtype=mat.dtype, device=mat.device)
         mask1d = torch.cat([self.atom2mask[at.item()] for at in at_no])
         mask2d = torch.outer(mask1d, mask1d)
         padded_mat[mask2d] = mat.flatten()
@@ -147,11 +147,11 @@ class MatToolkit:
         Get the full edge index for the system without self-loop.
         """
         num_atoms = at_no.shape[0]
-        edge_index_full = torch.zeros((2, num_atoms * (num_atoms - 1)), dtype=torch.long)
+        edge_index_full = torch.zeros((2, num_atoms * (num_atoms - 1)), dtype=torch.long, device=at_no.device)
         for i in range(num_atoms):
             edge_index_full[0, i * (num_atoms - 1): (i+1) * (num_atoms - 1)] = i
             edge_index_full[1, i * (num_atoms - 1): (i+1) * (num_atoms - 1)] = torch.cat([
-                torch.arange(0, i), torch.arange(i+1, num_atoms)
+                torch.arange(0, i, device=at_no.device), torch.arange(i+1, num_atoms, device=at_no.device)
             ])
         return edge_index_full
         
@@ -160,13 +160,14 @@ class MatToolkit:
         """
         Get the padded blocks for the matrix.
         """
+        device = mat.device
         num_atoms = at_no.shape[0]
         padded_mat = self.padding_matrix(at_no, mat)  # [num_atoms * num_orb, num_atoms * num_orb]
         padded_mat = padded_mat.view(num_atoms, self.basis_irreps.dim, num_atoms, self.basis_irreps.dim)
         padded_mat = padded_mat.permute(0, 2, 1, 3)
         # for p orbital, change the order to (y, z, x)
         padded_mat = padded_mat[:, :, self.m_idx, :][:, :, :, self.m_idx]
-        node_blocks = padded_mat[torch.arange(num_atoms), torch.arange(num_atoms)]
+        node_blocks = padded_mat[torch.arange(num_atoms, device=device), torch.arange(num_atoms, device=device)]
         edge_blocks = padded_mat[edge_index[0], edge_index[1]]
         return node_blocks, edge_blocks
 
@@ -181,14 +182,17 @@ class MatToolkit:
         return node_mask, edge_mask
     
 
-    def assemble_blocks(self, node_blocks: torch.Tensor, edge_blocks: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+    def assemble_blocks(
+            self, at_no: torch.Tensor, node_blocks: torch.Tensor, edge_blocks: torch.Tensor, edge_index: torch.Tensor
+        ) -> torch.Tensor:
         """
         Assemble the blocks to the full matrix.
         """
+        device = node_blocks.device
         num_atoms = node_blocks.shape[0]
         num_orb = node_blocks.shape[1]
-        padded_mat = torch.zeros((num_atoms, num_atoms, num_orb, num_orb), dtype=node_blocks.dtype)
-        padded_mat[torch.arange(num_atoms), torch.arange(num_atoms)] = node_blocks
+        padded_mat = torch.zeros((num_atoms, num_atoms, num_orb, num_orb), dtype=node_blocks.dtype, device=device)
+        padded_mat[torch.arange(num_atoms, device=device), torch.arange(num_atoms, device=device)] = node_blocks
         padded_mat[edge_index[0], edge_index[1]] = edge_blocks
         # for p orbital, change the order to (x, y, z)
         padded_mat_ = padded_mat.clone()
@@ -202,16 +206,16 @@ class MatToolkit:
 
 
 if __name__ == "__main__":
-    mole = gto.M(atom="H 0 0 0; O 0 0 2.1", basis="def2-svp", charge=-1)
+    mole = gto.M(atom="H 0 0 0; O 0 0 2.1", basis="sto-3g", charge=-1)
     at_no = torch.from_numpy(mole.atom_charges())
     ovlp = mole.intor("int1e_ovlp")
     ovlp = torch.tensor(ovlp)
-    mat_toolkit = MatToolkit("def2-svp", ["H", "O"])
+    mat_toolkit = MatToolkit("sto-3g", ["H", "O"])
     edge_index_full = mat_toolkit.get_edge_index_full(at_no)
     node_blocks, edge_blocks = mat_toolkit.get_padded_blocks(at_no, ovlp, edge_index_full)
     node_mask, edge_mask = mat_toolkit.get_mask(at_no, edge_index_full)
-    # print(node_blocks, '\n', edge_blocks)
-    # print(node_mask, '\n', edge_mask)
+    print(node_blocks, '\n', edge_blocks)
+    print(node_mask, '\n', edge_mask)
     full_mat = mat_toolkit.assemble_blocks(node_blocks, edge_blocks, edge_index_full)
     print(ovlp)
     print(full_mat)

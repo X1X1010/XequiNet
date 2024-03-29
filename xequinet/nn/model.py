@@ -353,7 +353,7 @@ def resolve_model(config: NetConfig) -> nn.Module:
         return XPaiNNEle(config)
     elif config.version.lower() == "xqhnet-mat":
         return XQHNet(config)
-    elif config.version.lower() == "xqhnet-mat-ele":
+    elif config.version.lower() == "xqhnet-ele-mat":
         return XQHNetEle(config)
     elif config.version.lower() == "xpainn-ltc-pbc":
         return XPaiNNLTC(config)

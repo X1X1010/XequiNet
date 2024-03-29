@@ -93,7 +93,7 @@ def to_shermo(shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray)
 def run_opt(args: argparse.Namespace) -> None:
     if args.freq:
         # create a new freq log file
-        freq_log = args.inp.split(".")[0] + "_freq.log"
+        freq_log = args.input.split(".")[0] + "_freq.log"
         with open(freq_log, 'w') as f:
            f.write(f"XequiNet Frequency Calculation\n\n")
         from pyscf.hessian import thermo
@@ -105,7 +105,7 @@ def run_opt(args: argparse.Namespace) -> None:
     model = torch.jit.load(args.ckpt, map_location=device)
     model.eval()
 
-    atoms_list = ase_read(args.inp, index=':')
+    atoms_list = ase_read(args.input, index=':')
     # loop over molecules
     for atoms in atoms_list:
         # convert `ase.Atoms` to `pyscf.gto.Mole`
@@ -149,12 +149,12 @@ def run_opt(args: argparse.Namespace) -> None:
             new_mol.stdout.write("\n\n")
             new_mol.stdout.close()
             if args.shm:
-                shm_file = args.inp.split(".")[0] + "_freq.shm"
+                shm_file = args.input.split(".")[0] + "_freq.shm"
                 to_shermo(shm_file, new_mol, energy, harmonic_res['freq_wavenumber'])
 
         # write optimized geometry
         if not args.no_opt:
-            opt_out = args.inp.split(".")[0] + "_opt.xyz"
+            opt_out = args.input.split(".")[0] + "_opt.xyz"
             with open(opt_out, 'a') as f:
                 f.write(f"{new_mol.natm}\n")
                 if conv:

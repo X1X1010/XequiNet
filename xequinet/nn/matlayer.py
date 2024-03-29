@@ -216,7 +216,7 @@ class Expansion(nn.Module):
             # mul_ir_out.dim = mul_ir_out.mul * (2 * mul_ir_out.ir.dim + 1)
             out_dim1 = mul_ir_out1[0] * (2 * mul_ir_out1[1][0] + 1)   # mul * (2l + 1)
             out_dim2 = mul_ir_out2[0] * (2 * mul_ir_out2[1][0] + 1)   # mul * (2l + 1)
-            result = result.view(-1, out_dim1, out_dim2)
+            result = result.reshape(-1, out_dim1, out_dim2)
             key = (ins[1], ins[2])
             if key in outputs:
                 outputs[key] += result
