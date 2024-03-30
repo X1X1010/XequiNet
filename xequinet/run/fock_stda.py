@@ -242,10 +242,10 @@ def run_std_from_fock(args) -> None:
             charge=charge,
             basis=config.target_basis,
             unit=config.default_length_unit,
-            verbose=args.verbose,
-            output=outp,
         )
-    
+        mol.stdout = open(outp, 'a')
+        mol.stdout.write(f"\n\nsTD result for molecule {imol:6d}: \n")
+
         ovlp = mol.intor("int1e_ovlp")
         orb_energies, orb_coeff = cal_orbital_and_energies(ovlp, fock)
 
@@ -255,19 +255,16 @@ def run_std_from_fock(args) -> None:
         mo_occ = np.array(mo_occ) 
 
         fake_method = dft.RKS(mol)
-        fake_method.verbose = args.verbose
-        fake_method.xc = "B3LYP"
+        fake_method.xc = args.xc
         fake_method.mo_occ = mo_occ
         fake_method.mo_energy = orb_energies
         fake_method.mo_coeff = orb_coeff
-        fake_method.converged = True
+        if args.as_init_guess:
+            dm1 = fake_method.make_rdm1()
+            fake_method.kernel(dm0=dm1)
+        else:
+            fake_method.converged = True
 
         stda = sTDA(fake_method)
-        e, xy = stda.kernel(nstates=args.nstates)
-        e_eV = e * unit_conversion("Hartree", "eV")
-
-        with open(outp, 'a') as wf:
-            wf.write(f"sTD result for molecule {imol:6d}: \n")
-            for i, excite_eng in enumerate(e_eV):
-                wf.write(f"Excited state {i + 1}: {excite_eng:10.4f}\n")
-
+        stda.kernel(nstates=args.nstates)
+        stda.analyze()

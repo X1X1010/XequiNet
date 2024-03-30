@@ -168,7 +168,7 @@ class PaiNN(nn.Module):
             `result`: Output.
         """
         # get required input from data
-        at_no = data.at_no; pos=data.pos; edge_index=data.edge_index; batch_idx=data.batch
+        at_no = data.at_no; pos=data.pos; edge_index=data.edge_index
         # embed input
         x_scalar, rbf, envelop, rsh = self.embed(at_no, pos, edge_index)
         # initialize vector with zeros

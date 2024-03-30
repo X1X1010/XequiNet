@@ -29,7 +29,7 @@ class NetConfig(BaseModel):
     norm_type: str = "nonorm"                      # normalization layer type
     output_mode: str = "scalar"                    # task type (`scalar` is for energy like, `grad` is for force like, etc.)
     output_dim: int = 1                            # output dimension of multi-task (only for `scalar` mode)
-    reduce_op: str = "sum"                         # reduce operation for the output
+    reduce_op: Optional[str] = "sum"               # reduce operation for the output
     atom_ref: Optional[Union[str, dict]] = None    # atomic reference (only for `scalar` mode)
     batom_ref: Optional[Union[str, dict]] = None   # base atomic reference (only for `scalar` mode)
     node_average: Union[bool, float] = False       # whether to add the node average to the output (only for `scalar` mode)
@@ -39,7 +39,7 @@ class NetConfig(BaseModel):
 
     # additional configurations for n-order tensor output
     order: int = 2                                 # order of the output tensor
-    symmetry: str = "ij"                           # indices symmetry of the tensor, "ij" for arbitary order 2 tensor etc.
+    required_symm: str = "ij"                           # indices symmetry of the tensor, "ij" for arbitary order 2 tensor etc.
     hidden_channels: int = 64                      # hidden channels for each `Irrep`
 
     # additional configurations for matrice output

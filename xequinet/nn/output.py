@@ -319,19 +319,25 @@ class CartTensorOut(nn.Module):
         node_dim: int = 128,
         node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
-        hidden_mul: int = 32,
+        hidden_channels: int = 32,
         order: int = 2,
         symmetry: str = "ij",
         # vector_space: Optional[Dict[str, str]] = None,
         if_iso: bool = False,
         actfn: str = "silu",
-        norm_type: str = "layer",
+        # norm_type: str = "layer",
         reduce_op: Optional[str] = "sum",
     ) -> None:
         super().__init__()
         # self-mix tensor product layer to generize high `l`
-        self.selfmix_tp = SelfMixTP(node_irreps, hidden_mul, norm_type)
-        self.mixed_irreps = self.selfmix_tp.irreps_out
+        # self.selfmix_tp = SelfMixTP(node_irreps, hidden_channels, norm_type)
+        # self.mixed_irreps = self.selfmix_tp.irreps_out
+        self.node_irreps = o3.Irreps(node_irreps)
+        hidden_irreps = []
+        for mul, irrep in self.node_irreps:
+            hidden_irreps.append((hidden_channels, irrep))
+        self.hidden_irreps = o3.Irreps(hidden_irreps)
+        self.pre_lin = o3.Linear(node_irreps, self.hidden_irreps, biases=False)
 
         # spherical to cartesian transform
         # vec_space = vector_space if vector_space is not None else {i: "1o" for i in indices}
@@ -340,13 +346,17 @@ class CartTensorOut(nn.Module):
 
         # tensor product to form spherical output
         self.hidden_dim = hidden_dim
+        # sph_irreps, instruct = get_feasible_tp(
+        #     self.mixed_irreps, self.mixed_irreps, self.rtp_irreps, "uuw"
+        # )
         sph_irreps, instruct = get_feasible_tp(
-            self.mixed_irreps, self.mixed_irreps, self.rtp_irreps, "uuw"
+            self.hidden_irreps, self.hidden_irreps, self.rtp_irreps, "uuw"
         )
-        print(self.rtp_irreps, sph_irreps)
         self.tp = o3.TensorProduct(
-            self.mixed_irreps,
-            self.mixed_irreps,
+            # self.mixed_irreps,
+            # self.mixed_irreps,
+            self.hidden_irreps,
+            self.hidden_irreps,
             sph_irreps,
             instruct,
             internal_weights=False,
@@ -373,11 +383,12 @@ class CartTensorOut(nn.Module):
         x_spherical: torch.Tensor
     ) -> torch.Tensor:
         # self mix to expand the spherical features
-        x_mix = self.selfmix_tp(x_spherical)
+        # x_in = self.selfmix_tp(x_spherical)
+        x_in = self.pre_lin(x_spherical)
         # get the weight for tensor product
         tp_weight = self.weight_mlp(x_scalar)
         # tensor product
-        x_sph = self.tp(x_mix, x_mix, tp_weight)
+        x_sph = self.tp(x_in, x_in, tp_weight)
         if self.post_lin is not None:
             x_sph = self.post_lin(x_sph)
         # cartesian transform
@@ -448,12 +459,12 @@ def resolve_output(config: NetConfig):
             node_dim=config.node_dim,
             node_irreps=config.node_irreps,
             hidden_dim=config.hidden_dim,
-            hidden_mul=config.hidden_channels,
+            hidden_channels=config.hidden_channels,
             order=config.order,
-            symmetry=config.symmetry,
+            symmetry=config.required_symm,
             if_iso=(extra == "iso"),
             actfn=config.activation,
-            norm_type=config.norm_type,
+            # norm_type=config.norm_type,
             reduce_op=config.reduce_op,
         )
     else:

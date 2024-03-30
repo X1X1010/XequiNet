@@ -24,7 +24,7 @@ def main() -> None:
         help="Whether to show warning messages",
     )
     parser.add_argument(
-        "--verbose", "-v", type=int, default=0, choices=[0, 1, 2],
+        "--verbose", "-v", type=int, default=0,
         help="Verbose level (default: 0).",
     )
     # train
@@ -94,8 +94,16 @@ def main() -> None:
     )
     # stda
     parser.add_argument(
+        "--xc", type=str, default="B3LYP",
+        help="Exchange-correlation functional for SCF.",
+    )
+    parser.add_argument(
         "--nstates", type=int, default=5,
         help="Number of states for sTDA.",
+    )
+    parser.add_argument(
+        "--as-init-guess", action="store_true",
+        help="Use Fock matrix as initial guess for SCF, then run sTDA.",
     )
     # input
     parser.add_argument(
