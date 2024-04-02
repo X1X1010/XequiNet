@@ -405,11 +405,93 @@ class CartTensorOut(nn.Module):
         return res
     
 
+class MegaCartTensorOut(nn.Module):
+    """
+    Output Module for order n tensor via tensor product of input hidden irreps and cartesian transform. 
+    """
+    def __init__(
+        self,
+        node_dim: int = 128,
+        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
+        hidden_dim: int = 64,
+        hidden_channels: int = 32,
+        order: int = 2,
+        symmetry: str = "ij",
+        # vector_space: Optional[Dict[str, str]] = None,
+        if_iso: bool = False,
+        actfn: str = "silu",
+        norm_type: str = "layer",
+        reduce_op: Optional[str] = "sum",
+    ) -> None:
+        super().__init__()
+        # self-mix tensor product layer to generize high `l`
+        self.selfmix_tp = SelfMixTP(node_irreps, hidden_channels, norm_type)
+        self.mixed_irreps = self.selfmix_tp.irreps_out
+
+        # spherical to cartesian transform
+        # vec_space = vector_space if vector_space is not None else {i: "1o" for i in indices}
+        self.sph2cart = Sph2Cart(formula=symmetry)
+        self.rtp_irreps = self.sph2cart.rtp_irreps
+
+        # tensor product to form spherical output
+        self.hidden_dim = hidden_dim
+        sph_irreps, instruct = get_feasible_tp(
+            self.mixed_irreps, self.mixed_irreps, self.rtp_irreps, "uuw"
+        )
+        self.tp = o3.TensorProduct(
+            self.mixed_irreps,
+            self.mixed_irreps,
+            sph_irreps,
+            instruct,
+            internal_weights=False,
+            shared_weights=False,
+        )
+        self.weight_mlp = nn.Sequential(
+            nn.Linear(node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, self.tp.weight_numel),
+        )
+        if sph_irreps != self.rtp_irreps:
+            self.post_lin = o3.Linear(sph_irreps, self.rtp_irreps, biases=False)
+        else:
+            self.post_lin = None
+
+        self.reduce_op = reduce_op
+        self.if_trace = if_iso and order == 2
+
+
+    def forward(
+        self,
+        data: Data,
+        x_scalar: torch.Tensor,
+        x_spherical: torch.Tensor
+    ) -> torch.Tensor:
+        # self mix to expand the spherical features
+        x_in = self.selfmix_tp(x_spherical)
+        # get the weight for tensor product
+        tp_weight = self.weight_mlp(x_scalar)
+        # tensor product
+        x_sph = self.tp(x_in, x_in, tp_weight)
+        if self.post_lin is not None:
+            x_sph = self.post_lin(x_sph)
+        # cartesian transform
+        x_cart = self.sph2cart(x_sph)
+        if self.reduce_op is not None:
+            x_cart = scatter(x_cart, data.batch, dim=0, reduce=self.reduce_op)
+        if self.if_trace:
+            res = torch.diagonal(x_cart, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
+        else:
+            # [y, z, x] -> [x, y, z]
+            for i_dim in range(1, x_cart.dim()):
+                x_cart = x_cart.roll(shifts=1, dims=i_dim)
+            res = x_cart
+        return res
+
+
 def resolve_output(config: NetConfig):
-    if '-' in config.output_mode:
-        output_mode, extra = config.output_mode.split('-')
-    else:
-        output_mode, extra = config.output_mode, ''
+    splited_str = config.output_mode.rsplit('-', 1)
+    output_mode = splited_str[0]
+    extra = splited_str[1] if len(splited_str) == 2 else ''
     if output_mode == "scalar":
         return ScalarOut(
             node_dim=config.node_dim,
@@ -465,6 +547,19 @@ def resolve_output(config: NetConfig):
             if_iso=(extra == "iso"),
             actfn=config.activation,
             # norm_type=config.norm_type,
+            reduce_op=config.reduce_op,
+        )
+    elif output_mode == "megacart":
+        return MegaCartTensorOut(
+            node_dim=config.node_dim,
+            node_irreps=config.node_irreps,
+            hidden_dim=config.hidden_dim,
+            hidden_channels=config.hidden_channels,
+            order=config.order,
+            symmetry=config.required_symm,
+            if_iso=(extra == "iso"),
+            actfn=config.activation,
+            norm_type=config.norm_type,
             reduce_op=config.reduce_op,
         )
     else:

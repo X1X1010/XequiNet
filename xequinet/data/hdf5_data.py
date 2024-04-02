@@ -135,7 +135,10 @@ class BaseH5Dataset:
             else:
                 lattice = np.zeros((3, 3))
             # prepare the base `Data`
-            pbc_data = Data(at_no=at_no, lattice=torch.from_numpy(lattice).to(torch.get_default_dtype()))
+            pbc_data = Data(
+                at_no=at_no,
+                lattice=torch.from_numpy(lattice).to(torch.get_default_dtype()).unsqueeze(0),
+            )
             # read coordinates
             if "coordinates_A" in pbc_grp.keys():
                 coords = pbc_grp["coordinates_A"][()]
@@ -221,8 +224,8 @@ class BaseH5Dataset:
                     data.edge_index_full = mat_edge_index
                 else:
                     mat_edge_index = edge_index
-                if self._mode == "test":
-                    data.target_matrix = matrix
+                # if self._mode == "test":
+                #     data.target_matrix = matrix
                 node_blocks, edge_blocks = mat_toolkit.get_padded_blocks(at_no, matrix, mat_edge_index)
                 node_mask, edge_mask = mat_toolkit.get_mask(at_no, mat_edge_index)
                 data.node_label = node_blocks; data.edge_label = edge_blocks

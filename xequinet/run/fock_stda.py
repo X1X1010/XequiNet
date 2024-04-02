@@ -214,7 +214,7 @@ def run_std_from_fock(args) -> None:
 
 
     with open(outp, 'w') as wf:
-        wf.write("XequiNet predict Fock matrix and run sTD\n")
+        wf.write("XequiNet predict Fock matrix and run sTDA\n")
     
     mat_toolkit = MatToolkit(config.target_basis, config.possible_elements)
     for imol, data in enumerate(dataset, start=1):
@@ -265,6 +265,7 @@ def run_std_from_fock(args) -> None:
         else:
             fake_method.converged = True
 
+        verbose = args.verbose if args.verbose else None
         stda = sTDA(fake_method)
         stda.kernel(nstates=args.nstates)
-        stda.analyze()
+        stda.analyze(verbose=verbose)

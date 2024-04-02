@@ -261,20 +261,23 @@ def test_matrix(
         num_node += real_node.size(0)
         num_edge += real_edge.size(0)
         if verbose >= 1:
-            # steal the sky and change the sun
-            data.node_label = pred_edge_padded
-            data.edge_label = pred_edge_padded
+            data.node_blocks = pred_node_padded
+            data.edge_blocks = pred_edge_padded
+            data._slice_dict["node_blocks"] = data._slice_dict["node_label"]
+            data._slice_dict["edge_blocks"] = data._slice_dict["edge_label"]
+            data._inc_dict["node_blocks"] = data._inc_dict["node_label"]
+            data._inc_dict["edge_blocks"] = data._inc_dict["edge_label"]
             for imol in range(len(data)):
                 datum = data[imol]
-                node_blocks = datum.node_blocks
-                edge_blocks = datum.edge_blocks
+                node_blocks, edge_blocks = datum.node_blocks, datum.edge_blocks
+                node_label, edge_label = datum.node_label, datum.edge_label
                 if hasattr(datum, "edge_index_full"):
                     mat_edge_index = datum.edge_index_full
                 else:
                     mat_edge_index = datum.edge_index
                 pred_matrix = mat_toolkit.assemble_blocks(datum.at_no, node_blocks, edge_blocks, mat_edge_index)
                 X.append(pred_matrix.cpu())
-                real_matrix = datum.target_matrix
+                real_matrix = mat_toolkit.assemble_blocks(datum.at_no, node_label, edge_label, mat_edge_index)
                 Y.append(real_matrix.cpu())
     if verbose >= 1:
         outpt = f"{outfile.rsplit('.', 1)[0]}.pt"
@@ -332,7 +335,7 @@ def run_test(args: argparse.Namespace) -> None:
         test_vector(model, test_loader, device, output_file, args.verbose)
     elif config.output_mode == "polar":
         test_polar(model, test_loader, device, output_file, args.verbose)
-    elif config.output_mode == "cartesian":
+    elif "cart" in config.output_mode:
         test_tensor(model, test_loader, device, output_file, args.verbose)
     else:
         test_scalar(model, test_loader, device, output_file, config.output_dim, args.verbose)
