@@ -19,7 +19,6 @@ from ..utils import (
 )
 
 
-
 class BaseH5Dataset:
     def _init_base(
         self,
