@@ -1,4 +1,6 @@
-from typing import Union
+import abc
+from typing import Union, Iterable
+import functools
 
 import torch
 from torch_cluster import radius_graph
@@ -8,7 +10,13 @@ from .datapoint import XData
 from .radius_graph import radius_graph_pbc
 
 
-class NeighborTransform:
+class Transform(abc.ABC):
+    @abc.abstractmethod
+    def __call__(self, data: XData) -> XData:
+        raise NotImplementedError
+
+
+class NeighborTransform(Transform):
     def __init__(self, cutoff: float) -> None:
         self.cutoff = cutoff
 
@@ -58,7 +66,7 @@ class NeighborTransform:
         return data
 
 
-class DataTypeTransform:
+class DataTypeTransform(Transform):
     def __init__(self, dtype: Union[str, torch.dtype]) -> None:
         if isinstance(dtype, str):
             name_to_dtype = {
@@ -80,3 +88,11 @@ class DataTypeTransform:
             if self._is_float_type(data[k]):
                 data[k] = data[k].to(self.dtype)
         return data
+
+
+class SequentialTransform(Transform):
+    def __init__(self, transforms: Iterable[Transform]) -> None:
+        self.transforms = transforms
+
+    def __call__(self, data: XData) -> XData:
+        return functools.reduce(lambda d, t: t(d), self.transforms, data)

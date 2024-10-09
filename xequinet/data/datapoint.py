@@ -22,6 +22,8 @@ class XData(Data):
         charge: Optional[torch.Tensor] = None,  # [1]
         energy: Optional[torch.Tensor] = None,  # [1]
         forces: Optional[torch.Tensor] = None,  # [N_atoms, 3]
+        base_energy: Optional[torch.Tensor] = None,  # [1]
+        base_forces: Optional[torch.Tensor] = None,  # [N_atoms, 3]
         virial: Optional[torch.Tensor] = None,  # [1, 3, 3]
         atomic_charges: Optional[torch.Tensor] = None,  # [N_atoms]
         **kwargs,
@@ -71,10 +73,16 @@ class XData(Data):
         if energy is not None:
             assert energy.shape == (1,) and energy.dtype == dtype
             self.energy = energy
+        if base_energy is not None:
+            assert base_energy.shape == (1,) and base_energy.dtype == dtype
+            self.base_energy = base_energy
         # forces
         if forces is not None:
             assert forces.shape == (n_atoms, 3) and forces.dtype == dtype
             self.forces = forces
+        if base_forces is not None:
+            assert base_forces.shape == (n_atoms, 3) and base_forces.dtype == dtype
+            self.base_forces = base_forces
         # virial
         if virial is not None:
             assert virial.shape == (1, 3, 3) and virial.dtype == dtype

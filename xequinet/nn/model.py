@@ -1,9 +1,10 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, Dict
 
 import torch
 import torch.nn as nn
 from torch_geometric.data import Data
 
+from xequinet.utils import keys, NetConfig, MatToolkit
 from .xpainn import (
     XEmbedding,
     XPainnMessage,
@@ -15,7 +16,6 @@ from .painn import (
     PainnMessage,
     PainnUpdate,
 )
-from .xe3net import LTCEmbeding
 from .xqhnet import (
     MatEmbedding,
     NodewiseInteraction,
@@ -24,7 +24,89 @@ from .xqhnet import (
     MatrixOut,
 )
 from .output import resolve_output
-from ..utils import NetConfig, MatToolkit
+
+
+def compute_edge_data(
+    data: Dict[str, torch.Tensor],
+    compute_forces: bool = True,
+    compute_virial: bool = False,
+) -> Dict[str, torch.Tensor]:
+    """Preprocess edge data"""
+    pos = data[keys.POSITIONS]
+    edge_index = data[keys.EDGE_INDEX]
+
+    single_graph = False
+    if keys.BATCH not in data:
+        data[keys.BATCH] = torch.zeros(
+            pos.shape[0], dtype=torch.long, device=pos.device
+        )
+        data[keys.BATCH_PTR] = torch.tensor(
+            [0, pos.shape[0]], dtype=torch.long, device=pos.device
+        )
+        single_graph = True
+    elif data[keys.BATCH].max() == 0:
+        single_graph = True
+
+    batch = data[keys.BATCH]
+    n_graphs = data[keys.BATCH_PTR].numel() - 1
+
+    has_cell = keys.CELL in data
+    if has_cell:
+        cell = data[keys.CELL]
+    else:
+        cell = torch.empty((0, 3, 3), device=pos.device)
+
+    if compute_forces:
+        pos.requires_grad_()
+
+    strain = torch.zeros(
+        (n_graphs, 3, 3),
+        dtype=pos.dtype,
+        device=pos.device,
+    )
+
+    if compute_virial:
+        strain.requires_grad_()
+        symm_strain = 0.5 * (strain + strain.transpose(1, 2))
+        # position
+        expanded_strain = torch.index_select(symm_strain, 0, batch)
+        pos = pos + torch.bmm(pos.unsqueeze(1), expanded_strain).squeeze(1)
+        # cell
+        if has_cell:
+            cell = cell + torch.bmm(cell, symm_strain)
+
+    # vectors are pointing from center to neighbor
+    center_idx, neighbor_idx = (
+        edge_index[keys.CENTER_IDX],
+        edge_index[keys.NEIGHBOR_IDX],
+    )
+    vectors = torch.index_select(pos, 0, center_idx) - torch.index_select(
+        pos, 0, neighbor_idx
+    )
+
+    # offsets for periodic boundary conditions
+    if has_cell:
+        cell_offsets = data[keys.CELL_OFFSETS]
+        if single_graph:
+            shifts = torch.einsum("ni, ij -> nj", cell_offsets, cell.squeeze(0))
+            vectors = vectors - shifts
+        else:
+            batch_neighbor = torch.index_select(batch, 0, neighbor_idx)
+            cell_batch = torch.index_select(cell, 0, batch_neighbor)
+            shifts = torch.einsum("ni, nij -> nj", cell_offsets, cell_batch)
+            vectors = vectors - shifts
+
+    # compute distances
+    dist = torch.linalg.norm(vectors, dim=-1)
+
+    data.update(
+        {
+            keys.EDGE_LENGTH: dist,
+            keys.EDGE_VECTOR: vectors,
+            keys.STRAIN: strain,
+        }
+    )
+    return data
 
 
 class XPaiNN(nn.Module):
@@ -70,13 +152,8 @@ class XPaiNN(nn.Module):
         )
         self.out = resolve_output(config)
 
-    def forward(self, data: Data) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
-        """
-        Args:
-            `data`: Input data.
-        Returns:
-            `result`: Output.
-        """
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+
         # get required input from data
         at_no = data.at_no
         pos = data.pos
@@ -225,80 +302,6 @@ class PaiNN(nn.Module):
         return result
 
 
-class XPaiNNLTC(nn.Module):
-    """
-    XPaiNN with lattice embedding. (not Li Tang City 1! 5!)
-    """
-
-    def __init__(self, config: NetConfig) -> None:
-        super().__init__()
-        self.embed = LTCEmbeding(
-            node_dim=config.node_dim,
-            node_irreps=config.node_irreps,
-            embed_basis=config.embed_basis,
-            aux_basis=config.aux_basis,
-            num_basis=config.num_basis,
-            rbf_kernel=config.rbf_kernel,
-            cutoff=config.cutoff,
-            cutoff_fn=config.cutoff_fn,
-        )
-        self.message = nn.ModuleList(
-            [
-                XPainnMessage(
-                    node_dim=config.node_dim,
-                    node_irreps=config.node_irreps,
-                    num_basis=config.num_basis,
-                    actfn=config.activation,
-                    norm_type=config.norm_type,
-                )
-                for _ in range(config.action_blocks)
-            ]
-        )
-        self.update = nn.ModuleList(
-            [
-                XPainnUpdate(
-                    node_dim=config.node_dim,
-                    node_irreps=config.node_irreps,
-                    actfn=config.activation,
-                    norm_type=config.norm_type,
-                )
-                for _ in range(config.action_blocks)
-            ]
-        )
-        self.out = resolve_output(config)
-
-    def forward(self, data: Data) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
-        """
-        Args:
-            `data`: Input data.
-        Returns:
-            `result`: Output.
-        """
-        # get required input from data
-        at_no = data.at_no
-        pos = data.pos
-        edge_index = data.edge_index
-        lattice = data.lattice
-        batch = data.batch
-        if hasattr(data, "shifts"):
-            shifts = data.shifts
-        else:
-            shifts = torch.zeros((edge_index.shape[1], 3), device=pos.device)
-        # embed input
-        x_scalar, x_spherical, rbf, fcut, rsh = self.embed(
-            at_no, lattice, pos, edge_index, shifts, batch
-        )
-        # message passing and node update
-        for msg, upd in zip(self.message, self.update):
-            x_scalar, x_spherical = msg(
-                x_scalar, x_spherical, rbf, fcut, rsh, edge_index
-            )
-            x_scalar, x_spherical = upd(x_scalar, x_spherical)
-        # output
-        result = self.out(data, x_scalar, x_spherical)
-        return result
-
-
 class MatNetBase(nn.Module):
     def __init__(self, config: NetConfig) -> None:
         super().__init__()
@@ -430,8 +433,6 @@ def resolve_model(config: NetConfig) -> nn.Module:
         return XQHNet(config)
     elif config.version.lower() == "xqhnet-ele-mat":
         return XQHNetEle(config)
-    elif config.version.lower() == "xpainn-ltc-pbc":
-        return XPaiNNLTC(config)
     elif config.version.lower() == "painn":
         return PaiNN(config)
     else:

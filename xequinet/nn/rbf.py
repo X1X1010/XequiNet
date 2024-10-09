@@ -16,13 +16,15 @@ def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float) -> nn.Module:
         raise NotImplementedError(f"rbf kernel {rbf_kernel} is not implemented")
 
 
-def resolve_cutoff(cutoff_fn: str, cutoff: float) -> nn.Module:
+def resolve_cutoff(cutoff_fn: str, cutoff: float, **kwargs) -> nn.Module:
     if cutoff_fn == "cosine":
         return CosineCutoff(cutoff)
     elif cutoff_fn == "polynomial":
-        return PolynomialCutoff(cutoff)
+        return PolynomialCutoff(cutoff, **kwargs)
     elif cutoff_fn == "exponential":
         return ExponentialCutoff(cutoff)
+    elif cutoff_fn == "flat":
+        return FlatCutoff(cutoff, **kwargs)
     else:
         raise NotImplementedError(f"cutoff function {cutoff_fn} is not implemented")
 
@@ -64,6 +66,30 @@ class ExponentialCutoff(nn.Module):
             dist < self.cutoff,
             torch.exp(-(dist_**2) / ((self.cutoff - dist_) * (self.cutoff + dist_))),
             zeros,
+        )
+
+
+class FlatCutoff(nn.Module):
+    def __init__(self, cutoff: float, offset_factor: float = 0.1) -> None:
+        super().__init__()
+        assert 0.0 < offset_factor < 1.0
+        self.offset_factor = offset_factor
+        self.inv_offset = 1.0 / offset_factor
+        self.inv_cutoff = 1.0 / cutoff
+
+    def _steep_cutoff(self, d_prime: torch.Tensor) -> torch.Tensor:
+        """steep cutoff function for d_prime > 1.0 - offset_factor"""
+        d_tilde = (1.0 - d_prime) * self.inv_offset
+        steep_cutoff = (3.0 - 2.0 * d_tilde) * d_tilde**2
+        return steep_cutoff
+
+    def forward(self, dist: torch.Tensor) -> torch.Tensor:
+
+        d_prime = dist * self.inv_cutoff  # [nedge, 1] relative distance
+        return torch.where(
+            d_prime < (1.0 - self.offset_factor),
+            torch.ones_like(d_prime),
+            self._steep_cutoff(d_prime),
         )
 
 

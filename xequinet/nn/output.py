@@ -1,18 +1,17 @@
-from typing import Iterable, Tuple, Optional
+from typing import Iterable, Tuple, Optional, Dict
 
 import math
 
 import torch
 import torch.nn as nn
 from torch_geometric.data import Data
-from torch_scatter import scatter
+from torch_scatter import scatter_sum, scatter
 from e3nn import o3
 
+from xequinet.utils import keys, NetConfig, qc
 from .o3layer import Gate, resolve_actfn
 from .xe3net import SelfMixTP, Sph2Cart
 from .tp import get_feasible_tp
-from ..utils import NetConfig
-from ..utils.qc import ATOM_MASS
 
 
 class ScalarOut(nn.Module):
@@ -67,14 +66,15 @@ class ScalarOut(nn.Module):
         return res
 
 
-class NegGradOut(ScalarOut):
+class ForceFieldOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
         actfn: str = "silu",
         node_bias: float = 0.0,
-        reduce_op: Optional[str] = "sum",
+        compute_forces: bool = True,
+        compute_virial: bool = False,
     ) -> None:
         """
         Args:
@@ -82,41 +82,167 @@ class NegGradOut(ScalarOut):
             `hidden_dim`: Dimension of hidden layer.
             `actfn`: Activation function type.
             `node_bias`: Bias for atomic wise output.
-            `reduce_op`: Reduce operation for the output.
+            `compute_forces`: Whether to compute forces.
+            `compute_virial`: Whether to compute virial.
         """
-        super().__init__(node_dim, hidden_dim, 1, actfn, node_bias, reduce_op)
+        super().__init__()
+        self.node_dim = node_dim
+        self.hidden_dim = hidden_dim
+        self.out_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, 1),
+        )
+        nn.init.constant_(self.out_mlp[2].bias, node_bias)
+        self.compute_forces = compute_forces
+        self.compute_virial = compute_virial
+
+    def _compute_forces(
+        self,
+        energy: torch.Tensor,
+        pos: torch.Tensor,
+    ) -> torch.Tensor:
+        grad_outputs = [torch.ones_like(energy)]
+        pos_grad = torch.autograd.grad(
+            outputs=[energy],
+            inputs=[pos],
+            grad_outputs=grad_outputs,
+            retain_graph=self.training,
+            create_graph=self.training,
+        )[0]
+        if pos_grad is None:
+            pos_grad = torch.zeros_like(pos)
+        return -1.0 * pos_grad
+
+    def _compute_virial(
+        self,
+        energy: torch.Tensor,
+        strain: torch.Tensor,
+    ) -> torch.Tensor:
+        grad_outputs = [torch.ones_like(energy)]
+        strain_grad = torch.autograd.grad(
+            outputs=[energy],
+            inputs=[strain],
+            grad_outputs=grad_outputs,
+            retain_graph=self.training,
+            create_graph=self.training,
+        )[0]
+        if strain_grad is None:
+            strain_grad = torch.zeros_like(strain)
+        return -1.0 * strain_grad
+
+    def _compute_forces_and_virial(
+        self,
+        energy: torch.Tensor,
+        pos: torch.Tensor,
+        strain: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        grad_outputs = torch.ones_like(energy)
+        pos_grad, strain_grad = torch.autograd.grad(
+            outputs=[energy],
+            inputs=[pos, strain],
+            grad_outputs=grad_outputs,
+            retain_graph=self.training,
+            create_graph=self.training,
+        )
+        if pos_grad is None:
+            pos_grad = torch.zeros_like(pos)
+        if strain_grad is None:
+            strain_grad = torch.zeros_like(strain)
+        return -1.0 * pos_grad, -1.0 * strain_grad
 
     def forward(
         self,
-        data: Data,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        data: Dict[str, torch.Tensor],
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+
+        batch = data[keys.BATCH]
+        node_invt = data[keys.NODE_INVARIANT]
+        atom_eng_out = self.out_mlp(node_invt)
+
+        if keys.ATOMIC_ENERGIES in data:
+            atomic_energies = data[keys.ATOMIC_ENERGIES] + atom_eng_out
+        else:
+            atomic_energies = atom_eng_out
+        data[keys.ATOMIC_ENERGIES] = atomic_energies
+
+        total_energy = scatter_sum(atomic_energies, batch, dim=0)
+
+        result = {
+            keys.TOTAL_ENERGY: total_energy,
+            keys.ATOMIC_ENERGIES: atomic_energies,
+        }
+        if self.compute_forces and self.compute_virial:
+            forces, virial = self._compute_forces_and_virial(
+                energy=total_energy,
+                pos=data[keys.POSITIONS],
+                strain=data[keys.STRAIN],
+            )
+            result[keys.FORCES] = forces
+            result[keys.VIRIAL] = virial
+        elif self.compute_forces:
+            forces = self._compute_forces(
+                energy=total_energy,
+                pos=data[keys.POSITIONS],
+            )
+            result[keys.FORCES] = forces
+        elif self.compute_virial:
+            virial = self._compute_virial(
+                energy=total_energy,
+                strain=data[keys.STRAIN],
+            )
+            result[keys.VIRIAL] = virial
+        return data, result
+
+
+class ChargeOut(nn.Module):
+    def __init__(
+        self,
+        node_dim: int = 128,
+        hidden_dim: int = 64,
+        actfn: str = "silu",
+        conserve_charge: bool = True,
+    ) -> None:
         """
         Args:
-            `data`: pyg `Data` object.
-            `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features. (Unused in this module)
-        Returns:
-            `res`: Scalar output.
-            `neg_grad`: Negative gradient.
+            `node_dim`: Node dimension.
+            `hidden_dim`: Dimension of hidden layer.
+            `actfn`: Activation function type.
         """
-        batch = data.batch
-        coord = data.pos
-        res = self.out_mlp(x_scalar)
-        if self.reduce_op is not None:
-            res = scatter(res, batch, dim=0, reduce=self.reduce_op)
-        grad = torch.autograd.grad(
-            [
-                res.sum(),
-            ],
-            [
-                coord,
-            ],
-            retain_graph=True,
-            create_graph=True,
-        )[0]
-        return res, -grad
+        super().__init__()
+        self.node_dim = node_dim
+        self.hidden_dim = hidden_dim
+        self.out_mlp = nn.Sequential(
+            nn.Linear(self.node_dim, self.hidden_dim),
+            resolve_actfn(actfn),
+            nn.Linear(self.hidden_dim, 1),
+        )
+        nn.init.zeros_(self.out_mlp[0].bias)
+        nn.init.zeros_(self.out_mlp[2].bias)
+        self.conserve_charge = conserve_charge
+
+    def forward(
+        self, data: Dict[str, torch.Tensor]
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+
+        node_invt = data[keys.NODE_INVARIANT]
+        total_charge = data[keys.TOTAL_CHARGE]
+        batch = data[keys.BATCH]
+        raw_charges = self.out_mlp(node_invt)
+        if self.conserve_charge:
+            raw_total_charge = scatter_sum(raw_charges, batch, dim=0)
+            num_atoms = scatter_sum(
+                torch.ones_like(raw_charges),
+                batch,
+                dim=0,
+            )
+            atomic_charges = raw_charges + (total_charge - raw_total_charge) / num_atoms
+        else:
+            atomic_charges = raw_charges
+
+        data[keys.ATOMIC_CHARGES] = atomic_charges
+        result = {keys.ATOMIC_CHARGES: atomic_charges}
+        return data, result
 
 
 class VectorOut(nn.Module):
@@ -285,7 +411,7 @@ class SpatialOut(nn.Module):
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
-        self.register_buffer("masses", torch.Tensor(ATOM_MASS))
+        self.register_buffer("masses", torch.Tensor(qc.ATOM_MASS))
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_actfn(actfn),
@@ -513,7 +639,7 @@ def resolve_output(config: NetConfig):
             reduce_op=config.reduce_op,
         )
     elif output_mode == "grad":
-        return NegGradOut(
+        return ForceFieldOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
             actfn=config.activation,

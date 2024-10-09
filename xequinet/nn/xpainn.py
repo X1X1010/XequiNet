@@ -1,11 +1,14 @@
 import math
-from typing import Iterable, Tuple
+from typing import Iterable, Dict
+
+from scipy import constants
 
 import torch
 import torch.nn as nn
 from torch_geometric.utils import softmax
 from e3nn import o3
 
+from xequinet.utils import keys, get_default_unit, unit_conversion
 from .o3layer import (
     Invariant,
     EquivariantDot,
@@ -53,37 +56,35 @@ class XEmbedding(nn.Module):
         self.rbf = resolve_rbf(rbf_kernel, num_basis, cutoff)
         self.cutoff_fn = resolve_cutoff(cutoff_fn, cutoff)
 
-    def forward(
-        self,
-        at_no: torch.LongTensor,
-        pos: torch.Tensor,
-        edge_index: torch.Tensor,
-        shifts: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            `x`: Atomic features.
-            `pos`: Atomic coordinates.
-            `edge_index`: Edge index.
-        Returns:
-            `x_scalar`: Scalar features.
-            `rbf`: Values under radial basis functions.
-            `fcut`: Values under cutoff function.
-            `rsh`: Real spherical harmonics.
-        """
-        # calculate distance and relative position
-        vec = pos[edge_index[0]] - pos[edge_index[1]] - shifts
-        dist = torch.linalg.vector_norm(vec, dim=-1, keepdim=True)
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+
+        atomic_numbers = data[keys.ATOMIC_NUMBERS]
+        vectors = data[keys.EDGE_VECTOR]
+        distances = data[keys.EDGE_LENGTH].unsqueeze(-1)
+
         # node linear
-        # x_scalar = self.embedding(at_no)
-        x = self.int2c1e(at_no)
-        x_scalar = self.node_lin(x)
+        node_embed = self.int2c1e(atomic_numbers)
+        node_invariant = self.node_lin(node_embed)
+        data[keys.NODE_INVARIANT] = node_invariant
+
         # calculate radial basis function
-        rbf = self.rbf(dist)
-        fcut = self.cutoff_fn(dist)
+        rbf = self.rbf(distances)
+        fcut = self.cutoff_fn(distances)
+        data[keys.RADIAL_BASIS_FUNCTION] = rbf
+        data[keys.ENVELOPE_FUNCTION] = fcut
         # calculate spherical harmonics  [x, y, z] -> [y, z, x]
-        rsh = self.sph_harm(vec[:, [1, 2, 0]])  # unit vector, normalized by component
-        return x_scalar, rbf, fcut, rsh
+        rsh = self.sph_harm(
+            vectors[:, [1, 2, 0]]
+        )  # unit vector, normalized by component
+        data[keys.SPHERICAL_HARMONICS] = rsh
+
+        node_equivariant = torch.zeros(
+            (node_invariant.shape[0], rsh.shape[1]),
+            device=node_invariant.device,
+        )
+        data[keys.NODE_EQUIVARIANT] = node_equivariant
+
+        return data
 
 
 class XPainnMessage(nn.Module):
@@ -126,47 +127,36 @@ class XPainnMessage(nn.Module):
         self.norm = resolve_norm(norm_type, self.node_dim)
         self.o3norm = resolve_o3norm(norm_type, self.node_irreps)
 
-    def forward(
-        self,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor,
-        rbf: torch.Tensor,
-        fcut: torch.Tensor,
-        rsh: torch.Tensor,
-        edge_index: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features.
-            `rbf`: Radial basis functions.
-            `rsh`: Real spherical harmonics.
-            `edge_index`: Edge index.
-        Returns:
-            `new_scalar`: New scalar features.
-            `new_spherical`: New spherical features.
-        """
-        scalar_in = self.norm(x_scalar)
-        spherical_in = self.o3norm(x_spherical)
-        scalar_out = self.scalar_mlp(scalar_in)
-        filter_weight = self.rbf_lin(rbf) * fcut
-        filter_out = scalar_out[edge_index[1]] * filter_weight
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
-        gate_state_spherical, gate_edge_spherical, message_scalar = torch.split(
+        node_invt = self.norm(data[keys.NODE_INVARIANT])
+        node_equi = self.o3norm(data[keys.NODE_EQUIVARIANT])
+        rbf = data[keys.RADIAL_BASIS_FUNCTION]
+        fcut = data[keys.ENVELOPE_FUNCTION]
+        rsh = data[keys.SPHERICAL_HARMONICS]
+        edge_index = data[keys.EDGE_INDEX]
+        center_idx = edge_index[keys.CENTER_IDX]
+        neighbor_idx = edge_index[keys.NEIGHBOR_IDX]
+
+        inv_out = self.scalar_mlp(node_invt)
+        filter_weight = self.rbf_lin(rbf) * fcut
+        filter_out = inv_out[neighbor_idx] * filter_weight
+
+        gate_state_equi, gate_edge_equi, message_invt = torch.split(
             filter_out,
             [self.node_num_irreps, self.node_num_irreps, self.node_dim],
             dim=-1,
         )
-        message_spherical = self.rsh_conv(
-            spherical_in[edge_index[1]], gate_state_spherical
-        )
-        edge_spherical = self.rsh_conv(rsh, gate_edge_spherical)
-        message_spherical = message_spherical + edge_spherical
+        message_equi = self.rsh_conv(node_equi[neighbor_idx], gate_state_equi)
+        edge_equi = self.rsh_conv(rsh, gate_edge_equi)
+        message_equi = message_equi + edge_equi
 
-        new_scalar = x_scalar.index_add(0, edge_index[0], message_scalar)
-        new_spherical = x_spherical.index_add(0, edge_index[0], message_spherical)
+        ori_invt = data[keys.NODE_INVARIANT]
+        ori_equi = data[keys.NODE_EQUIVARIANT]
+        data[keys.NODE_INVARIANT] = ori_invt.index_add(0, center_idx, message_invt)
+        data[keys.NODE_EQUIVARIANT] = ori_equi.index_add(0, center_idx, message_equi)
 
-        return new_scalar, new_spherical
+        return data
 
 
 class XPainnUpdate(nn.Module):
@@ -209,37 +199,31 @@ class XPainnUpdate(nn.Module):
         self.norm = resolve_norm(norm_type, self.node_dim)
         self.o3norm = resolve_o3norm(norm_type, self.node_irreps)
 
-    def forward(
-        self,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features.
-        Returns:
-            `new_scalar`: New scalar features.
-            `new_spherical`: New spherical features.
-        """
-        scalar_in: torch.Tensor = self.norm(x_scalar)
-        spherical_in: torch.Tensor = self.o3norm(x_spherical)
-        U_spherical = self.update_U(spherical_in)
-        V_spherical = self.update_V(spherical_in)
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
-        V_invariant = self.invariant(V_spherical)
-        mlp_in = torch.cat([scalar_in, V_invariant], dim=-1)
+        node_invt = self.norm(data[keys.NODE_INVARIANT])
+        node_equi = self.o3norm(data[keys.NODE_EQUIVARIANT])
+
+        U_equi = self.update_U(node_equi)
+        V_equi = self.update_V(node_equi)
+
+        V_invt = self.invariant(V_equi)
+        mlp_in = torch.cat([node_invt, V_invt], dim=-1)
         mlp_out = self.update_mlp(mlp_in)
 
         a_vv, a_sv, a_ss = torch.split(
             mlp_out, [self.node_num_irreps, self.node_dim, self.node_dim], dim=-1
         )
-        d_spherical = self.rsh_conv(U_spherical, a_vv)
-        inner_prod = self.equidot(U_spherical, V_spherical)
+        d_equi = self.rsh_conv(U_equi, a_vv)
+        inner_prod = self.equidot(U_equi, V_equi)
         inner_prod = self.dot_lin(inner_prod)
-        d_scalar = a_sv * inner_prod + a_ss
+        d_invt = a_sv * inner_prod + a_ss
 
-        return x_scalar + d_scalar, x_spherical + d_spherical
+        ori_invt = data[keys.NODE_INVARIANT]
+        ori_equi = data[keys.NODE_EQUIVARIANT]
+        data[keys.NODE_INVARIANT] = ori_invt + d_invt
+        data[keys.NODE_EQUIVARIANT] = ori_equi + d_equi
+        return data
 
 
 class EleEmbedding(nn.Module):
@@ -274,3 +258,66 @@ class EleEmbedding(nn.Module):
         dot = torch.sum(q * k, dim=1, keepdim=True) / self.sqrt_dim
         attn = softmax(dot, batch, dim=0)
         return attn * v
+
+
+class CoulombWithCutoff(nn.Module):
+    def __init__(
+        self,
+        coulomb_cutoff: float = 10.0,
+    ) -> None:
+        super().__init__()
+        self.coulomb_cutoff = coulomb_cutoff
+        self.flat_envelope = resolve_cutoff("flat", coulomb_cutoff)
+        si_constant = 1.0 / (4 * math.pi * constants.epsilon_0)
+        eng_unit, len_unit = get_default_unit()
+        self.constant = si_constant * unit_conversion(
+            "J*m/C^2", f"{eng_unit}*{len_unit}^2"
+        )
+
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+
+        long_edge_index = data[keys.LONG_EDGE_INDEX]
+        center_idx = long_edge_index[keys.CENTER_IDX]
+        neighbor_idx = long_edge_index[keys.NEIGHBOR_IDX]
+        long_dist = data[keys.LONG_EDGE_LENGTH].unsqueeze(-1)
+        atomic_charges = data[keys.ATOMIC_CHARGES]
+
+        q1 = atomic_charges[center_idx]
+        q2 = atomic_charges[neighbor_idx]
+        envelope = self.flat_envelope(long_dist)
+        # half of the Coulomb energy to avoid double counting
+        pair_energies = 0.5 * envelope * self.constant * q1 * q2 / long_dist
+        if keys.ATOMIC_ENERGIES in data:
+            atomic_energies = data[keys.ATOMIC_ENERGIES]
+        else:
+            atomic_energies = torch.zeros_like(atomic_charges)
+        atomic_energies = atomic_energies.index_add(
+            0, center_idx, pair_energies.squeeze()
+        )
+        data[keys.ATOMIC_ENERGIES] = atomic_energies
+
+        return data
+
+
+class HierarchicalCutoff(nn.Module):
+    def __init__(
+        self,
+        long_cutoff: float = 10.0,
+        cutoff: float = 5.0,
+    ) -> None:
+        super().__init__()
+        assert cutoff <= long_cutoff
+        self.cutoff = cutoff
+        self.long_cutoff = long_cutoff
+
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+
+        ori_edge_index = data[keys.EDGE_INDEX]
+        ori_edge_length = data[keys.EDGE_LENGTH]
+        edge_mask = ori_edge_length < self.cutoff
+        data[keys.EDGE_INDEX] = ori_edge_index[:, edge_mask]
+        data[keys.EDGE_LENGTH] = ori_edge_length[edge_mask]
+        data[keys.LONG_EDGE_INDEX] = ori_edge_index
+        data[keys.LONG_EDGE_LENGTH] = ori_edge_length
+
+        return data
