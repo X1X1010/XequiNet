@@ -10,7 +10,9 @@ from ase import units
 from ase.io import read as ase_read, write as ase_write
 from ase.io import Trajectory
 from ase.md.velocitydistribution import (
-    MaxwellBoltzmannDistribution, Stationary, ZeroRotation
+    MaxwellBoltzmannDistribution,
+    Stationary,
+    ZeroRotation,
 )
 
 from ..interface import XeqCalculator
@@ -23,21 +25,20 @@ default_settings = {
     "ckpt_file": "model.jit",
     "cutoff": 5.0,
     "max_edges": 100,
-
-    "ensemble": "NVT",         # choices=["NVE", "NVT", "NPT"]
-    "dynamics": "Nose-Hoover", # choices=["Langevin", "Andersen", "Nose-Hoover", "Berendsen", "Parrinello-Rahman"]
-    "timestep": 1.0,           # (fs)
+    "ensemble": "NVT",  # choices=["NVE", "NVT", "NPT"]
+    "dynamics": "Nose-Hoover",  # choices=["Langevin", "Andersen", "Nose-Hoover", "Berendsen", "Parrinello-Rahman"]
+    "timestep": 1.0,  # (fs)
     "steps": 50,
-    "temperature": 298.15,     # (K)
-    "friction": 0.002,         # for Langevin
-    "andersen_prob": 0.01,     # for Andersen
-    "taut": 100.0,             # for Nose-Hoover and Berendsen (fs)
-    "taup": 500.0,             # for Berendsen (fs)
+    "temperature": 298.15,  # (K)
+    "friction": 0.002,  # for Langevin
+    "andersen_prob": 0.01,  # for Andersen
+    "taut": 100.0,  # for Nose-Hoover and Berendsen (fs)
+    "taup": 500.0,  # for Berendsen (fs)
     # "externalstress": 1.01325, # for Parrinello-Rahman (bar)
-    "pressure": 1.01325,       # for Berendsen or Parrinello-Rahman (bar)
-    "pfactor": 1.0,            # for Parrinello-Rahman (GPa)
-    "compressibility": 5e-7,   # for Berendsen (1/bar)
-    "mask": None,              # for Parrinello-Rahman
+    "pressure": 1.01325,  # for Berendsen or Parrinello-Rahman (bar)
+    "pfactor": 1.0,  # for Parrinello-Rahman (GPa)
+    "compressibility": 5e-7,  # for Berendsen (1/bar)
+    "mask": None,  # for Parrinello-Rahman
     "fixcm": True,
     "logfile": "md.log",
     "loginterval": 5,
@@ -45,16 +46,18 @@ default_settings = {
     "append_trajectory": False,
     "traj_xyz": None,
     "columns": ["symbols", "positions"],
-
     "seed": None,
 }
 
 
-def traj2xyz(trajectory: str, traj_xyz: str, columns: list = ["symbols", "positions"]) -> None:
+def traj2xyz(
+    trajectory: str, traj_xyz: str, columns: list = ["symbols", "positions"]
+) -> None:
     """
     Convert trajectory file to extend xyz file.
     """
-    with open(traj_xyz, 'w'): pass
+    with open(traj_xyz, "w"):
+        pass
     for atoms in Trajectory(trajectory):
         ase_write(
             filename=traj_xyz,
@@ -71,66 +74,109 @@ def resolve_ensemble(atoms: Atoms, **kwargs):
     dynamics = kwargs["dynamics"]
     if ensemble == "NVE":
         from ase.md.verlet import VelocityVerlet
+
         return VelocityVerlet(
-            atoms, timestep=kwargs["timestep"] * units.fs,
-            trajectory=kwargs["trajectory"], logfile=kwargs["logfile"],
-            loginterval=kwargs["loginterval"], append_trajectory=kwargs["append_trajectory"],
+            atoms,
+            timestep=kwargs["timestep"] * units.fs,
+            trajectory=kwargs["trajectory"],
+            logfile=kwargs["logfile"],
+            loginterval=kwargs["loginterval"],
+            append_trajectory=kwargs["append_trajectory"],
         )
     elif ensemble == "NVT":
         if dynamics == "Langevin":
             from ase.md.langevin import Langevin
+
             return Langevin(
-                atoms, timestep=kwargs["timestep"] * units.fs, temperature_K=kwargs["temperature"],
-                friction=kwargs["friction"] / units.fs, fixcm=kwargs["fixcm"],
-                trajectory=kwargs["trajectory"], logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"], append_trajectory=kwargs["append_trajectory"],
+                atoms,
+                timestep=kwargs["timestep"] * units.fs,
+                temperature_K=kwargs["temperature"],
+                friction=kwargs["friction"] / units.fs,
+                fixcm=kwargs["fixcm"],
+                trajectory=kwargs["trajectory"],
+                logfile=kwargs["logfile"],
+                loginterval=kwargs["loginterval"],
+                append_trajectory=kwargs["append_trajectory"],
             )
         if dynamics == "Andersen":
             from ase.md.andersen import Andersen
+
             return Andersen(
-                atoms, timestep=kwargs["timestep"] * units.fs, temperature_K=kwargs["temperature"],
-                andersen_prob=kwargs["andersen_prob"], fixcm=kwargs["fixcm"],
-                trajectory=kwargs["trajectory"], logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"], append_trajectory=kwargs["append_trajectory"],
+                atoms,
+                timestep=kwargs["timestep"] * units.fs,
+                temperature_K=kwargs["temperature"],
+                andersen_prob=kwargs["andersen_prob"],
+                fixcm=kwargs["fixcm"],
+                trajectory=kwargs["trajectory"],
+                logfile=kwargs["logfile"],
+                loginterval=kwargs["loginterval"],
+                append_trajectory=kwargs["append_trajectory"],
             )
-        elif dynamics == "Nose-Hoover":      # Nose-Hoover NVT is NPT with no pressure
+        elif dynamics == "Nose-Hoover":  # Nose-Hoover NVT is NPT with no pressure
             from ase.md.npt import NPT
+
             if np.all(atoms.cell == 0):  # if cell is not set
                 atoms.set_cell(np.eye(3) * 100.0)
             return NPT(
-                atoms, timestep=kwargs["timestep"] * units.fs, temperature_K=kwargs["temperature"],
-                externalstress=0.0, ttime=kwargs["taut"] * units.fs,
-                trajectory=kwargs["trajectory"], logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"], append_trajectory=kwargs["append_trajectory"],
+                atoms,
+                timestep=kwargs["timestep"] * units.fs,
+                temperature_K=kwargs["temperature"],
+                externalstress=0.0,
+                ttime=kwargs["taut"] * units.fs,
+                trajectory=kwargs["trajectory"],
+                logfile=kwargs["logfile"],
+                loginterval=kwargs["loginterval"],
+                append_trajectory=kwargs["append_trajectory"],
             )
         elif dynamics == "Berendsen":
             from ase.md.nvtberendsen import NVTBerendsen
+
             return NVTBerendsen(
-                atoms, timestep=kwargs["timestep"] * units.fs, temperature_K=kwargs["temperature"],
-                taut=kwargs["taut"] * units.fs, fixcm=kwargs["fixcm"],
-                trajectory=kwargs["trajectory"], logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"], append_trajectory=kwargs["append_trajectory"],
+                atoms,
+                timestep=kwargs["timestep"] * units.fs,
+                temperature_K=kwargs["temperature"],
+                taut=kwargs["taut"] * units.fs,
+                fixcm=kwargs["fixcm"],
+                trajectory=kwargs["trajectory"],
+                logfile=kwargs["logfile"],
+                loginterval=kwargs["loginterval"],
+                append_trajectory=kwargs["append_trajectory"],
             )
         else:
             raise NotImplementedError(f"Unknown dynamics: {dynamics}")
     elif ensemble == "NPT":
         if dynamics == "Parrinello-Rahman":  # with Nose-Hoover thermostat
             from ase.md.npt import NPT
+
             return NPT(
-                atoms, timestep=kwargs["timestep"] * units.fs, temperature_K=kwargs["temperature"],
-                ttime=kwargs["taut"] * units.fs, externalstress=kwargs["pressure"] * units.bar,
-                pfactor=kwargs["pfactor"] * units.GPa * (units.fs**2), mask=kwargs["mask"],
-                trajectory=kwargs["trajectory"], logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"], append_trajectory=kwargs["append_trajectory"],
+                atoms,
+                timestep=kwargs["timestep"] * units.fs,
+                temperature_K=kwargs["temperature"],
+                ttime=kwargs["taut"] * units.fs,
+                externalstress=kwargs["pressure"] * units.bar,
+                pfactor=kwargs["pfactor"] * units.GPa * (units.fs**2),
+                mask=kwargs["mask"],
+                trajectory=kwargs["trajectory"],
+                logfile=kwargs["logfile"],
+                loginterval=kwargs["loginterval"],
+                append_trajectory=kwargs["append_trajectory"],
             )
-        elif dynamics == "Berendsen":        # with Berendsen thermostat
+        elif dynamics == "Berendsen":  # with Berendsen thermostat
             from ase.md.nptberendsen import NPTBerendsen
+
             return NPTBerendsen(
-                atoms, timestep=kwargs["timestep"] * units.fs, temperature_K=kwargs["temperature"],
-                taut=kwargs["taut"] * units.fs, taup=kwargs["taup"] * units.fs, pressure=kwargs["pressure"] * units.bar,
-                compressibility_au=kwargs["compressibility"] / units.bar, fixcm=kwargs["fixcm"],
-                trajectory=kwargs["trajectory"], logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"], append_trajectory=kwargs["append_trajectory"],
+                atoms,
+                timestep=kwargs["timestep"] * units.fs,
+                temperature_K=kwargs["temperature"],
+                taut=kwargs["taut"] * units.fs,
+                taup=kwargs["taup"] * units.fs,
+                pressure=kwargs["pressure"] * units.bar,
+                compressibility_au=kwargs["compressibility"] / units.bar,
+                fixcm=kwargs["fixcm"],
+                trajectory=kwargs["trajectory"],
+                logfile=kwargs["logfile"],
+                loginterval=kwargs["loginterval"],
+                append_trajectory=kwargs["append_trajectory"],
             )
         else:
             raise NotImplementedError(f"Unknown dynamics: {dynamics}")
@@ -142,7 +188,7 @@ def run_md(args: argparse.Namespace) -> None:
     # dump settings
     settings = default_settings.copy()
     if args.input is not None:
-        with open(args.input, 'r') as f:
+        with open(args.input, "r") as f:
             settings.update(json.load(f))
 
     # set random seed
@@ -175,8 +221,9 @@ def run_md(args: argparse.Namespace) -> None:
     dyn = resolve_ensemble(atoms, **settings)
 
     # initialize log file
-    with open(settings["logfile"], 'w'): pass
-    
+    with open(settings["logfile"], "w"):
+        pass
+
     # run dynamics
     dyn.run(settings["steps"])
 

@@ -22,10 +22,10 @@ def distributed_zero_first(local_rank: int = None):
         yield
         return
     if local_rank not in [-1, 0]:
-       dist.barrier(device_ids=[local_rank])
+        dist.barrier(device_ids=[local_rank])
     yield
     if local_rank == 0:
-       dist.barrier(device_ids=[0])
+        dist.barrier(device_ids=[0])
 
 
 def calculate_stats(
@@ -55,7 +55,7 @@ def calculate_stats(
         delta = sample_mean - mean
         mean += delta * batch_size / new_count
         corr = batch_size * count / new_count
-        m2 += sample_m2 + delta ** 2 * corr
+        m2 += sample_m2 + delta**2 * corr
         count = new_count
 
     std = torch.sqrt(m2 / count)
@@ -64,11 +64,12 @@ def calculate_stats(
 
 class MatCriterion(nn.Module):
     """MSE + RMSE"""
+
     def __init__(self) -> None:
         super().__init__()
         self.mae_loss = nn.L1Loss()
         self.mse_loss = nn.MSELoss()
-    
+
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         mae = self.mae_loss(pred, target)
         mse = self.mse_loss(pred, target)
@@ -91,7 +92,9 @@ def resolve_lossfn(lossfn: str) -> nn.Module:
         raise NotImplementedError(f"Unsupported loss function {lossfn}")
 
 
-def resolve_optimizer(optim_type: str, params: dict, lr: float, **kwargs) -> torch.optim.Optimizer:
+def resolve_optimizer(
+    optim_type: str, params: dict, lr: float, **kwargs
+) -> torch.optim.Optimizer:
     """Helper function to return an optimizer"""
     optim_type = optim_type.lower()
     if optim_type == "adam":
@@ -192,7 +195,7 @@ def gen_3Dinfo_str(
     at_no: torch.Tensor,
     info_3d: Union[List[torch.Tensor], torch.Tensor],
     title: Union[List[str], str],
-    precision: Union[List[int], int] = 6
+    precision: Union[List[int], int] = 6,
 ) -> str:
     """
     Generate 3D info string for a molecule.
@@ -210,7 +213,9 @@ def gen_3Dinfo_str(
         for cs, p in zip(info_3ds, precisions):
             c = cs[i]
             float_fmt = f"{p+6}.{p}f"
-            cx = c[0].item(); cy = c[1].item(); cz = c[2].item()
+            cx = c[0].item()
+            cy = c[1].item()
+            cz = c[2].item()
             lines.append(f"{cx:{float_fmt}}{cy:{float_fmt}}{cz:{float_fmt}}")
         info_lists.append(lines)
     num_chs = [len(ac) for ac in info_lists[0]]

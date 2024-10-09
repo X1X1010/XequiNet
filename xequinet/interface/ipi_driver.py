@@ -4,7 +4,10 @@ import numpy as np
 import torch
 from ase.io import read as ase_read
 from ipi._driver.driver import (
-    HDRLEN, Message, recv_data, send_data,
+    HDRLEN,
+    Message,
+    recv_data,
+    send_data,
 )
 
 from ..utils import radius_graph_pbc, unit_conversion
@@ -14,6 +17,7 @@ class iPIDriver:
     """
     Interface for the i-PI driver.
     """
+
     def __init__(
         self,
         ckpt_file: str,
@@ -22,7 +26,7 @@ class iPIDriver:
         port: int = 31415,
         verbose: int = 0,
         **kwargs,
-    ) -> None: 
+    ) -> None:
         # set verbosity
         self.verbose = verbose
         # Opens a socket to i-PI
@@ -61,11 +65,9 @@ class iPIDriver:
         else:
             self.spin = kwargs.get("spin", 0)
 
-
     def get_atomic_numbers(self, file: str) -> np.ndarray:
         atoms = ase_read(file)
         return atoms.get_atomic_numbers()
-    
 
     def calculate(self) -> Tuple[float, np.ndarray, np.ndarray]:
         """Compute the energy, forces, and virial."""
@@ -82,21 +84,26 @@ class iPIDriver:
         edge_index = torch.from_numpy(edge_index).to(torch.long).to(self.device)
         shifts = torch.from_numpy(shifts).to(torch.get_default_dtype()).to(self.device)
         at_no = self.at_no.to(self.device)
-        coord = torch.from_numpy(positions).to(torch.get_default_dtype()).to(self.device)
+        coord = (
+            torch.from_numpy(positions).to(torch.get_default_dtype()).to(self.device)
+        )
         model_res: Dict[str, torch.Tensor] = self.model(
-            at_no=at_no, coord=coord,
-            edge_index=edge_index, shifts=shifts,
+            at_no=at_no,
+            coord=coord,
+            edge_index=edge_index,
+            shifts=shifts,
             charge=self.charge,
             spin=self.spin,
         )
         # convert the units from the MD model's unit to a.u.
         energy = model_res["energy"].item() * unit_conversion("eV", "Hartree")
-        forces = model_res["forces"].detach().cpu().numpy() * unit_conversion("eV/Angstrom", "AU")
+        forces = model_res["forces"].detach().cpu().numpy() * unit_conversion(
+            "eV/Angstrom", "AU"
+        )
         virial = model_res.get("virial", None)
         if virial is not None:
             virial = virial.detach().cpu().numpy() * unit_conversion("eV", "Hartree")
         return energy, forces, virial
-
 
     def init(self) -> None:
         """Deal with message from `INIT` motion."""
@@ -107,7 +114,6 @@ class iPIDriver:
             print(rid, initstr)
         self.f_init = True
 
-
     def status(self) -> None:
         """Reply `STATUS`."""
         if not self.f_init:
@@ -117,21 +123,23 @@ class iPIDriver:
         else:
             self.socket.sendall(Message("READY"))
 
-
     def posdata(self) -> None:
         """Receive `POSDATA` and calculate."""
         # receives structural information
         self.cell = recv_data(self.socket, self.cell)
-        self.icell = recv_data(self.socket, self.icell)  # inverse of the cell. mostly useless legacy stuff
+        self.icell = recv_data(
+            self.socket, self.icell
+        )  # inverse of the cell. mostly useless legacy stuff
         natom = recv_data(self.socket, np.int32())
         assert self.natoms == natom, "Number of atoms does not match!"
         self.coord = recv_data(self.socket, self.coord)
         # calculate the energy, forces, and virial
         energy, forces, virial = self.calculate()
-        self.energy = energy; self.forces = forces; self.virial = virial
+        self.energy = energy
+        self.forces = forces
+        self.virial = virial
         # set the flag
         self.f_data = True
-
 
     def getforce(self) -> None:
         """Reply `GETFORCE`."""
@@ -144,13 +152,11 @@ class iPIDriver:
         send_data(self.socket, np.int32(len(extra)))
         self.socket.sendall(extra.encode("utf-8"))
         self.f_data = False
-    
 
     def exit(self) -> None:
         """Exit the driver."""
         self.socket.close()
         raise SystemExit("Received exit message from i-PI. Bye bye!")
-
 
     def parse(self) -> None:
         """Reply the request from server."""

@@ -5,6 +5,7 @@ import torch
 from torch_scatter import scatter
 from torch_cluster import radius_graph
 from torch_geometric.loader import DataLoader
+
 try:
     import tblite.interface as xtb
 except:
@@ -13,8 +14,12 @@ except:
 from ..nn import resolve_model
 from ..utils import (
     NetConfig,
-    set_default_unit, get_default_unit, unit_conversion,
-    get_atomic_energy, gen_3Dinfo_str, radius_batch_pbc,
+    set_default_unit,
+    get_default_unit,
+    unit_conversion,
+    get_atomic_energy,
+    gen_3Dinfo_str,
+    radius_batch_pbc,
 )
 from ..data import TextDataset
 
@@ -31,7 +36,7 @@ def predict_scalar(
     base_method: str = None,
     verbose: int = 0,
 ) -> None:
-    wf = open(output_file, 'a')
+    wf = open(output_file, "a")
     p_unit, l_unit = get_default_unit()
     for data in dataloader:
         if hasattr(data, "pbc") and data.pbc.any():
@@ -41,7 +46,9 @@ def predict_scalar(
             data = data.to(device)
         else:
             data = data.to(device)
-            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+            data.edge_index = radius_graph(
+                data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges
+            )
         # change the prediction unit to atomic unit
         nn_preds = model(data).double() * unit_conversion(p_unit, "AU")
         # the atomic reference is already in atomic unit
@@ -51,7 +58,11 @@ def predict_scalar(
             nn_pred = nn_preds[i].cpu()
             atom_ref = atom_refs[i].cpu()
             if base_method is not None:
-                m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
+                m_dict = {
+                    "gfn2-xtb": "GFN2-xTB",
+                    "gfn1-xtb": "GFN1-xTB",
+                    "ipea1-xtb": "IPEA1-xTB",
+                }
                 calc = xtb.Calculator(
                     method=m_dict[base_method.lower()],
                     numbers=datum.at_no.numpy(),
@@ -65,12 +76,17 @@ def predict_scalar(
                 delta = 0.0
             total = nn_pred + atom_ref + delta
             if verbose >= 2:  # print coordinates
-                wf.write(gen_3Dinfo_str(
-                    datum.at_no,
-                    datum.pos * unit_conversion(l_unit, "Angstrom"),  # change to Angstrom
-                    title="Coordinates (Angstrom)",
-                ))
-                wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
+                wf.write(
+                    gen_3Dinfo_str(
+                        datum.at_no,
+                        datum.pos
+                        * unit_conversion(l_unit, "Angstrom"),  # change to Angstrom
+                        title="Coordinates (Angstrom)",
+                    )
+                )
+                wf.write(
+                    f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
+                )
             if verbose >= 1:  # print detailed information
                 wf.write("NN Contribution         :")
                 for v_nn in nn_pred:
@@ -101,7 +117,7 @@ def predict_grad(
     base_method: str = None,
     verbose: int = 0,
 ) -> None:
-    wf = open(output_file, 'a')
+    wf = open(output_file, "a")
     p_unit, l_unit = get_default_unit()
     for data in dataloader:
         if hasattr(data, "pbc") and data.pbc.any():
@@ -111,7 +127,9 @@ def predict_grad(
             data = data.to(device)
         else:
             data = data.to(device)
-            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+            data.edge_index = radius_graph(
+                data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges
+            )
         data.pos.requires_grad = True
         nn_predEs, nn_predFs = model(data)
         # change the prediction unit to atomic unit
@@ -125,7 +143,11 @@ def predict_grad(
             nn_predF = nn_predFs[i].cpu()
             atom_E = atom_Es[i].cpu()
             if base_method is not None:
-                m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
+                m_dict = {
+                    "gfn2-xtb": "GFN2-xTB",
+                    "gfn1-xtb": "GFN1-xTB",
+                    "ipea1-xtb": "IPEA1-xTB",
+                }
                 calc = xtb.Calculator(
                     method=m_dict[base_method.lower()],
                     numbers=datum.at_no.numpy(),
@@ -134,20 +156,29 @@ def predict_grad(
                     uhf=int(datum.spin.item()),
                 )
                 res = calc.singlepoint()
-                d_ene = res.get("energy")     # the delta value is already in atomic unit
-                d_grad = res.get("gradient")  # the delta gradient is already in atomic unit
+                d_ene = res.get("energy")  # the delta value is already in atomic unit
+                d_grad = res.get(
+                    "gradient"
+                )  # the delta gradient is already in atomic unit
             else:
                 d_ene = 0.0
                 d_grad = torch.zeros_like(nn_predF)
             totalE = nn_predE + atom_E + d_ene
             totalF = nn_predF - d_grad
             if verbose >= 2:  # print coordinates
-                wf.write(gen_3Dinfo_str(
-                    datum.at_no,
-                    datum.pos * unit_conversion(get_default_unit()[1], "Angstrom"),  # change to Angstrom
-                    title="Coordinates (Angstrom)",
-                ))
-                wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
+                wf.write(
+                    gen_3Dinfo_str(
+                        datum.at_no,
+                        datum.pos
+                        * unit_conversion(
+                            get_default_unit()[1], "Angstrom"
+                        ),  # change to Angstrom
+                        title="Coordinates (Angstrom)",
+                    )
+                )
+                wf.write(
+                    f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
+                )
             if verbose >= 1:  # print detailed information
                 wf.write("NN Contribution         :")
                 wf.write(f"    {nn_predE.item():10.7f} a.u.\n")
@@ -180,7 +211,7 @@ def predict_vector(
     output_file: str,
     verbose: int = 0,
 ) -> None:
-    wf = open(output_file, 'a')
+    wf = open(output_file, "a")
     p_unit, l_unit = get_default_unit()
     for data in dataloader:
         if hasattr(data, "pbc") and data.pbc.any():
@@ -190,21 +221,29 @@ def predict_vector(
             data = data.to(device)
         else:
             data = data.to(device)
-            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+            data.edge_index = radius_graph(
+                data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges
+            )
         pred = model(data)
         pred *= unit_conversion(p_unit, "AU")
         for i in range(len(data)):
             datum = data[i]
             vector = pred[i]
             if verbose >= 2:  # print coordinates
-                wf.write(gen_3Dinfo_str(
-                    datum.at_no,
-                    datum.pos * unit_conversion(l_unit, "Angstrom"),
-                    title="Coordinates (Angstrom)",
-                ))
-                wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
+                wf.write(
+                    gen_3Dinfo_str(
+                        datum.at_no,
+                        datum.pos * unit_conversion(l_unit, "Angstrom"),
+                        title="Coordinates (Angstrom)",
+                    )
+                )
+                wf.write(
+                    f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
+                )
             wf.write(f"Vector Property (a.u.):\n")
-            wf.write(f"X{vector[0].item():12.6f}  Y{vector[1].item():12.6f}  Z{vector[2].item():12.6f}\n\n")
+            wf.write(
+                f"X{vector[0].item():12.6f}  Y{vector[1].item():12.6f}  Z{vector[2].item():12.6f}\n\n"
+            )
             wf.flush()
     wf.close()
 
@@ -219,7 +258,7 @@ def predict_polar(
     output_file: str,
     verbose: int = 0,
 ) -> None:
-    wf = open(output_file, 'a')
+    wf = open(output_file, "a")
     p_unit, l_unit = get_default_unit()
     for data in dataloader:
         if hasattr(data, "pbc") and data.pbc.any():
@@ -229,23 +268,35 @@ def predict_polar(
             data = data.to(device)
         else:
             data = data.to(device)
-            data.edge_index = radius_graph(data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges)
+            data.edge_index = radius_graph(
+                data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges
+            )
         pred = model(data)
         pred *= unit_conversion(p_unit, "AU")
         for i in range(len(data)):
             datum = data[i]
             polar = pred[i]
             if verbose >= 2:  # print coordinates
-                wf.write(gen_3Dinfo_str(
-                    datum.at_no,
-                    datum.pos * unit_conversion(l_unit, "Angstrom"),
-                    title="Coordinates (Angstrom)",
-                ))
-                wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
+                wf.write(
+                    gen_3Dinfo_str(
+                        datum.at_no,
+                        datum.pos * unit_conversion(l_unit, "Angstrom"),
+                        title="Coordinates (Angstrom)",
+                    )
+                )
+                wf.write(
+                    f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
+                )
             wf.write("Polar property (a.u.):\n")
-            wf.write(f"XX{polar[0,0].item():12.6f}  XY{polar[0,1].item():12.6f}  XZ{polar[0,2].item():12.6f}\n")
-            wf.write(f"YX{polar[1,0].item():12.6f}  YY{polar[1,1].item():12.6f}  YZ{polar[1,2].item():12.6f}\n")
-            wf.write(f"ZX{polar[2,0].item():12.6f}  ZY{polar[2,1].item():12.6f}  ZZ{polar[2,2].item():12.6f}\n\n")
+            wf.write(
+                f"XX{polar[0,0].item():12.6f}  XY{polar[0,1].item():12.6f}  XZ{polar[0,2].item():12.6f}\n"
+            )
+            wf.write(
+                f"YX{polar[1,0].item():12.6f}  YY{polar[1,1].item():12.6f}  YZ{polar[1,2].item():12.6f}\n"
+            )
+            wf.write(
+                f"ZX{polar[2,0].item():12.6f}  ZY{polar[2,1].item():12.6f}  ZZ{polar[2,2].item():12.6f}\n\n"
+            )
             wf.flush()
     wf.close()
 
@@ -275,13 +326,17 @@ def run_infer(args: argparse.Namespace) -> None:
     # load input data
     dataset = TextDataset(file=args.input)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=0)
-    outp = f"{args.input.split('/')[-1].split('.')[0]}.log" if args.output is None else args.output
+    outp = (
+        f"{args.input.split('/')[-1].split('.')[0]}.log"
+        if args.output is None
+        else args.output
+    )
 
     # get atom reference
     atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
     atom_sp = atom_sp.to(device) * unit_conversion(get_default_unit()[0], "AU")
 
-    with open(outp, 'w') as wf:
+    with open(outp, "w") as wf:
         wf.write("XequiNet prediction\n")
         wf.write(f"Coordinates in Angstrom, Properties in Atomic Unit\n\n")
     if config.output_mode == "scalar":

@@ -22,12 +22,12 @@ class NeighborTransform:
         else:
             n_nodes_per_graph = torch.tensor([data.pos.shape[0]], device=device)  # [1]
             batch = None
-        
+
         has_pbc = hasattr(data, keys.PBC)
         has_cell = hasattr(data, keys.CELL)
 
         if has_pbc and has_cell:
-            
+
             if hasattr(data, keys.EDGE_INDEX) and hasattr(data, keys.CELL_OFFSETS):
                 return data
             edge_index, cell_offsets = radius_graph_pbc(
@@ -56,8 +56,8 @@ class NeighborTransform:
             raise ValueError("PBC and cell must be both defined or both undefined.")
 
         return data
-    
-    
+
+
 class DataTypeTransform:
     def __init__(self, dtype: Union[str, torch.dtype]) -> None:
         if isinstance(dtype, str):

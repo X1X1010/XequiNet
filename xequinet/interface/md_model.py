@@ -11,7 +11,6 @@ from ..nn.xpainn import XEmbedding, XPainnMessage, XPainnUpdate
 from ..utils import NetConfig, unit_conversion, get_default_unit, get_atomic_energy
 
 
-
 class MDEmbedding(XEmbedding):
     def __init__(
         self,
@@ -25,8 +24,14 @@ class MDEmbedding(XEmbedding):
         cutoff_fn: str = "cosine",
     ) -> None:
         super().__init__(
-            node_dim, node_irreps, embed_basis, aux_basis,
-            num_basis, rbf_kernel, cutoff, cutoff_fn,
+            node_dim,
+            node_irreps,
+            embed_basis,
+            aux_basis,
+            num_basis,
+            rbf_kernel,
+            cutoff,
+            cutoff_fn,
         )
 
     def forward(
@@ -35,9 +40,7 @@ class MDEmbedding(XEmbedding):
         pos: torch.Tensor,
         shifts: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> Tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
-    ]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             `x`: Atomic features.
@@ -107,7 +110,9 @@ class MDGradOut(nn.Module):
         """
         energies = self.out_mlp(x_scalar).view(-1)
         grad = torch.autograd.grad(
-            [energies.sum(),],
+            [
+                energies.sum(),
+            ],
             [coord, vec],
             retain_graph=True,
             create_graph=True,
@@ -118,7 +123,7 @@ class MDGradOut(nn.Module):
         forces = -nuc_grad
 
         edge_grad = grad[1]
-        if edge_grad is None: # condition needed to unwrap optional for torchscript
+        if edge_grad is None:  # condition needed to unwrap optional for torchscript
             raise RuntimeError("Edge gradient is None")
         edge_virials = torch.einsum("zi, zj -> zij", edge_grad, vec)
         virials = torch.zeros((coord.shape[0], 3, 3), device=coord.device)
@@ -142,37 +147,44 @@ class MDPaiNN(nn.Module):
             cutoff=config.cutoff,
             cutoff_fn=config.cutoff_fn,
         )
-        self.message = nn.ModuleList([
-            XPainnMessage(
-                node_dim=config.node_dim,
-                node_irreps=config.node_irreps,
-                num_basis=config.num_basis,
-                actfn=config.activation,
-                norm_type=config.norm_type,
-            )
-            for _ in range(config.action_blocks)
-        ])
-        self.update = nn.ModuleList([
-            XPainnUpdate(
-                node_dim=config.node_dim,
-                node_irreps=config.node_irreps,
-                actfn=config.activation,
-                norm_type=config.norm_type,
-            )
-            for _ in range(config.action_blocks)
-        ])
+        self.message = nn.ModuleList(
+            [
+                XPainnMessage(
+                    node_dim=config.node_dim,
+                    node_irreps=config.node_irreps,
+                    num_basis=config.num_basis,
+                    actfn=config.activation,
+                    norm_type=config.norm_type,
+                )
+                for _ in range(config.action_blocks)
+            ]
+        )
+        self.update = nn.ModuleList(
+            [
+                XPainnUpdate(
+                    node_dim=config.node_dim,
+                    node_irreps=config.node_irreps,
+                    actfn=config.activation,
+                    norm_type=config.norm_type,
+                )
+                for _ in range(config.action_blocks)
+            ]
+        )
         self.out = MDGradOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
             actfn=config.activation,
         )
         self.prop_unit, self.len_unit = get_default_unit()
-        atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
+        atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(
+            config.batom_ref
+        )
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Angstrom", self.len_unit)
         self.prop_unit_conv = unit_conversion(self.prop_unit, "eV")
-        self.grad_unit_conv = unit_conversion(f"{self.prop_unit}/{self.len_unit}", "eV/Angstrom")
-
+        self.grad_unit_conv = unit_conversion(
+            f"{self.prop_unit}/{self.len_unit}", "eV/Angstrom"
+        )
 
     def forward(
         self,
@@ -188,7 +200,9 @@ class MDPaiNN(nn.Module):
         coord = coord * self.len_unit_conv
         # network forward
         x_scalar, vec, rbf, fcut, rsh = self.embed(at_no, coord, shifts, edge_index)
-        x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
+        x_vector = torch.zeros(
+            (x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device
+        )
         for msg, upd in zip(self.message, self.update):
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
@@ -204,9 +218,11 @@ class MDPaiNN(nn.Module):
         virial = 0.5 * (virial + virial.T)
         # return result
         result = {
-            "energy": energy, "energies": energies,
+            "energy": energy,
+            "energies": energies,
             "forces": forces,
-            "virial": virial, "virials": virials,
+            "virial": virial,
+            "virials": virials,
         }
         return result
 

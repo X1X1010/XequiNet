@@ -45,10 +45,16 @@ class LTCEmbeding(XEmbedding):
         for mul, irrep in self.node_irreps:
             lattice_irreps.append((3, irrep))
         self.lattice_irreps = o3.Irreps(lattice_irreps)
-        self.lattice_harm = o3.SphericalHarmonics(self.lattice_irreps, normalize=True, normalization="component")
+        self.lattice_harm = o3.SphericalHarmonics(
+            self.lattice_irreps, normalize=True, normalization="component"
+        )
         self.weight_lin = nn.Linear(self.int2c1e.embed_dim, self.node_num_irreps)
-        self.lattice_lin = o3.Linear(self.lattice_irreps, self.node_irreps, biases=False)
-        self.lattice_mul = o3.ElementwiseTensorProduct(self.node_irreps, f"{self.node_num_irreps}x0e")
+        self.lattice_lin = o3.Linear(
+            self.lattice_irreps, self.node_irreps, biases=False
+        )
+        self.lattice_mul = o3.ElementwiseTensorProduct(
+            self.node_irreps, f"{self.node_num_irreps}x0e"
+        )
 
     def forward(
         self,
@@ -97,6 +103,7 @@ class SelfMixTP(nn.Module):
     """
     Self-mix tensor product layer
     """
+
     def __init__(
         self,
         irreps_in: Iterable = "128x0e + 64x1o + 32x2e",
@@ -124,7 +131,10 @@ class SelfMixTP(nn.Module):
         self.irreps_mix = o3.Irreps(irreps_mix)
         # expansion to include parity
         self.irreps_out, instruct = get_feasible_tp(
-            self.irreps_hid, self.irreps_hid, self.irreps_mix, "uuu",
+            self.irreps_hid,
+            self.irreps_hid,
+            self.irreps_mix,
+            "uuu",
         )
         self.tp = o3.TensorProduct(
             self.irreps_hid,
@@ -154,6 +164,7 @@ class Sph2Cart(nn.Module):
     """
     Spherical to Cartesian tensor layer
     """
+
     def __init__(
         self,
         formula: str,
@@ -177,4 +188,3 @@ class Sph2Cart(nn.Module):
         shape = list(x_sph.shape[:-1]) + list(Q.shape[1:])
         x_cart = x_cart.view(shape)
         return x_cart
-    

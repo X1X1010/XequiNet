@@ -12,6 +12,7 @@ __all__ = [
 
 try:
     from .ipi_driver import iPIDriver
+
     __all__.append("iPIDriver")
 except:
     warnings.warn("i-PI is not installed, i-PI driver will not be performed.")

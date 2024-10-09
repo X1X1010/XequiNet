@@ -8,7 +8,9 @@ from ..data import create_dataset
 from ..nn import resolve_model
 from ..utils import (
     NetConfig,
-    unit_conversion, set_default_unit, get_default_unit,
+    unit_conversion,
+    set_default_unit,
+    get_default_unit,
     gen_3Dinfo_str,
     MatToolkit,
 )
@@ -26,7 +28,7 @@ def test_scalar(
     p_unit, l_unit = get_default_unit()
     sum_loss = torch.zeros(output_dim, device=device)
     num_mol = 0
-    wf = open(outfile, 'a')
+    wf = open(outfile, "a")
     for data in test_loader:
         data = data.to(device)
         pred = model(data)
@@ -41,8 +43,14 @@ def test_scalar(
                 coord = datum.pos * unit_conversion(l_unit, "Angstrom")
                 wf.write(f"mol {num_mol + imol + 1}\n")
                 if verbose >= 2:  # print atom coordinates
-                    wf.write(gen_3Dinfo_str(datum.at_no, coord, title="Coordinates (Angstrom)"))
-                    wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
+                    wf.write(
+                        gen_3Dinfo_str(
+                            datum.at_no, coord, title="Coordinates (Angstrom)"
+                        )
+                    )
+                    wf.write(
+                        f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
+                    )
                 wf.write(f"Real:")
                 wf.write("".join([f"{r.item():15.9f} " for r in real[imol]]))
                 wf.write(f"    Predict:")
@@ -68,7 +76,7 @@ def test_grad(
 ) -> None:
     p_unit, l_unit = get_default_unit()
     sum_lossE, sum_lossF, num_mol, num_atom = 0.0, 0.0, 0, 0
-    wf = open(outfile, 'a')
+    wf = open(outfile, "a")
     for data in test_loader:
         data = data.to(device)
         data.pos.requires_grad = True
@@ -85,7 +93,7 @@ def test_grad(
             sum_lossF += errorF.abs().sum()
         if verbose >= 1:
             for imol in range(len(data)):
-                idx = (data.batch == imol)
+                idx = data.batch == imol
                 datum = data[imol]
                 coord = datum.pos * unit_conversion(l_unit, "Angstrom")
                 wf.write(f"mol {num_mol + imol + 1}\n")
@@ -95,15 +103,19 @@ def test_grad(
                         "Coordinates (Angstrom)",
                         f"Predicted Forces ({p_unit}/{l_unit})",
                         f"Real Forces ({p_unit}/{l_unit})",
-                        f"Error Forces ({p_unit}/{l_unit})"
+                        f"Error Forces ({p_unit}/{l_unit})",
                     ]
                     precisions = [6, 9, 9, 9]
                     wf.write(gen_3Dinfo_str(datum.at_no, info_3ds, titles, precisions))
-                    wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
+                    wf.write(
+                        f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
+                    )
                 wf.write(f"Energy | Real: {realE[imol].item():15.9f}    ")
                 wf.write(f"Predict: {predE[imol].item():15.9f}    ")
                 wf.write(f"Error: {errorE[imol].item():15.9f}    {p_unit}\n")
-                wf.write(f"Force  | MAE : {errorF[idx].abs().mean():15.9f}   {p_unit}/{l_unit}\n\n")
+                wf.write(
+                    f"Force  | MAE : {errorF[idx].abs().mean():15.9f}   {p_unit}/{l_unit}\n\n"
+                )
                 wf.flush()
         num_mol += data.y.numel()
         num_atom += data.at_no.numel()
@@ -123,7 +135,7 @@ def test_vector(
     p_unit, l_unit = get_default_unit()
     sum_loss = 0.0
     num_mol = 0
-    wf = open(outfile, 'a')
+    wf = open(outfile, "a")
     for data in test_loader:
         data = data.to(device)
         pred = model(data)
@@ -136,13 +148,23 @@ def test_vector(
                 coord = datum.pos * unit_conversion(l_unit, "Angstrom")
                 wf.write(f"mol {num_mol + imol + 1}\n")
                 if verbose >= 2:  # print atom coordinates
-                    wf.write(gen_3Dinfo_str(datum.at_no, coord, title="Coordinates (Angstrom)"))
-                    wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
+                    wf.write(
+                        gen_3Dinfo_str(
+                            datum.at_no, coord, title="Coordinates (Angstrom)"
+                        )
+                    )
+                    wf.write(
+                        f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
+                    )
                 values = [
                     f"X{vec[imol][0].item():12.6f}  Y{vec[imol][1].item():12.6f}  Z{vec[imol][2].item():12.6f}"
                     for vec in [real, pred, error]
                 ]
-                titles = [f"Real ({p_unit})", f"Predict ({p_unit})", f"Error ({p_unit})"]
+                titles = [
+                    f"Real ({p_unit})",
+                    f"Predict ({p_unit})",
+                    f"Error ({p_unit})",
+                ]
                 filled_t = [f"{t: <{len(v)}}" for t, v in zip(titles, values)]
                 wf.write("    ".join(filled_t) + "\n")
                 wf.write("    ".join(values) + "\n\n")
@@ -163,7 +185,7 @@ def test_polar(
     p_unit, l_unit = get_default_unit()
     sum_loss = 0.0
     num_mol = 0
-    wf = open(outfile, 'a')
+    wf = open(outfile, "a")
     for data in test_loader:
         data = data.to(device)
         pred = model(data)
@@ -176,15 +198,27 @@ def test_polar(
                 coord = datum.pos * unit_conversion(l_unit, "Angstrom")
                 wf.write(f"mol {num_mol + imol + 1}\n")
                 if verbose >= 2:  # print atom coordinates
-                    wf.write(gen_3Dinfo_str(datum.at_no, coord, title="Coordinates (Angstrom)"))
-                    wf.write(f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n")
+                    wf.write(
+                        gen_3Dinfo_str(
+                            datum.at_no, coord, title="Coordinates (Angstrom)"
+                        )
+                    )
+                    wf.write(
+                        f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
+                    )
                 tri_values = []
-                for i, D in enumerate(['X', 'Y', 'Z']):
-                    tri_values.append([
-                        f"{D}X{pol[imol][i,0].item():12.6f}  {D}Y{pol[imol][i,1].item():12.6f}  {D}Z{pol[imol][i,2].item():12.6f}"
-                        for pol in [real, pred, error]
-                    ])
-                titles = [f"Real ({p_unit})", f"Predict ({p_unit})", f"Error ({p_unit})"]
+                for i, D in enumerate(["X", "Y", "Z"]):
+                    tri_values.append(
+                        [
+                            f"{D}X{pol[imol][i,0].item():12.6f}  {D}Y{pol[imol][i,1].item():12.6f}  {D}Z{pol[imol][i,2].item():12.6f}"
+                            for pol in [real, pred, error]
+                        ]
+                    )
+                titles = [
+                    f"Real ({p_unit})",
+                    f"Predict ({p_unit})",
+                    f"Error ({p_unit})",
+                ]
                 filled_t = [f"{t: <{len(v)}}" for t, v in zip(titles, tri_values[0])]
                 wf.write("    ".join(filled_t) + "\n")
                 for values in tri_values:
@@ -211,7 +245,7 @@ def test_tensor(
     p_unit, _ = get_default_unit()
     sum_loss = 0.0
     tot_numel = 0
-    wf = open(outfile, 'a')
+    wf = open(outfile, "a")
     if verbose >= 1:
         X, Y = [], []
     for data in test_loader:
@@ -247,7 +281,7 @@ def test_matrix(
     p_unit, _ = get_default_unit()
     loss_node, loss_edge = 0.0, 0.0
     num_node, num_edge = 0, 0
-    wf = open(outfile, 'a')
+    wf = open(outfile, "a")
     if verbose >= 1:
         X, Y = [], []
     for data in test_loader:
@@ -275,17 +309,22 @@ def test_matrix(
                     mat_edge_index = datum.edge_index_full
                 else:
                     mat_edge_index = datum.edge_index
-                pred_matrix = mat_toolkit.assemble_blocks(datum.at_no, node_blocks, edge_blocks, mat_edge_index)
+                pred_matrix = mat_toolkit.assemble_blocks(
+                    datum.at_no, node_blocks, edge_blocks, mat_edge_index
+                )
                 X.append(pred_matrix.cpu())
-                real_matrix = mat_toolkit.assemble_blocks(datum.at_no, node_label, edge_label, mat_edge_index)
+                real_matrix = mat_toolkit.assemble_blocks(
+                    datum.at_no, node_label, edge_label, mat_edge_index
+                )
                 Y.append(real_matrix.cpu())
     if verbose >= 1:
         outpt = f"{outfile.rsplit('.', 1)[0]}.pt"
         torch.save({"X": X, "Y": Y}, outpt)
     wf.write(f"Node  MAE: {loss_node / num_node :12.6f} {p_unit}\n")
     wf.write(f"Edge  MAE: {loss_edge / num_edge :12.6f} {p_unit}\n")
-    wf.write(f"Total MAE: {(loss_edge+loss_node) / (num_node+num_edge) :12.6f} {p_unit}\n")            
-
+    wf.write(
+        f"Total MAE: {(loss_edge+loss_node) / (num_node+num_edge) :12.6f} {p_unit}\n"
+    )
 
 
 def run_test(args: argparse.Namespace) -> None:
@@ -293,26 +332,30 @@ def run_test(args: argparse.Namespace) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # load checkpoint and config
-    with open(args.config, 'r') as json_file:
+    with open(args.config, "r") as json_file:
         config = NetConfig.model_validate_json(json_file.read())
     ckpt = torch.load(args.ckpt, map_location=device)
     config.model_validate(ckpt["config"])
-    
+
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
     test_dataset = create_dataset(config, "test")
     test_loader = DataLoader(
-        test_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=config.num_workers, pin_memory=True, drop_last=False,
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=config.num_workers,
+        pin_memory=True,
+        drop_last=False,
     )
-    
+
     # adjust some configurations
     if args.force == True and config.output_mode == "scalar":
         config.output_mode = "grad"
     if args.no_force == True and config.output_mode == "grad":
         config.output_mode = "scalar"
-    
+
     # build model
     model = resolve_model(config).to(device)
     model.load_state_dict(ckpt["model"], strict=False)
@@ -321,8 +364,8 @@ def run_test(args: argparse.Namespace) -> None:
     # test
     if args.output is None:
         output_file = f"{config.run_name}_test.log"
-        
-    with open(output_file, 'w') as wf:
+
+    with open(output_file, "w") as wf:
         wf.write("XequiNet Testing\n")
         wf.write(f"Unit: {config.default_property_unit} {config.default_length_unit}\n")
 
@@ -338,4 +381,6 @@ def run_test(args: argparse.Namespace) -> None:
     elif "cart" in config.output_mode:
         test_tensor(model, test_loader, device, output_file, args.verbose)
     else:
-        test_scalar(model, test_loader, device, output_file, config.output_dim, args.verbose)
+        test_scalar(
+            model, test_loader, device, output_file, config.output_dim, args.verbose
+        )

@@ -3,6 +3,7 @@ from typing import Optional
 import torch
 from torch_geometric.data import Data
 
+
 class XData(Data):
     # for type annotation
     atomic_numbers: torch.Tensor
@@ -44,12 +45,9 @@ class XData(Data):
         dtype = self.pos.dtype
 
         # atomic_numbers
-        assert (
-            atomic_numbers.shape == (n_atoms,)
-            and atomic_numbers.dtype == torch.int
-        )
+        assert atomic_numbers.shape == (n_atoms,) and atomic_numbers.dtype == torch.int
         self.atomic_numbers = atomic_numbers
-        
+
         # pbc and cell
         if pbc is not None or pbc is not None:
             assert pbc.shape == (1, 3) and pbc.dtype == torch.bool
@@ -68,7 +66,7 @@ class XData(Data):
         if charge is not None:
             assert charge.shape == (1,) and charge.dtype == torch.int
             self.charge = charge
-            
+
         # energy
         if energy is not None:
             assert energy.shape == (1,) and energy.dtype == dtype

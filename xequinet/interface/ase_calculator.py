@@ -11,6 +11,7 @@ class XeqCalculator(Calculator):
     """
     ASE calculator for XequiNet models.
     """
+
     implemented_properties = ["energy", "energies", "forces"]
     implemented_properties += ["stress", "stresses"]
     default_parameters = {
@@ -25,14 +26,15 @@ class XeqCalculator(Calculator):
         self.model = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         Calculator.__init__(self, **kwargs)
-    
+
     def set(self, **kwargs) -> None:
         changed_parameters = Calculator.set(self, **kwargs)
         if changed_parameters:
             self.reset()
         if "ckpt_file" in changed_parameters or self.model is None:
-            self.model = torch.jit.load(self.parameters.ckpt_file, map_location=self.device)
-
+            self.model = torch.jit.load(
+                self.parameters.ckpt_file, map_location=self.device
+            )
 
     def calculate(
         self,
@@ -55,10 +57,14 @@ class XeqCalculator(Calculator):
         edge_index = torch.from_numpy(edge_index).to(torch.long).to(self.device)
         shifts = torch.from_numpy(shifts).to(torch.get_default_dtype()).to(self.device)
         at_no = torch.from_numpy(self.atoms.numbers).to(torch.long).to(self.device)
-        coord = torch.from_numpy(positions).to(torch.get_default_dtype()).to(self.device)
+        coord = (
+            torch.from_numpy(positions).to(torch.get_default_dtype()).to(self.device)
+        )
         model_res: Dict[str, torch.Tensor] = self.model(
-            at_no=at_no, coord=coord,
-            edge_index=edge_index, shifts=shifts,
+            at_no=at_no,
+            coord=coord,
+            edge_index=edge_index,
+            shifts=shifts,
             charge=self.parameters.charge,
             spin=self.parameters.spin,
         )
@@ -69,5 +75,9 @@ class XeqCalculator(Calculator):
         if self.atoms.cell.rank == 3:
             virials = model_res.get("virials").detach().cpu().numpy()
             virial = model_res.get("virial").detach().cpu().numpy()
-            self.results["stress"] = full_3x3_to_voigt_6_stress(virial) / self.atoms.get_volume()
-            self.results["stresses"] = full_3x3_to_voigt_6_stress(virials) / self.atoms.get_volume()
+            self.results["stress"] = (
+                full_3x3_to_voigt_6_stress(virial) / self.atoms.get_volume()
+            )
+            self.results["stresses"] = (
+                full_3x3_to_voigt_6_stress(virials) / self.atoms.get_volume()
+            )

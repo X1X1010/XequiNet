@@ -10,11 +10,11 @@ from ..utils import NetConfig, set_default_unit
 def compile_model(args: argparse.Namespace) -> None:
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     # load checkpoint and config
     ckpt = torch.load(args.ckpt, map_location=device)
     config = NetConfig.model_validate(ckpt["config"])
-    
+
     # set default unit
     set_default_unit(config.default_property_unit, config.default_length_unit)
 
@@ -32,5 +32,9 @@ def compile_model(args: argparse.Namespace) -> None:
 
     model.load_state_dict(ckpt["model"], strict=False)
     model_script = torch.jit.script(model)
-    output_file = f"{args.ckpt.split('/')[-1].split('.')[0]}.jit" if args.output is None else args.output
+    output_file = (
+        f"{args.ckpt.split('/')[-1].split('.')[0]}.jit"
+        if args.output is None
+        else args.output
+    )
     model_script.save(output_file)

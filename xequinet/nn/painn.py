@@ -53,6 +53,7 @@ class Embedding(nn.Module):
 
 class PainnMessage(nn.Module):
     """Message function for PaiNN"""
+
     def __init__(
         self,
         node_dim: int = 128,
@@ -83,11 +84,11 @@ class PainnMessage(nn.Module):
         uvec: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        
+
         scalar_out = self.scalar_mlp(x_scalar)
         filter_weight = self.rbf_lin(rbf) * fcut
         filter_out = scalar_out[edge_index[1]] * filter_weight
-        
+
         message_scalar, gate_edge_vector, gate_state_vector = torch.split(
             filter_out,
             [self.node_dim, self.vec_dim, self.vec_dim],
@@ -103,9 +104,9 @@ class PainnMessage(nn.Module):
         return new_scalar, new_vector
 
 
-
 class PainnUpdate(nn.Module):
     """Update function for PaiNN"""
+
     def __init__(
         self,
         node_dim: int = 128,
@@ -141,9 +142,7 @@ class PainnUpdate(nn.Module):
         mlp_out = self.update_mlp(mlp_in)
 
         a_ss, a_vv, a_sv = torch.split(
-            mlp_out,
-            [self.node_dim, self.vec_dim, self.node_dim],
-            dim=-1
+            mlp_out, [self.node_dim, self.vec_dim, self.node_dim], dim=-1
         )
         d_vector = a_vv.unsqueeze(1) * U_vector
         inner_prod = torch.sum(U_vector * V_vector, dim=1)

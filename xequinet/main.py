@@ -1,120 +1,173 @@
 import warnings
 import argparse
 from xequinet.run import (
-    run_train, run_test, run_infer, compile_model,
-    run_opt, run_md, run_pimd, run_std_from_fock
+    run_train,
+    run_test,
+    run_infer,
+    compile_model,
+    run_opt,
+    run_md,
+    run_pimd,
+    run_std_from_fock,
 )
+
 
 def main() -> None:
     # parse config
     parser = argparse.ArgumentParser(description="XequiNet Entry Point")
     # task selection
     parser.add_argument(
-        "task", type=str,
+        "task",
+        type=str,
         choices=["train", "test", "infer", "opt", "jit", "md", "ipi", "stda"],
         help="Task selection.",
-    )    
+    )
     # common arguments
     parser.add_argument(
-        "--config", "-C", type=str, default="config.json",
+        "--config",
+        "-C",
+        type=str,
+        default="config.json",
         help="Configuration file of json format (default: config.json).",
     )
     parser.add_argument(
-        "--warning", "-w", action="store_true",
+        "--warning",
+        "-w",
+        action="store_true",
         help="Whether to show warning messages",
     )
     parser.add_argument(
-        "--verbose", "-v", type=int, default=0,
+        "--verbose",
+        "-v",
+        type=int,
+        default=0,
         help="Verbose level (default: 0).",
     )
     # train
     parser.add_argument(
-        "--only-process", action="store_true",
+        "--only-process",
+        action="store_true",
         help="Whether to only process the data.",
     )
     # test
     parser.add_argument(
-        "--ckpt", "-c", type=str, default=None,
+        "--ckpt",
+        "-c",
+        type=str,
+        default=None,
         help="Checkpoint file for testing.",
     )
     parser.add_argument(
-        "--batch-size", "-b", type=int, default=32,
+        "--batch-size",
+        "-b",
+        type=int,
+        default=32,
         help="Batch size for testing or inference. (default: 32)",
     )
     parser.add_argument(
-        "--no-force", "-nf", action="store_true",
+        "--no-force",
+        "-nf",
+        action="store_true",
         help="Whether testing without force when output mode is 'grad'.",
     )
     parser.add_argument(
-        "--force", "-f", action="store_true",
+        "--force",
+        "-f",
+        action="store_true",
         help="Whether testing force additionlly when output mode is 'scalar'.",
     )
     # inference
     parser.add_argument(
-        "--delta", "-d", type=str, default=None,
+        "--delta",
+        "-d",
+        type=str,
+        default=None,
         help="Base semi-empirical method of delta-learning model.",
     )
     parser.add_argument(
-        "--output", "-o", type=str, default=None,
+        "--output",
+        "-o",
+        type=str,
+        default=None,
         help="Output file name.",
     )
     # jit
     parser.add_argument(
-        "--for-md", action="store_true",
+        "--for-md",
+        action="store_true",
         help="Whether the model is used for molecular dynamics.",
     )
     # geometry
     parser.add_argument(
-        "--max-steps", type=int, default=100,
+        "--max-steps",
+        type=int,
+        default=100,
         help="Maximum number of optimization steps.",
     )
     parser.add_argument(
-        "--cons", type=str, default=None,
+        "--cons",
+        type=str,
+        default=None,
         help="Constraints file for optimization.",
     )
     parser.add_argument(
-        "--freq", action="store_true",
+        "--freq",
+        action="store_true",
         help="Calculate vibrational frequencies.",
     )
     parser.add_argument(
-        "--numer", action="store_true",
+        "--numer",
+        action="store_true",
         help="Calculate hessian with numerical second derivative.",
     )
     parser.add_argument(
-        "--shm", action="store_true",
+        "--shm",
+        action="store_true",
         help="Whether to write shermo input file.",
     )
     parser.add_argument(
-        "--no-opt", action="store_true",
+        "--no-opt",
+        action="store_true",
         help="Do not perform optimization.",
     )
     parser.add_argument(
-        "--temp", "-T", type=float, default=298.15,
+        "--temp",
+        "-T",
+        type=float,
+        default=298.15,
         help="Temperature for vibrational frequencies.",
     )
     # stda
     parser.add_argument(
-        "--xc", type=str, default="B3LYP",
+        "--xc",
+        type=str,
+        default="B3LYP",
         help="Exchange-correlation functional for SCF.",
     )
     parser.add_argument(
-        "--nstates", type=int, default=5,
+        "--nstates",
+        type=int,
+        default=5,
         help="Number of states for sTDA.",
     )
     parser.add_argument(
-        "--as-init-guess", action="store_true",
+        "--as-init-guess",
+        action="store_true",
         help="Use Fock matrix as initial guess for SCF, then run sTDA.",
     )
     # input
     parser.add_argument(
-        "--input", "-in", type=str, default=None,
+        "--input",
+        "-in",
+        type=str,
+        default=None,
         help="""Input file.
             For inference and optimization, it should be xyz file.
-            For molecular dynamics, it should be settings file.    
+            For molecular dynamics, it should be settings file.
             """,
     )
     args = parser.parse_args()
-    
+
     if args.warning:
         warnings.filterwarnings("once")
 

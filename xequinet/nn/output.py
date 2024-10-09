@@ -45,7 +45,7 @@ class ScalarOut(nn.Module):
         )
         nn.init.constant_(self.out_mlp[2].bias, node_bias)
         self.reduce_op = reduce_op
-    
+
     def forward(
         self,
         data: Data,
@@ -101,13 +101,18 @@ class NegGradOut(ScalarOut):
             `res`: Scalar output.
             `neg_grad`: Negative gradient.
         """
-        batch = data.batch; coord = data.pos
+        batch = data.batch
+        coord = data.pos
         res = self.out_mlp(x_scalar)
         if self.reduce_op is not None:
             res = scatter(res, batch, dim=0, reduce=self.reduce_op)
         grad = torch.autograd.grad(
-            [res.sum(),],
-            [coord,],
+            [
+                res.sum(),
+            ],
+            [
+                coord,
+            ],
             retain_graph=True,
             create_graph=True,
         )[0]
@@ -167,7 +172,9 @@ class VectorOut(nn.Module):
             `res`: Vector output.
         """
         batch = data.batch
-        spherical_out = self.spherical_out_mlp(x_spherical)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
+        spherical_out = self.spherical_out_mlp(x_spherical)[
+            :, [2, 0, 1]
+        ]  # [y, z, x] -> [x, y, z]
         scalar_out = self.scalar_out_mlp(x_scalar)
         res = spherical_out * scalar_out
         if self.reduce_op is not None:
@@ -243,9 +250,11 @@ class PolarOut(nn.Module):
         # build second order output
         second_out = torch.empty_like(zero_out)
         d_norm = torch.linalg.norm(second_order, dim=-1)
-        dxy = second_order[:, 0]; dyz = second_order[:, 1]
+        dxy = second_order[:, 0]
+        dyz = second_order[:, 1]
         dz2 = second_order[:, 2]
-        dzx = second_order[:, 3]; dx2_y2 = second_order[:, 4]
+        dzx = second_order[:, 3]
+        dx2_y2 = second_order[:, 4]
         second_out[:, 0, 0] = (1 / math.sqrt(3)) * (d_norm - dz2) + dx2_y2
         second_out[:, 1, 1] = (1 / math.sqrt(3)) * (d_norm - dz2) - dx2_y2
         second_out[:, 2, 2] = (1 / math.sqrt(3)) * (d_norm + 2 * dz2)
@@ -298,9 +307,13 @@ class SpatialOut(nn.Module):
         Returns:
             `res`: Spatial output.
         """
-        batch = data.batch; coord = data.pos; at_no = data.at_no
+        batch = data.batch
+        coord = data.pos
+        at_no = data.at_no
         masses = self.masses[at_no]
-        centroids = scatter(masses * coord, batch, dim=0) / scatter(masses, batch, dim=0)
+        centroids = scatter(masses * coord, batch, dim=0) / scatter(
+            masses, batch, dim=0
+        )
         coord -= centroids[batch]
         scalar_out = self.scalar_out_mlp(x_scalar)
         spatial = torch.square(coord).sum(dim=1, keepdim=True)
@@ -312,8 +325,9 @@ class SpatialOut(nn.Module):
 
 class CartTensorOut(nn.Module):
     """
-    Output Module for order n tensor via tensor product of input hidden irreps and cartesian transform. 
+    Output Module for order n tensor via tensor product of input hidden irreps and cartesian transform.
     """
+
     def __init__(
         self,
         node_dim: int = 128,
@@ -375,12 +389,8 @@ class CartTensorOut(nn.Module):
         self.reduce_op = reduce_op
         self.if_trace = if_iso and order == 2
 
-
     def forward(
-        self,
-        data: Data,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor
+        self, data: Data, x_scalar: torch.Tensor, x_spherical: torch.Tensor
     ) -> torch.Tensor:
         # self mix to expand the spherical features
         # x_in = self.selfmix_tp(x_spherical)
@@ -396,19 +406,22 @@ class CartTensorOut(nn.Module):
         if self.reduce_op is not None:
             x_cart = scatter(x_cart, data.batch, dim=0, reduce=self.reduce_op)
         if self.if_trace:
-            res = torch.diagonal(x_cart, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
+            res = (
+                torch.diagonal(x_cart, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
+            )
         else:
             # [y, z, x] -> [x, y, z]
             for i_dim in range(1, x_cart.dim()):
                 x_cart = x_cart.roll(shifts=1, dims=i_dim)
             res = x_cart
         return res
-    
+
 
 class MegaCartTensorOut(nn.Module):
     """
-    Output Module for order n tensor via tensor product of input hidden irreps and cartesian transform. 
+    Output Module for order n tensor via tensor product of input hidden irreps and cartesian transform.
     """
+
     def __init__(
         self,
         node_dim: int = 128,
@@ -459,12 +472,8 @@ class MegaCartTensorOut(nn.Module):
         self.reduce_op = reduce_op
         self.if_trace = if_iso and order == 2
 
-
     def forward(
-        self,
-        data: Data,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor
+        self, data: Data, x_scalar: torch.Tensor, x_spherical: torch.Tensor
     ) -> torch.Tensor:
         # self mix to expand the spherical features
         x_in = self.selfmix_tp(x_spherical)
@@ -479,7 +488,9 @@ class MegaCartTensorOut(nn.Module):
         if self.reduce_op is not None:
             x_cart = scatter(x_cart, data.batch, dim=0, reduce=self.reduce_op)
         if self.if_trace:
-            res = torch.diagonal(x_cart, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
+            res = (
+                torch.diagonal(x_cart, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
+            )
         else:
             # [y, z, x] -> [x, y, z]
             for i_dim in range(1, x_cart.dim()):
@@ -489,9 +500,9 @@ class MegaCartTensorOut(nn.Module):
 
 
 def resolve_output(config: NetConfig):
-    splited_str = config.output_mode.rsplit('-', 1)
+    splited_str = config.output_mode.rsplit("-", 1)
     output_mode = splited_str[0]
-    extra = splited_str[1] if len(splited_str) == 2 else ''
+    extra = splited_str[1] if len(splited_str) == 2 else ""
     if output_mode == "scalar":
         return ScalarOut(
             node_dim=config.node_dim,
@@ -535,7 +546,7 @@ def resolve_output(config: NetConfig):
             hidden_dim=config.hidden_dim,
             actfn=config.activation,
             reduce_op=config.reduce_op,
-       )
+        )
     elif output_mode == "cartesian":
         return CartTensorOut(
             node_dim=config.node_dim,
@@ -563,4 +574,6 @@ def resolve_output(config: NetConfig):
             reduce_op=config.reduce_op,
         )
     else:
-        raise NotImplementedError(f"output mode {config.output_mode} is not implemented")
+        raise NotImplementedError(
+            f"output mode {config.output_mode} is not implemented"
+        )

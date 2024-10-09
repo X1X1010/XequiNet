@@ -18,7 +18,7 @@ def run_pimd(args: argparse.Namespace) -> None:
     ffsocket = root.find("ffsocket")
     kwargs["pbc"] = bool(ffsocket.attrib["pbc"])
     for child in ffsocket:
-        if child.tag =="address":
+        if child.tag == "address":
             kwargs["address"] = child.text
         elif child.tag == "port":
             kwargs["port"] = int(child.text)
@@ -35,5 +35,3 @@ def run_pimd(args: argparse.Namespace) -> None:
             driver.parse()
         except:
             break
-        
-    

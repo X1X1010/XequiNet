@@ -6,6 +6,7 @@ class ZeroLogger:
     """
     Only logging in rank Zero process.
     """
+
     def __init__(
         self, is_rank0=False, output_dir="./", log_file="loss.log", stream_name="train"
     ):
@@ -20,7 +21,7 @@ class ZeroLogger:
         self.log_file = log_file
         self.stream_name = stream_name
         if is_rank0:
-            self.f = self.get_file_logger()    # file logger
+            self.f = self.get_file_logger()  # file logger
             self.s = self.get_stream_logger()  # stream logger
         else:
             self.f = NoOp()
@@ -57,4 +58,5 @@ class NoOp:
     def __getattr__(self, *args):
         def no_op(*args, **kwargs):
             pass
+
         return no_op

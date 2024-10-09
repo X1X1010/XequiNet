@@ -24,7 +24,7 @@ def gen_units_dict():
     _NA = 6.02214076e23        # Avogadro number         Exact
     _kB = 1.380649e-23         # Boltzmann constant      Exact
     _amu = 1.66053906660e-27   # atomic mass unit, kg    +/- 0.000_000_000_50e-27
-    
+
     # derived from the CODATA values
     _eps0 = 1 / _mu0 / _c**2     # permittivity of vacuum
     _hbar = _hplanck / (2 * pi)  # Planck constant / 2pi, J s
@@ -122,7 +122,7 @@ ELEMENTS_LIST = ['d',
   'Na', 'Mg',                                                             'Al', 'Si', 'P' , 'S' , 'Cl', 'Ar',
   'K' , 'Ca', 'Sc', 'Ti', 'V' , 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr',
   'Rb', 'Sr', 'Y' , 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I' , 'Xe',
-  'Cs', 'Ba', 
+  'Cs', 'Ba',
               'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu',
                     'Hf', 'Ta', 'W' , 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 'Po', 'At', 'Rn',
 ]
@@ -146,7 +146,7 @@ ATOM_MASS = torch.Tensor([0.0,
     22.99, 24.31,                                                                       26.98, 28.09, 30.97, 32.06, 35.45, 39.95,
     39.10, 40.08, 44.96, 47.87, 50.94, 52.00, 54.94, 55.85, 58.93, 58.69, 63.55, 65.38, 69.72, 72.63, 74.92, 78.96, 79.90, 83.80,
     85.47, 87.62, 88.91, 91.22, 92.91, 95.96, 98.,   101.1, 102.9, 106.4, 107.9, 112.4, 114.8, 118.7, 121.8, 127.6, 126.9, 131.3,
-    132.9, 137.3, 
+    132.9, 137.3,
                   138.9, 140.1, 140.9, 144.2, 145.,  150.4, 152.0, 157.3, 158.9, 162.5, 164.9, 167.3, 168.9, 173.1, 175.0,
                          178.5, 180.9, 183.8, 186.2, 190.2, 192.2, 195.1, 197.0, 200.6, 204.4, 207.2, 209.,  210.,  210.,  222.,
 ])
@@ -294,7 +294,7 @@ Na Mg                               Al Si P  S  Cl Ar
 K  Ca Sc Ti V  Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr
 Rb Sr Y  Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I  Xe
 Cs Ba    Hf Ta W  Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn
-        
+
       La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu
 """
         for atom, energy in atom_sp_dict.items():
@@ -305,7 +305,7 @@ Cs Ba    Hf Ta W  Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn
             warning_msg += f"{periodic_table.strip()}\n"
             warning_msg += "If you need these atoms, please regenerate the file or add them manually."
             warnings.warn(warning_msg)
-    
+
     return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
 
 

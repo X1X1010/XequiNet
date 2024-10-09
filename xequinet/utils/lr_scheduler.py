@@ -7,6 +7,7 @@ class SmoothReduceLROnPlateau(torch.optim.lr_scheduler.ReduceLROnPlateau):
     Extends PyTorch ReduceLROnPlateau by exponential smoothing of the monitored metric
 
     """
+
     def __init__(
         self,
         optimizer: torch.optim.Optimizer,
@@ -129,7 +130,9 @@ def get_polynomial_decay_schedule(
 
     lr_init = optimizer.defaults["lr"]
     if not (lr_init > lr_end):
-        raise ValueError(f"lr_end ({lr_end}) must be be smaller than initial lr ({lr_init})")
+        raise ValueError(
+            f"lr_end ({lr_end}) must be be smaller than initial lr ({lr_init})"
+        )
 
     lr_lambda = partial(
         _get_polynomial_decay_schedule_lambda,

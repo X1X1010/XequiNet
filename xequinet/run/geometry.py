@@ -8,21 +8,33 @@ import torch_cluster  # must import torch_cluster because it is used in the jit 
 from ase.io import read as ase_read
 from pyscf import gto
 from pyscf.geomopt import geometric_solver, as_pyscf_method
+
 try:
     import tblite.interface as xtb
 except:
     warnings.warn("xtb is not installed, xtb calculation will not be performed.")
 
 
-def xeq_method(mol: gto.Mole, model: torch.jit.ScriptModule, device: torch.device, base_method: str = None) -> tuple:
+def xeq_method(
+    mol: gto.Mole,
+    model: torch.jit.ScriptModule,
+    device: torch.device,
+    base_method: str = None,
+) -> tuple:
     """Xequinet method for energy and gradient calculation."""
     at_no = torch.tensor(mol.atom_charges(), dtype=torch.long, device=device)
-    coord = torch.tensor(mol.atom_coords(), dtype=torch.get_default_dtype(), device=device)
+    coord = torch.tensor(
+        mol.atom_coords(), dtype=torch.get_default_dtype(), device=device
+    )
     model_res: dict = model(at_no=at_no, coord=coord, charge=mol.charge, spin=mol.spin)
     energy = model_res.get("energy").item()
     nuc_grad = model_res.get("gradient").detach().cpu().numpy()
     if base_method is not None:
-        m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
+        m_dict = {
+            "gfn2-xtb": "GFN2-xTB",
+            "gfn1-xtb": "GFN1-xTB",
+            "ipea1-xtb": "IPEA1-xTB",
+        }
         calc = xtb.Calculator(
             method=m_dict[base_method.lower()],
             numbers=mol.atom_charges(),
@@ -36,23 +48,33 @@ def xeq_method(mol: gto.Mole, model: torch.jit.ScriptModule, device: torch.devic
     return energy, nuc_grad
 
 
-def calc_analytical_hessian(mol: gto.Mole, model: torch.jit.ScriptModule, device: torch.device) -> tuple:
+def calc_analytical_hessian(
+    mol: gto.Mole, model: torch.jit.ScriptModule, device: torch.device
+) -> tuple:
     """Calculate the hessian with analytical second derivative."""
     at_no = torch.tensor(mol.atom_charges(), dtype=torch.long, device=device)
-    coord = torch.tensor(mol.atom_coords(), dtype=torch.get_default_dtype(), device=device)
+    coord = torch.tensor(
+        mol.atom_coords(), dtype=torch.get_default_dtype(), device=device
+    )
     coord.requires_grad = True
     model_res: dict = model(at_no=at_no, coord=coord, charge=mol.charge, spin=mol.spin)
     energy = model_res.get("energy")
     nuc_grad = model_res.get("gradient")
-    hessian = torch.zeros((mol.natm, mol.natm, 3, 3), dtype=torch.get_default_dtype(), device=device)
+    hessian = torch.zeros(
+        (mol.natm, mol.natm, 3, 3), dtype=torch.get_default_dtype(), device=device
+    )
     for i in range(mol.natm):
         for j in range(3):
-            hessian[i, :, j, :] = torch.autograd.grad(nuc_grad[i, j], coord, retain_graph=True)[0]
+            hessian[i, :, j, :] = torch.autograd.grad(
+                nuc_grad[i, j], coord, retain_graph=True
+            )[0]
     hessian = hessian.cpu().numpy()
     return energy.item(), hessian
 
 
-def calc_numerical_hessian(mol: gto.Mole, model: torch.nn.Module, device: torch.device, base_method: str = None) -> tuple:
+def calc_numerical_hessian(
+    mol: gto.Mole, model: torch.nn.Module, device: torch.device, base_method: str = None
+) -> tuple:
     """Calculate the hessian with numerical second derivative."""
     energy, _ = xeq_method(mol, model, device, base_method)
     hessian = np.zeros((mol.natm, mol.natm, 3, 3))
@@ -62,18 +84,30 @@ def calc_numerical_hessian(mol: gto.Mole, model: torch.nn.Module, device: torch.
     for i in range(mol.natm):
         for j in range(3):
             coord[i, j] += h
-            d_mol = gto.M(atom=[(a, c) for a, c in zip(at_no, coord)], unit="Bohr", charge=mol.charge, spin=mol.spin)
+            d_mol = gto.M(
+                atom=[(a, c) for a, c in zip(at_no, coord)],
+                unit="Bohr",
+                charge=mol.charge,
+                spin=mol.spin,
+            )
             _, gfwd = xeq_method(d_mol, model, device, base_method)
             coord[i, j] -= 2 * h
-            d_mol = gto.M(atom=[(a, c) for a, c in zip(at_no, coord)], unit="Bohr", charge=mol.charge, spin=mol.spin)
+            d_mol = gto.M(
+                atom=[(a, c) for a, c in zip(at_no, coord)],
+                unit="Bohr",
+                charge=mol.charge,
+                spin=mol.spin,
+            )
             _, gbak = xeq_method(d_mol, model, device, base_method)
             coord[i, j] += h
             hessian[i, :, j, :] = (gfwd - gbak) / (2 * h)
     return energy, hessian
 
 
-def to_shermo(shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray) -> None:
-    with open(shm_file, 'w') as f:
+def to_shermo(
+    shm_file: str, mol: gto.Mole, energy: float, wavenums: np.ndarray
+) -> None:
+    with open(shm_file, "w") as f:
         f.write(f"*E\n    {energy:10.6f}\n")
         f.write("*wavenum\n")
         # chage imaginary frequency to negative frequency
@@ -94,10 +128,10 @@ def run_opt(args: argparse.Namespace) -> None:
     if args.freq:
         # create a new freq log file
         freq_log = args.input.split(".")[0] + "_freq.log"
-        with open(freq_log, 'w') as f:
-           f.write(f"XequiNet Frequency Calculation\n\n")
+        with open(freq_log, "w") as f:
+            f.write(f"XequiNet Frequency Calculation\n\n")
         from pyscf.hessian import thermo
-    
+
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -105,7 +139,7 @@ def run_opt(args: argparse.Namespace) -> None:
     model = torch.jit.load(args.ckpt, map_location=device)
     model.eval()
 
-    atoms_list = ase_read(args.input, index=':')
+    atoms_list = ase_read(args.input, index=":")
     # loop over molecules
     for atoms in atoms_list:
         # convert `ase.Atoms` to `pyscf.gto.Mole`
@@ -118,44 +152,56 @@ def run_opt(args: argparse.Namespace) -> None:
             spin = atoms.info.get("spin", 0)
         # load molecule
         mol = gto.M(
-            atom=[(a, c) for a, c in zip(chem_symb, positions)],  # [(atom, ndarray[x, y, z]), ...]
+            atom=[
+                (a, c) for a, c in zip(chem_symb, positions)
+            ],  # [(atom, ndarray[x, y, z]), ...]
             charge=charge,
             spin=spin,  # multiplicity = spin + 1
         )
         # create a fake method as pyscf method, which returns energy and gradient
-        fake_method = as_pyscf_method(mol, lambda mol: xeq_method(mol, model, device, args.delta))
+        fake_method = as_pyscf_method(
+            mol, lambda mol: xeq_method(mol, model, device, args.delta)
+        )
         if args.no_opt:  # given a optimized geometry, so copy the molecule
             conv = True
             new_mol = mol.copy()
-        else:            # optimize geometry and return a new molecule
-            conv, new_mol = geometric_solver.kernel(fake_method, constraints=args.cons, maxsteps=args.max_steps)
+        else:  # optimize geometry and return a new molecule
+            conv, new_mol = geometric_solver.kernel(
+                fake_method, constraints=args.cons, maxsteps=args.max_steps
+            )
 
         if args.freq:
             # open freq output file
-            new_mol.stdout = open(freq_log, 'a')
+            new_mol.stdout = open(freq_log, "a")
             if args.numer or args.delta is not None:
                 # calculate hessian with numerical second derivative
-                energy, hessian = calc_numerical_hessian(new_mol, model, device, args.delta)
+                energy, hessian = calc_numerical_hessian(
+                    new_mol, model, device, args.delta
+                )
             else:
                 # calculate hessian with analytical second derivative
                 energy, hessian = calc_analytical_hessian(new_mol, model, device)
             # do thermo calculation
             harmonic_res = thermo.harmonic_analysis(new_mol, hessian)
             if args.verbose >= 1:
-                thermo.dump_normal_mode(new_mol, harmonic_res)   # dump normal modes in new_mol.stdout, i.e. freq output file
+                thermo.dump_normal_mode(
+                    new_mol, harmonic_res
+                )  # dump normal modes in new_mol.stdout, i.e. freq output file
             setattr(fake_method, "e_tot", energy)
-            thermo_res = thermo.thermo(fake_method, harmonic_res['freq_au'], args.temp)
-            thermo.dump_thermo(new_mol, thermo_res)            # dump thermo results in new_mol.stdout, i.e. freq output file
+            thermo_res = thermo.thermo(fake_method, harmonic_res["freq_au"], args.temp)
+            thermo.dump_thermo(
+                new_mol, thermo_res
+            )  # dump thermo results in new_mol.stdout, i.e. freq output file
             new_mol.stdout.write("\n\n")
             new_mol.stdout.close()
             if args.shm:
                 shm_file = args.input.split(".")[0] + "_freq.shm"
-                to_shermo(shm_file, new_mol, energy, harmonic_res['freq_wavenumber'])
+                to_shermo(shm_file, new_mol, energy, harmonic_res["freq_wavenumber"])
 
         # write optimized geometry
         if not args.no_opt:
             opt_out = args.input.split(".")[0] + "_opt.xyz"
-            with open(opt_out, 'a') as f:
+            with open(opt_out, "a") as f:
                 f.write(f"{new_mol.natm}\n")
                 if conv:
                     energy, _ = xeq_method(new_mol, model, device, args.delta)

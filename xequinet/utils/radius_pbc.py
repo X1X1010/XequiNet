@@ -11,19 +11,23 @@ def radius_graph_pbc(
     cutoff: float,
     loop: bool = False,
     max_num_neighbors: int = 32,
-    flow: str = 'source_to_target',
+    flow: str = "source_to_target",
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Calculate the radius graph with a periodic boundary condition.
     """
-    assert flow in ['source_to_target', 'target_to_source']
+    assert flow in ["source_to_target", "target_to_source"]
     # make sure `pbc` is a 3-element array
     pbc = np.ones(3, dtype=bool) * pbc
     # here we define `offsets` as how many unit cells does the `idx_j` atom shift from its original position
     # and `shifts` as the actual shift vector
     idx_c, idx_n, distances, offsets = primitive_neighbor_list(
-        "ijdS", pbc=pbc, cell=cell, positions=positions, cutoff=cutoff,
-        self_interaction=True, # we want edges from atom to itself in different periodic images
+        "ijdS",
+        pbc=pbc,
+        cell=cell,
+        positions=positions,
+        cutoff=cutoff,
+        self_interaction=True,  # we want edges from atom to itself in different periodic images
     )
     # from https://github.com/mir-group/nequip/blob/main/nequip/data/AtomicData.py#L770
     if not loop:  # remove the real self-interaction
@@ -63,14 +67,14 @@ def radius_batch_pbc(
     cutoff: float,
     loop: bool = False,
     max_num_neighbors: int = 32,
-    flow: str = 'source_to_target',
+    flow: str = "source_to_target",
     batch: torch.Tensor = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Calculate the radius graph with PBC for a batch one by one.
     Fake batch process for `radius_graph_pbc`.
     """
-    assert flow in ['source_to_target', 'target_to_source']
+    assert flow in ["source_to_target", "target_to_source"]
     if batch is None:
         batch = torch.zeros(positions.shape[0], dtype=torch.long)
     num_points = batch.max().item() + 1
@@ -87,5 +91,7 @@ def radius_batch_pbc(
         edge_index_list.append(torch.from_numpy(_edge_index))
         shifts_list.append(torch.from_numpy(_shifts))
     edge_index = torch.cat(edge_index_list, dim=1).to(torch.long).to(positions.device)
-    shifts = torch.cat(shifts_list, dim=0).to(torch.get_default_dtype()).to(positions.device)
+    shifts = (
+        torch.cat(shifts_list, dim=0).to(torch.get_default_dtype()).to(positions.device)
+    )
     return edge_index, shifts

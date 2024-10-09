@@ -1,0 +1,14 @@
+# .pre-commit-config.yaml
+repos:
+  - repo: git@github.com:pre-commit/pre-commit-hooks.git
+    rev: 4.4.0  # this is optional, use `pre-commit autoupdate` to get the latest rev!
+    hooks:
+      - id: debug-statements
+      - id: check-added-large-files
+repos:
+  - repo: git@github.com:psf/black-pre-commit-mirror.git
+    rev: 22.3.0
+    hooks:
+      - id: black
+        language_version: python3
+        exclude: utils/qc.py

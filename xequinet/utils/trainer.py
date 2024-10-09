@@ -41,11 +41,11 @@ class AverageMeter:
     def reset(self) -> None:
         self.sum = torch.zeros((1,), device=self.device)
         self.cnt = torch.zeros((1,), dtype=torch.int32, device=self.device)
-    
+
     def update(self, val: float, n: int = 1) -> None:
         self.sum += val
         self.cnt += n
-    
+
     def reduce(self) -> float:
         tmp_sum = self.sum.clone()
         tmp_cnt = self.cnt.clone()
@@ -57,7 +57,10 @@ class AverageMeter:
 
 class EarlyStopping:
     def __init__(
-        self, patience: int = None, min_delta: float = 0.0, min_lr: float = 1e-6,
+        self,
+        patience: int = None,
+        min_delta: float = 0.0,
+        min_lr: float = 1e-6,
     ) -> None:
         self.patience = patience if patience is not None else float("inf")
         self.min_delta = min_delta
@@ -81,6 +84,7 @@ class Trainer:
     """
     General trainer class for training neural networks.
     """
+
     def __init__(
         self,
         model: nn.parallel.DistributedDataParallel,
@@ -147,23 +151,26 @@ class Trainer:
         if config.ema_decay is not None:
             ema_model = AveragedModel(
                 self.model.module,
-                avg_fn=lambda avg_param, param, num_avg: \
-                    config.ema_decay * avg_param + (1 - config.ema_decay) * param,
+                avg_fn=lambda avg_param, param, num_avg: config.ema_decay * avg_param
+                + (1 - config.ema_decay) * param,
                 device=device,
             )
             self.ema_model = ema_model
         # loss recording, model saving and logging
         self.meter = AverageMeter(device=device)
         self.best_l2fs: List[loss2file] = [
-            loss2file(float("inf"), os.path.join(config.save_dir, f"{config.run_name}_{i}.pt"), 0)
+            loss2file(
+                float("inf"),
+                os.path.join(config.save_dir, f"{config.run_name}_{i}.pt"),
+                0,
+            )
             for i in range(config.best_k)
         ]  # a max-heap, actually it is a min-heap
-        
+
         # load checkpoint
         self.start_epoch = 1
         if config.ckpt_file is not None:
             self._load_params(config.ckpt_file)
-
 
     def _load_params(self, ckpt_file: str) -> None:
         state = torch.load(ckpt_file, map_location=self.device)
@@ -179,8 +186,9 @@ class Trainer:
                     l2f.loss = pt_state["loss"] if "loss" in pt_state else float("inf")
         self.log.f.info(f" --- Loaded checkpoint from {ckpt_file}")
 
-
-    def _save_params(self, model: nn.Module, ckpt_file: str, loss: float = None) -> None:
+    def _save_params(
+        self, model: nn.Module, ckpt_file: str, loss: float = None
+    ) -> None:
         state = {
             "model": model.state_dict(),
             "epoch": self.epoch,
@@ -192,7 +200,6 @@ class Trainer:
         }
         torch.save(state, ckpt_file)
 
-
     def save_best_k(self, model: nn.Module, curr_loss: float) -> None:
         if curr_loss < self.best_l2fs[0].loss:
             l2f = heapq.heappop(self.best_l2fs)
@@ -200,7 +207,6 @@ class Trainer:
             l2f.epoch = self.epoch
             self._save_params(model, l2f.ptfile, l2f.loss)
             heapq.heappush(self.best_l2fs, l2f)
-
 
     def train1epoch(self) -> None:
         self.model.train()
@@ -218,7 +224,9 @@ class Trainer:
             loss.backward()
             # gradient clipping
             if self.config.grad_clip is not None:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.grad_clip
+                )
             self.optimizer.step()
             # update EMA model
             if self.ema_model is not None:
@@ -232,9 +240,9 @@ class Trainer:
                 l1loss = F.l1_loss(pred, real, reduction="sum")
                 self.meter.update(l1loss.item(), real.numel())
             # logging
-            if (self.epoch % self.config.log_epoch == 0 and
-                (step % self.config.log_step == 0 or
-                 step == len(self.train_loader))):
+            if self.epoch % self.config.log_epoch == 0 and (
+                step % self.config.log_step == 0 or step == len(self.train_loader)
+            ):
                 mae = self.meter.reduce()
                 self.log.f.info(
                     "Epoch: [{iepoch:>4}][{step:>4}/{nstep}]   lr: {lr:3e}   train MAE: {mae:10.7f}".format(
@@ -245,7 +253,7 @@ class Trainer:
                         mae=mae,
                     )
                 )
-    
+
     @torch.no_grad()
     def validate(self) -> None:
         self.model.eval()
@@ -265,8 +273,9 @@ class Trainer:
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.model.module, mae)
-        self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
-
+        self._save_params(
+            self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt"
+        )
 
     @torch.no_grad()
     def ema_validate(self) -> None:
@@ -289,14 +298,18 @@ class Trainer:
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.ema_model.module, mae)
-        self._save_params(self.ema_model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
-
+        self._save_params(
+            self.ema_model.module,
+            f"{self.config.save_dir}/{self.config.run_name}_last.pt",
+        )
 
     def start(self) -> None:
         prop_unit, len_unit = get_default_unit()
         self.log.f.info(" --- Start training")
         self.log.f.info(f" --- Task Name: {self.config.run_name}")
-        self.log.f.info(f" --- Property: {self.config.label_name} --- Unit: {prop_unit} {len_unit}")
+        self.log.f.info(
+            f" --- Property: {self.config.label_name} --- Unit: {prop_unit} {len_unit}"
+        )
 
         # training loop
         for iepoch in range(self.start_epoch, self.config.max_epochs + 1):
@@ -309,10 +322,12 @@ class Trainer:
             if self.early_stop.stop:
                 self.log.f.info(f" --- Early Stopping at Epoch {iepoch}")
                 break
-        
+
         self.log.f.info(" --- Training Completed")
         self.log.f.info(f" --- Best Valid MAE: {self.best_l2fs[-1].loss:.5f}")
-        self.log.f.info(f" --- Best Checkpoint: {self.best_l2fs[-1].ptfile} at Epoch {self.best_l2fs[-1].epoch}")
+        self.log.f.info(
+            f" --- Best Checkpoint: {self.best_l2fs[-1].ptfile} at Epoch {self.best_l2fs[-1].epoch}"
+        )
 
 
 class WithForceMeter:
@@ -325,8 +340,10 @@ class WithForceMeter:
         self.cnt = torch.zeros((2,), dtype=torch.int32, device=self.device)
 
     def update(self, energy: float, force: float, n_ene: int, n_frc: int) -> None:
-        self.sum[0] += energy; self.sum[1] += force
-        self.cnt[0] += n_ene; self.cnt[1] += n_frc
+        self.sum[0] += energy
+        self.sum[1] += force
+        self.cnt[0] += n_ene
+        self.cnt[1] += n_frc
 
     def reduce(self) -> Tuple[float, float]:
         tmp_sum = self.sum.clone()
@@ -335,12 +352,13 @@ class WithForceMeter:
         dist.all_reduce(tmp_cnt, op=dist.ReduceOp.SUM)
         avg = tmp_sum / tmp_cnt
         return avg[0].item(), avg[1].item()
-    
+
 
 class GradTrainer(Trainer):
     """
     Trainer class for scalar and relative gradient property
     """
+
     def __init__(
         self,
         model: nn.parallel.DistributedDataParallel,
@@ -367,7 +385,6 @@ class GradTrainer(Trainer):
         assert config.force_weight <= 1.0
         self.meter = WithForceMeter(self.device)
 
-    
     def train1epoch(self) -> None:
         self.model.train()
         self.dist_sampler.set_epoch(self.epoch)
@@ -383,14 +400,18 @@ class GradTrainer(Trainer):
                 realF -= data.base_force
             lossE = self.lossfn(predE, realE)
             lossF = self.lossfn(predF, realF)
-            loss = (1 - self.config.force_weight) * lossE + self.config.force_weight * lossF
+            loss = (
+                1 - self.config.force_weight
+            ) * lossE + self.config.force_weight * lossF
             # backward propagation
             self.optimizer.zero_grad()
             # with torch.autograd.detect_anomaly():
             loss.backward()
             # gradient clipping
             if self.config.grad_clip is not None:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.grad_clip
+                )
             self.optimizer.step()
             # update EMA model
             if self.ema_model is not None:
@@ -403,11 +424,13 @@ class GradTrainer(Trainer):
             with torch.no_grad():
                 l1lossE = F.l1_loss(predE, realE, reduction="sum")
                 l1lossF = F.l1_loss(predF, realF, reduction="sum")
-                self.meter.update(l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel())
+                self.meter.update(
+                    l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel()
+                )
             # logging
-            if (self.epoch % self.config.log_epoch == 0 and
-                (step % self.config.log_step == 0 or
-                 step == len(self.train_loader))):
+            if self.epoch % self.config.log_epoch == 0 and (
+                step % self.config.log_step == 0 or step == len(self.train_loader)
+            ):
                 maeE, maeF = self.meter.reduce()
                 self.log.f.info(
                     "Epoch: [{iepoch:>4}][{step:4d}/{nstep}]   lr: {lr:3e}   train MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}".format(
@@ -419,7 +442,7 @@ class GradTrainer(Trainer):
                         maeF=maeF,
                     )
                 )
-    
+
     def validate(self) -> None:
         self.model.eval()
         self.meter.reset()
@@ -432,9 +455,11 @@ class GradTrainer(Trainer):
                 if hasattr(data, "base_y") and hasattr(data, "base_force"):
                     realE -= data.base_y
                     realF -= data.base_force
-                l1lossE = F.l1_loss(predE, realE, reduction="sum") 
+                l1lossE = F.l1_loss(predE, realE, reduction="sum")
                 l1lossF = F.l1_loss(predF, realF, reduction="sum")
-                self.meter.update(l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel())
+                self.meter.update(
+                    l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel()
+                )
         maeE, maeF = self.meter.reduce()
         if self.epoch % self.config.log_epoch == 0:
             self.log.f.info(f"Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
@@ -445,10 +470,10 @@ class GradTrainer(Trainer):
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.model.module, mae)
-        self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
+        self._save_params(
+            self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt"
+        )
 
-
-    
     def ema_validate(self) -> None:
         if self.ema_model is None:
             return
@@ -463,12 +488,16 @@ class GradTrainer(Trainer):
                 if hasattr(data, "base_y") and hasattr(data, "base_force"):
                     realE -= data.base_y
                     realF -= data.base_force
-                l1lossE = F.l1_loss(predE, realE, reduction="sum") 
+                l1lossE = F.l1_loss(predE, realE, reduction="sum")
                 l1lossF = F.l1_loss(predF, realF, reduction="sum")
-                self.meter.update(l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel())
+                self.meter.update(
+                    l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel()
+                )
         maeE, maeF = self.meter.reduce()
         if self.epoch % self.config.log_epoch == 0:
-            self.log.f.info(f"EMA Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
+            self.log.f.info(
+                f"EMA Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}"
+            )
         mae = (1 - self.config.force_weight) * maeE + self.config.force_weight * maeF
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
@@ -476,30 +505,37 @@ class GradTrainer(Trainer):
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.ema_model.module, mae)
-        self._save_params(self.ema_model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
-
+        self._save_params(
+            self.ema_model.module,
+            f"{self.config.save_dir}/{self.config.run_name}_last.pt",
+        )
 
 
 class GraphMeter:
     """
     Meter class for evaluating error metrics containing both node and edge labels.
     """
+
     def __init__(self, device: torch.device) -> None:
         self.device = device
         self.reset()
-    
+
     def reset(self) -> None:
         self.sum = torch.zeros((2,), device=self.device)
         self.cnt = torch.zeros((2,), device=self.device, dtype=torch.int32)
 
     def update(
         self,
-        node_datum: float, edge_datum: float,
-        num_node: int, num_edge: int,
+        node_datum: float,
+        edge_datum: float,
+        num_node: int,
+        num_edge: int,
     ) -> None:
         self.sum += torch.tensor([node_datum, edge_datum], device=self.device)
-        self.cnt += torch.tensor([num_node, num_edge], device=self.device, dtype=torch.int32)
-    
+        self.cnt += torch.tensor(
+            [num_node, num_edge], device=self.device, dtype=torch.int32
+        )
+
     def reduce(self) -> Tuple[float, float, float]:
         tmp_sum = self.sum.clone()
         tmp_cnt = self.cnt.clone()
@@ -508,7 +544,6 @@ class GraphMeter:
         avg = tmp_sum / tmp_cnt
         avg_tot = tmp_sum.sum() / tmp_cnt.sum()
         return avg[0].item(), avg[1].item(), avg_tot.item()
-    
 
 
 class MatTrainer(Trainer):
@@ -516,6 +551,7 @@ class MatTrainer(Trainer):
     Trainer class for general matrix properties calculated from quantum chemistry method
     with a given basis set layout.
     """
+
     def __init__(
         self,
         model: nn.parallel.DistributedDataParallel,
@@ -526,7 +562,9 @@ class MatTrainer(Trainer):
         dist_sampler: DistributedSampler,
         log: ZeroLogger,
     ) -> None:
-        super().__init__(model, config, device, train_loader, valid_loader, dist_sampler, log)
+        super().__init__(
+            model, config, device, train_loader, valid_loader, dist_sampler, log
+        )
         self.meter = GraphMeter(self.device)
 
     def train1epoch(self) -> None:
@@ -539,8 +577,14 @@ class MatTrainer(Trainer):
             # forward propagation
             pred_node_padded, pred_edge_padded = self.model(data)
             node_mask, edge_mask = data.node_mask, data.edge_mask
-            pred_node, pred_edge = pred_node_padded[node_mask], pred_edge_padded[edge_mask]
-            real_node, real_edge = data.node_label[node_mask], data.edge_label[edge_mask]
+            pred_node, pred_edge = (
+                pred_node_padded[node_mask],
+                pred_edge_padded[edge_mask],
+            )
+            real_node, real_edge = (
+                data.node_label[node_mask],
+                data.edge_label[edge_mask],
+            )
             batch_pred = torch.cat([pred_node, pred_edge], dim=0)
             batch_real = torch.cat([real_node, real_edge], dim=0)
             loss = self.lossfn(batch_pred, batch_real)
@@ -550,7 +594,11 @@ class MatTrainer(Trainer):
             loss.backward()
             # gradient clipping
             if self.config.grad_clip is not None:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip, error_if_nonfinite=True)
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(),
+                    self.config.grad_clip,
+                    error_if_nonfinite=True,
+                )
             self.optimizer.step()
             # update EMA model
             if self.ema_model is not None:
@@ -564,12 +612,15 @@ class MatTrainer(Trainer):
                 l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
                 l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
                 self.meter.update(
-                    l1loss_node.item(), l1loss_edge.item(), real_node.size(0), real_edge.size(0),
+                    l1loss_node.item(),
+                    l1loss_edge.item(),
+                    real_node.size(0),
+                    real_edge.size(0),
                 )
             # logging
-            if (self.epoch % self.config.log_epoch == 0 and
-                (step % self.config.log_step == 0 or
-                 step == len(self.train_loader))):
+            if self.epoch % self.config.log_epoch == 0 and (
+                step % self.config.log_step == 0 or step == len(self.train_loader)
+            ):
                 node_mae, edge_mae, total_mae = self.meter.reduce()
                 self.log.f.info(
                     "Epoch: [{iepoch:>4}][{step:4d}/{nstep}]   lr: {lr:3e}   train MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}".format(
@@ -582,7 +633,7 @@ class MatTrainer(Trainer):
                         total_mae=total_mae,
                     )
                 )
-    
+
     @torch.no_grad()
     def validate(self) -> None:
         self.model.eval()
@@ -591,24 +642,37 @@ class MatTrainer(Trainer):
             data = data.to(self.device)
             pred_node_padded, pred_edge_padded = self.model(data)
             node_mask, edge_mask = data.node_mask, data.edge_mask
-            pred_node, pred_edge = pred_node_padded[node_mask], pred_edge_padded[edge_mask]
-            real_node, real_edge = data.node_label[node_mask], data.edge_label[edge_mask]
+            pred_node, pred_edge = (
+                pred_node_padded[node_mask],
+                pred_edge_padded[edge_mask],
+            )
+            real_node, real_edge = (
+                data.node_label[node_mask],
+                data.edge_label[edge_mask],
+            )
             l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
             l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
             self.meter.update(
-                l1loss_node.item(), l1loss_edge.item(), real_node.size(0), real_edge.size(0),
+                l1loss_node.item(),
+                l1loss_edge.item(),
+                real_node.size(0),
+                real_edge.size(0),
             )
         node_mae, edge_mae, total_mae = self.meter.reduce()
         if self.epoch % self.config.log_epoch == 0:
-            self.log.f.info(f"Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}")
+            self.log.f.info(
+                f"Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}"
+            )
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(total_mae)
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(total_mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.model.module, total_mae)
-        self._save_params(self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
-    
+        self._save_params(
+            self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt"
+        )
+
     @torch.no_grad()
     def ema_validate(self) -> None:
         if self.ema_model is None:
@@ -619,20 +683,34 @@ class MatTrainer(Trainer):
             data = data.to(self.device)
             pred_node_padded, pred_edge_padded = self.ema_model(data)
             node_mask, edge_mask = data.node_mask, data.edge_mask
-            pred_node, pred_edge = pred_node_padded[node_mask], pred_edge_padded[edge_mask]
-            real_node, real_edge = data.node_label[node_mask], data.edge_label[edge_mask]
+            pred_node, pred_edge = (
+                pred_node_padded[node_mask],
+                pred_edge_padded[edge_mask],
+            )
+            real_node, real_edge = (
+                data.node_label[node_mask],
+                data.edge_label[edge_mask],
+            )
             l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
             l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
             self.meter.update(
-                l1loss_node.item(), l1loss_edge.item(), real_node.size(0), real_edge.size(0),
+                l1loss_node.item(),
+                l1loss_edge.item(),
+                real_node.size(0),
+                real_edge.size(0),
             )
         node_mae, edge_mae, total_mae = self.meter.reduce()
         if self.epoch % self.config.log_epoch == 0:
-            self.log.f.info(f"EMA Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}")
+            self.log.f.info(
+                f"EMA Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}"
+            )
         if self.config.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(total_mae)
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(total_mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.ema_model.module, total_mae)
-        self._save_params(self.ema_model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt")
+        self._save_params(
+            self.ema_model.module,
+            f"{self.config.save_dir}/{self.config.run_name}_last.pt",
+        )

@@ -72,7 +72,7 @@ def radius_graph_pbc(
         rep_a2 = torch.ceil(cutoff * inv_min_dist_a2)
     else:
         rep_a2 = cell.new_zeros(1)
-    
+
     if pbc_[2]:
         cross_a1a2 = torch.cross(cell[:, 0], cell[:, 1], dim=-1)
         inv_min_dist_a3 = torch.norm(cross_a1a2 / cell_vol, p=2, dim=-1)
@@ -88,13 +88,17 @@ def radius_graph_pbc(
     max_rep = [rep_a1.max().item(), rep_a2.max().item(), rep_a3.max().item()]
 
     # Tensor of units cells
-    cells_per_dim = [torch.arange(-rep, rep + 1, device=device, dtype=dtype) for rep in max_rep]
+    cells_per_dim = [
+        torch.arange(-rep, rep + 1, device=device, dtype=dtype) for rep in max_rep
+    ]
     # [ncells=8*m1*m2*m3, 3], covering all possible combinations of cells in 3 directions
     # potential memory hog here
     cell_offsets = torch.cartesian_prod(*cells_per_dim)
     n_cells = cell_offsets.shape[0]
     # [n_graphs, n_cells, 3]
-    unit_cell_batch = cell_offsets.view(1, n_cells, 3).expand(batch_size, -1, -1).contiguous()
+    unit_cell_batch = (
+        cell_offsets.view(1, n_cells, 3).expand(batch_size, -1, -1).contiguous()
+    )
 
     # Compute the x, y, z positional offsets for each cell in each image
     # [n_graphs, n_cells, 3]
@@ -103,19 +107,23 @@ def radius_graph_pbc(
     pbc_offsets_per_atom = pbc_offsets.repeat_interleave(n_nodes_per_graph, dim=0)
 
     # Wrap positions to unit cell
-    pos_orig_wrapped, shift_to_unwrapped = wrap_positions(pos, cell, n_nodes_per_graph, pbc_)
+    pos_orig_wrapped, shift_to_unwrapped = wrap_positions(
+        pos, cell, n_nodes_per_graph, pbc_
+    )
     pos_orig_wrapped = pos_orig_wrapped.view(-1, 1, 3)
     # broadcasted to [n_atoms, n_cells, 3]
     pos_pbc_shift = pos_orig_wrapped + pbc_offsets_per_atom
 
     @torch.no_grad()
     def dist_thresh(
-        A: torch.Tensor, B: torch.Tensor, cutoff: float,
+        A: torch.Tensor,
+        B: torch.Tensor,
+        cutoff: float,
     ) -> torch.Tensor:
         D = torch.cdist(A, B)
         idx = torch.nonzero(torch.logical_and(D < cutoff, D > 0.01), as_tuple=False)
         return idx
-        
+
     @torch.no_grad()
     def blockwise_dist_thresh(
         A: torch.Tensor, B: torch.Tensor, cutoff: float, block_size: int
@@ -134,7 +142,7 @@ def radius_graph_pbc(
                 idx = dist_thresh(A_block, B_block, cutoff)
                 ret_idx.append(idx)
         return ret_idx
-    
+
     @torch.no_grad()
     def compute_dist_one_graph(i: int, j: int) -> List[torch.Tensor]:
         # [Vi, 3]
@@ -143,8 +151,8 @@ def radius_graph_pbc(
         B = pos_pbc_shift[i:j].reshape(-1, 3).contiguous()
 
         # ix, iy: [n_edges]
-        return blockwise_dist_thresh(A, B, cutoff, 65536) # 32GB memory limit
-    
+        return blockwise_dist_thresh(A, B, cutoff, 65536)  # 32GB memory limit
+
     # index offset between images
     graph_end = torch.cumsum(n_nodes_per_graph, dim=0)  # [n_graphs]
     graph_begin = graph_end - n_nodes_per_graph
@@ -158,7 +166,9 @@ def radius_graph_pbc(
         # edges: [fragment of the edge list]
         return sum(map(len, edges))
 
-    n_neighbors_image = torch.tensor(list(map(_compute_nr_edges, compute_dist)), device=device)
+    n_neighbors_image = torch.tensor(
+        list(map(_compute_nr_edges, compute_dist)), device=device
+    )
     # flatten index to get 0-based indices
     # [ [ix0, iy0], [ix1, iy1], ...]: [n_edges, 2]
     index0 = torch.cat(sum(compute_dist, []))

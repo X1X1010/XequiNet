@@ -11,8 +11,11 @@ from torch_geometric.loader import DataLoader
 
 from ..nn import resolve_model
 from ..utils import (
-    NetConfig, ZeroLogger, set_default_unit,
-    calculate_stats, distributed_zero_first,
+    NetConfig,
+    ZeroLogger,
+    set_default_unit,
+    calculate_stats,
+    distributed_zero_first,
 )
 from ..data import create_dataset
 
@@ -21,7 +24,7 @@ def run_train(args: argparse.Namespace) -> None:
     # ------------------- set up ------------------- #
     # load config
     if os.path.isfile(args.config):
-        with open(args.config, 'r') as json_file:
+        with open(args.config, "r") as json_file:
             config = NetConfig.model_validate_json(json_file.read())
     else:
         Warning(f"Config file {args.config} not found. Default config will be used.")
@@ -32,9 +35,11 @@ def run_train(args: argparse.Namespace) -> None:
     world_size = int(os.environ["WORLD_SIZE"])
 
     # set logger (only log when rank0)
-    is_rank0 = (local_rank == 0)
-    log = ZeroLogger(is_rank0=is_rank0, output_dir=config.save_dir, log_file=config.log_file)
-    
+    is_rank0 = local_rank == 0
+    log = ZeroLogger(
+        is_rank0=is_rank0, output_dir=config.save_dir, log_file=config.log_file
+    )
+
     # set random seed
     if config.seed is not None:
         torch.manual_seed(config.seed)
@@ -62,21 +67,33 @@ def run_train(args: argparse.Namespace) -> None:
     # ------------------- load dataset ------------------- #
     train_dataset = create_dataset(config, "train", local_rank)
     valid_dataset = create_dataset(config, "valid", local_rank)
-    
+
     if args.only_process:
         log.s.info("Data processed.")
         return
-    
+
     # set dataloader
-    train_sampler = DistributedSampler(train_dataset, world_size, local_rank, shuffle=True)
-    valid_sampler = DistributedSampler(valid_dataset, world_size, local_rank, shuffle=False)
+    train_sampler = DistributedSampler(
+        train_dataset, world_size, local_rank, shuffle=True
+    )
+    valid_sampler = DistributedSampler(
+        valid_dataset, world_size, local_rank, shuffle=False
+    )
     train_loader = DataLoader(
-        train_dataset, batch_size=config.batch_size // world_size, sampler=train_sampler,
-        num_workers=config.num_workers, pin_memory=True, drop_last=True,
+        train_dataset,
+        batch_size=config.batch_size // world_size,
+        sampler=train_sampler,
+        num_workers=config.num_workers,
+        pin_memory=True,
+        drop_last=True,
     )
     valid_loader = DataLoader(
-        valid_dataset, batch_size=config.vbatch_size // world_size, sampler=valid_sampler,
-        num_workers=0, pin_memory=True, drop_last=False,
+        valid_dataset,
+        batch_size=config.vbatch_size // world_size,
+        sampler=valid_sampler,
+        num_workers=0,
+        pin_memory=True,
+        drop_last=False,
     )
 
     # calculate the mean and std of the training dataset
@@ -100,7 +117,12 @@ def run_train(args: argparse.Namespace) -> None:
 
     # distributed training
     find_unused = True if config.finetune else False
-    ddp_model = DDP(model, device_ids=[local_rank], output_device=device, find_unused_parameters=find_unused)
+    ddp_model = DDP(
+        model,
+        device_ids=[local_rank],
+        output_device=device,
+        find_unused_parameters=find_unused,
+    )
 
     # record the number of parameters
     n_params = 0
@@ -112,7 +134,7 @@ def run_train(args: argparse.Namespace) -> None:
             n_params += param.numel()
             log.s.info(f"{name}: {param.numel()}")
     log.s.info(f"Total number of parameters to be optimized: {n_params}")
-    
+
     # -------------------  train model ------------------- #
     if "mat" in config.version:
         from xequinet.utils import MatTrainer as MyTrainer
@@ -120,5 +142,7 @@ def run_train(args: argparse.Namespace) -> None:
         from xequinet.utils import GradTrainer as MyTrainer
     else:
         from xequinet.utils import Trainer as MyTrainer
-    trainer = MyTrainer(ddp_model, config, device, train_loader, valid_loader, train_sampler, log)
+    trainer = MyTrainer(
+        ddp_model, config, device, train_loader, valid_loader, train_sampler, log
+    )
     trainer.start()

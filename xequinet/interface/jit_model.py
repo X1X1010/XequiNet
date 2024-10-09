@@ -49,8 +49,12 @@ class JitGradOut(nn.Module):
         atom_out = self.out_mlp(x_scalar)
         energy = atom_out.sum()
         grad = torch.autograd.grad(
-            [energy,],
-            [coord,],
+            [
+                energy,
+            ],
+            [
+                coord,
+            ],
             retain_graph=True,
             create_graph=True,
         )
@@ -64,6 +68,7 @@ class JitPaiNN(nn.Module):
     """
     XPaiNN model for JIT script. This model does not consider batch.
     """
+
     def __init__(self, config: NetConfig) -> None:
         super().__init__()
         self.embed = XEmbedding(
@@ -76,25 +81,29 @@ class JitPaiNN(nn.Module):
             cutoff=config.cutoff,
             cutoff_fn=config.cutoff_fn,
         )
-        self.message = nn.ModuleList([
-            XPainnMessage(
-                node_dim=config.node_dim,
-                node_irreps=config.node_irreps,
-                num_basis=config.num_basis,
-                actfn=config.activation,
-                norm_type=config.norm_type,
-            )
-            for _ in range(config.action_blocks)
-        ])
-        self.update = nn.ModuleList([
-            XPainnUpdate(
-                node_dim=config.node_dim,
-                node_irreps=config.node_irreps,
-                actfn=config.activation,
-                norm_type=config.norm_type,
-            )
-            for _ in range(config.action_blocks)
-        ])
+        self.message = nn.ModuleList(
+            [
+                XPainnMessage(
+                    node_dim=config.node_dim,
+                    node_irreps=config.node_irreps,
+                    num_basis=config.num_basis,
+                    actfn=config.activation,
+                    norm_type=config.norm_type,
+                )
+                for _ in range(config.action_blocks)
+            ]
+        )
+        self.update = nn.ModuleList(
+            [
+                XPainnUpdate(
+                    node_dim=config.node_dim,
+                    node_irreps=config.node_irreps,
+                    actfn=config.activation,
+                    norm_type=config.norm_type,
+                )
+                for _ in range(config.action_blocks)
+            ]
+        )
         self.out = JitGradOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
@@ -103,7 +112,9 @@ class JitPaiNN(nn.Module):
         self.cutoff = config.cutoff
         self.max_edges = config.max_edges
         self.prop_unit, self.len_unit = get_default_unit()
-        atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
+        atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(
+            config.batom_ref
+        )
         self.register_buffer("atom_sp", atom_sp)
         self.len_unit_conv = unit_conversion("Bohr", self.len_unit)
         self.prop_unit_conv = unit_conversion(self.prop_unit, "AU")
@@ -118,10 +129,14 @@ class JitPaiNN(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         coord.requires_grad_(True)
         coord = coord * self.len_unit_conv
-        edge_index = radius_graph(coord, r=self.cutoff, max_num_neighbors=self.max_edges)
+        edge_index = radius_graph(
+            coord, r=self.cutoff, max_num_neighbors=self.max_edges
+        )
         shifts = torch.zeros((edge_index.shape[1], 3), device=coord.device)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index, shifts)
-        x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
+        x_vector = torch.zeros(
+            (x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device
+        )
         for msg, upd in zip(self.message, self.update):
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
@@ -166,16 +181,21 @@ class JitEleEmbedding(nn.Module):
 
 class JitPaiNNEle(JitPaiNN):
     """XPaiNN-ele model for JIT script. This model does not consider batch."""
+
     def __init__(self, config: NetConfig) -> None:
         super().__init__(config)
-        self.charge_ebd = nn.ModuleList([
-            JitEleEmbedding(node_dim=config.node_dim)
-            for _ in range(config.action_blocks)
-        ])
-        self.spin_ebd = nn.ModuleList([
-            JitEleEmbedding(node_dim=config.node_dim)
-            for _ in range(config.action_blocks)
-        ])
+        self.charge_ebd = nn.ModuleList(
+            [
+                JitEleEmbedding(node_dim=config.node_dim)
+                for _ in range(config.action_blocks)
+            ]
+        )
+        self.spin_ebd = nn.ModuleList(
+            [
+                JitEleEmbedding(node_dim=config.node_dim)
+                for _ in range(config.action_blocks)
+            ]
+        )
 
     def forward(
         self,
@@ -188,11 +208,17 @@ class JitPaiNNEle(JitPaiNN):
         charge_t = torch.tensor([[charge]], dtype=coord.dtype, device=coord.device)
         spin_t = torch.tensor([[spin]], dtype=coord.dtype, device=coord.device)
         coord = coord * self.len_unit_conv
-        edge_index = radius_graph(coord, r=self.cutoff, max_num_neighbors=self.max_edges)
+        edge_index = radius_graph(
+            coord, r=self.cutoff, max_num_neighbors=self.max_edges
+        )
         shifts = torch.zeros((edge_index.shape[1], 3), device=coord.device)
         x_scalar, rbf, fcut, rsh = self.embed(at_no, coord, edge_index, shifts)
-        x_vector = torch.zeros((x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device)
-        for ce, se, msg, upd in zip(self.charge_ebd, self.spin_ebd, self.message, self.update):
+        x_vector = torch.zeros(
+            (x_scalar.shape[0], rsh.shape[1]), device=x_scalar.device
+        )
+        for ce, se, msg, upd in zip(
+            self.charge_ebd, self.spin_ebd, self.message, self.update
+        ):
             x_scalar = x_scalar + ce(x_scalar, charge_t) + se(x_scalar, spin_t)
             x_scalar, x_vector = msg(x_scalar, x_vector, rbf, fcut, rsh, edge_index)
             x_scalar, x_vector = upd(x_scalar, x_vector)
@@ -210,4 +236,3 @@ def resolve_jit_model(config: NetConfig) -> nn.Module:
         return JitPaiNNEle(config)
     else:
         raise NotImplementedError(f"Unsupported model {config.version}")
-    
