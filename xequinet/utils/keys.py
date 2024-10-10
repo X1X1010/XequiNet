@@ -37,4 +37,10 @@ BASE_FORCES: Final[str] = "base_forces"
 VIRIAL: Final[str] = "virial"
 STRESS: Final[str] = "stress"
 ATOMIC_CHARGES: Final[str] = "atomic_charges"
+BASE_CHARGES: Final[str] = "base_charges"
 TOTAL_CHARGE: Final[str] = "charge"
+
+# others
+TRAIN: Final[str] = "train"
+VALID: Final[str] = "valid"
+TEST: Final[str] = "test"

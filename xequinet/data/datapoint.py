@@ -4,7 +4,7 @@ import torch
 from torch_geometric.data import Data
 
 
-class XData(Data):
+class XequiData(Data):
     # for type annotation
     atomic_numbers: torch.Tensor
     pos: torch.Tensor
@@ -26,6 +26,7 @@ class XData(Data):
         base_forces: Optional[torch.Tensor] = None,  # [N_atoms, 3]
         virial: Optional[torch.Tensor] = None,  # [1, 3, 3]
         atomic_charges: Optional[torch.Tensor] = None,  # [N_atoms]
+        base_charges: Optional[torch.Tensor] = None,  # [1]
         **kwargs,
     ) -> None:
         super().__init__(edge_index=edge_index, pos=pos, **kwargs)
@@ -90,5 +91,9 @@ class XData(Data):
         # charges
         if atomic_charges is not None:
             assert atomic_charges.shape == (n_atoms,) and atomic_charges.dtype == dtype
-            assert torch.allclose(atomic_charges.sum(), charge)
+            assert torch.allclose(atomic_charges.sum().round().to(torch.int), charge)
             self.atomic_charges = atomic_charges
+        if base_charges is not None:
+            assert base_charges.shape == (1,) and base_charges.dtype == dtype
+            assert torch.allclose(base_charges.sum().round().to(torch.int), charge)
+            self.base_charges = base_charges

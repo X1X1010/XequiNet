@@ -71,7 +71,7 @@ globals().update(units)
 
 
 DEFAULT_UNITS_MAP = {
-    keys.POSITION: "Angstrom",
+    keys.POSITIONS: "Angstrom",
     keys.TOTAL_ENERGY: "eV",
 }
 
@@ -277,7 +277,7 @@ def get_embedding_tensor(embed_basis: str = "gfn2-xtb", aux_basis: str = "aux28"
 
 def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
     """
-    Get the shift of the atomic energies for each element.
+    Get the shift of the atomic energies for each element. Unit: Hartree
 
     Args:
         `atom_ref`: type of element shifts
@@ -318,7 +318,7 @@ Cs Ba    Hf Ta W  Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn
             warning_msg += "If you need these atoms, please regenerate the file or add them manually."
             warnings.warn(warning_msg)
 
-    return atomic_energy * unit_conversion("Hartree", PROP_UNIT)
+    return atomic_energy
 
 
 if __name__ == "__main__":

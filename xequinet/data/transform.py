@@ -1,18 +1,18 @@
 import abc
-from typing import Union, Iterable, Dict
+from typing import Union, Iterable, Dict, Any
 import functools
 
 import torch
 from torch_cluster import radius_graph
 
 from xequinet.utils import keys, qc
-from .datapoint import XData
+from .datapoint import XequiData
 from .radius_graph import radius_graph_pbc
 
 
 class Transform(abc.ABC):
     @abc.abstractmethod
-    def __call__(self, data: XData) -> XData:
+    def __call__(self, data: XequiData) -> XequiData:
         raise NotImplementedError
 
 
@@ -20,7 +20,7 @@ class NeighborTransform(Transform):
     def __init__(self, cutoff: float) -> None:
         self.cutoff = cutoff
 
-    def __call__(self, data: XData) -> XData:
+    def __call__(self, data: XequiData) -> XequiData:
         device = data.pos.device
         num_graphs = data.num_graphs if hasattr(data, "num_graphs") else 1
         if num_graphs > 1:
@@ -83,7 +83,7 @@ class DataTypeTransform(Transform):
         float_type_set = {torch.float16, torch.float32, torch.float64}
         return tensor.dtype in float_type_set
 
-    def __call__(self, data: XData) -> XData:
+    def __call__(self, data: XequiData) -> XequiData:
         for k in data.keys:
             if self._is_float_type(data[k]):
                 data[k] = data[k].to(self.dtype)
@@ -98,7 +98,7 @@ class UnitTransform(Transform):
             assert qc.check_unit(v), f"Invalid unit {v} for property {k}"
         self.data_units = data_units
 
-    def __call__(self, data: XData) -> XData:
+    def __call__(self, data: XequiData) -> XequiData:
         new_data = data.clone()
         for prop, unit in self.data_units.items():
             if prop not in new_data:
@@ -107,17 +107,9 @@ class UnitTransform(Transform):
         return new_data
 
 
-class AtomRefTransform(Transform):
-    def __init__(self, atom_refs: Dict[str, str]) -> None:
-        self.atom_refs = atom_refs
-
-    def __call__(self, data: XData) -> XData:
-        new_data = data.clone()
-
-
 class SequentialTransform(Transform):
     def __init__(self, transforms: Iterable[Transform]) -> None:
         self.transforms = transforms
 
-    def __call__(self, data: XData) -> XData:
+    def __call__(self, data: XequiData) -> XequiData:
         return functools.reduce(lambda d, t: t(d), self.transforms, data)
