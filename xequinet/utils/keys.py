@@ -1,4 +1,4 @@
-from typing import Final, Literal
+from typing import Final
 
 # basic keys in datapoints
 POSITIONS: Final[str] = "pos"
@@ -27,10 +27,13 @@ SPHERICAL_HARMONICS: Final[str] = "spherical_harmonics"
 NODE_INVARIANT: Final[str] = "node_invariant"
 NODE_EQUIVARIANT: Final[str] = "node_equivariant"
 
-# Results
+# Properties
 ATOMIC_ENERGIES: Final[str] = "atomic_energies"
 TOTAL_ENERGY: Final[str] = "energy"
+BASE_ENERGY: Final[str] = "base_energy"
+ENERGY_PER_ATOM: Final[str] = "energy_per_atom"
 FORCES: Final[str] = "forces"
+BASE_FORCES: Final[str] = "base_forces"
 VIRIAL: Final[str] = "virial"
 STRESS: Final[str] = "stress"
 ATOMIC_CHARGES: Final[str] = "atomic_charges"

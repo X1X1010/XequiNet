@@ -3,8 +3,8 @@ from .config import NetConfig
 from .logger import ZeroLogger
 from .qc import (
     unit_conversion,
-    set_default_unit,
-    get_default_unit,
+    set_default_units,
+    get_default_units,
     get_embedding_tensor,
     get_atomic_energy,
 )

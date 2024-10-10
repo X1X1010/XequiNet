@@ -1,4 +1,4 @@
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, Dict
 from math import pi
 import warnings
 import re
@@ -7,6 +7,8 @@ from pathlib import Path
 from pyscf import gto
 import numpy as np
 import torch
+
+from xequinet.utils import keys
 
 
 def gen_units_dict():
@@ -68,12 +70,14 @@ units = gen_units_dict()
 globals().update(units)
 
 
-PROP_UNIT = None
-LEN_UNIT = "Angstrom"
+DEFAULT_UNITS_MAP = {
+    keys.POSITION: "Angstrom",
+    keys.TOTAL_ENERGY: "eV",
+}
 
 
-def eval_unit(unit: str) -> float:
-    # check if the unit is valid and safe
+def check_unit(unit: str) -> bool:
+    """Check if the unit is valid and safe."""
     split_unit = re.split(r"[+ | \- | * | / | ^ | ( | )]", unit)
     for u in split_unit:
         if u == '':
@@ -83,7 +87,14 @@ def eval_unit(unit: str) -> float:
         elif u.isdigit():
             continue
         else:
-            raise ValueError(f"Invalid unit expression: {u}")
+            return False
+    return True
+
+
+def eval_unit(unit: str) -> float:
+    """Evaluate the unit."""
+    if not check_unit(unit):
+        raise ValueError(f"Invalid unit {unit}")
     unit = unit.replace('^', '**')
 
     return eval(unit)
@@ -100,14 +111,15 @@ def unit_conversion(unit_in: Optional[str], unit_out: Optional[str]) -> float:
     return value_in / value_out
 
 
-def set_default_unit(prop_unit: str, len_unit: str) -> None:
-    global PROP_UNIT, LEN_UNIT
-    PROP_UNIT = prop_unit
-    LEN_UNIT = len_unit
+def set_default_units(unit_dict: Dict[str, str]) -> None:
+    for prop, unit in unit_dict.items():
+        if not check_unit(unit):
+            raise ValueError(f"Invalid unit {unit} for property {prop}")
+    DEFAULT_UNITS_MAP.update(unit_dict)
+    
 
-
-def get_default_unit() -> Tuple[str, str]:
-    return PROP_UNIT, LEN_UNIT
+def get_default_units() -> Dict[str, str]:
+    return DEFAULT_UNITS_MAP
 
 
 THIS_FOLDER = Path(__file__).parent

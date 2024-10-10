@@ -1,11 +1,11 @@
 import abc
-from typing import Union, Iterable
+from typing import Union, Iterable, Dict
 import functools
 
 import torch
 from torch_cluster import radius_graph
 
-from xequinet.utils import keys
+from xequinet.utils import keys, qc
 from .datapoint import XData
 from .radius_graph import radius_graph_pbc
 
@@ -88,6 +88,31 @@ class DataTypeTransform(Transform):
             if self._is_float_type(data[k]):
                 data[k] = data[k].to(self.dtype)
         return data
+
+
+class UnitTransform(Transform):
+    def __init__(self, data_units: Dict[str, str]) -> None:
+        self.default_units = qc.get_default_units()
+        for k, v in data_units.items():
+            assert k in self.default_units, f"Invalid property {k}"
+            assert qc.check_unit(v), f"Invalid unit {v} for property {k}"
+        self.data_units = data_units
+
+    def __call__(self, data: XData) -> XData:
+        new_data = data.clone()
+        for prop, unit in self.data_units.items():
+            if prop not in new_data:
+                continue
+            new_data[prop] *= qc.unit_conversion(unit, self.default_units[prop])
+        return new_data
+
+
+class AtomRefTransform(Transform):
+    def __init__(self, atom_refs: Dict[str, str]) -> None:
+        self.atom_refs = atom_refs
+
+    def __call__(self, data: XData) -> XData:
+        new_data = data.clone()
 
 
 class SequentialTransform(Transform):
