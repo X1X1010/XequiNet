@@ -6,22 +6,38 @@ import torch.nn as nn
 from xequinet.utils import keys
 
 
-class MultiTaskLoss(nn.Module):
+class MatCriterion(nn.Module):
+    """MSE + RMSE"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.mae_loss = nn.L1Loss()
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        mae = self.mae_loss(pred, target)
+        mse = self.mse_loss(pred, target)
+        loss = mae + torch.sqrt(mse)
+        return loss
+
+
+class WeightedLoss(nn.Module):
     AVAILABLE_LOSSES = {
         "l1": nn.L1Loss,
         "mae": nn.L1Loss,
         "l2": nn.MSELoss,
         "mse": nn.MSELoss,
         "smoothl1": nn.SmoothL1Loss,
+        "matloss": MatCriterion,
     }
 
     def __init__(
         self,
-        loss_type: str = "l2",
+        loss_fn: str = "l2",
         **kwargs,
     ) -> None:
         super().__init__()
-        self.loss_fn = self.AVAILABLE_LOSSES[loss_type]()
+        self.loss_fn = self.AVAILABLE_LOSSES[loss_fn.lower()]()
         assert len(kwargs) > 0, "At least one task should be present"
         for k, v in kwargs.items():
             assert isinstance(v, float), f"Weight for {k} should be a float"
@@ -48,7 +64,6 @@ class MultiTaskLoss(nn.Module):
             )
             total_loss += self.weight_dict[keys.ENERGY_PER_ATOM] * energy_per_atom_loss
             loss_dict[keys.ENERGY_PER_ATOM] = energy_per_atom_loss
-            self.weight_dict.pop(keys.ENERGY_PER_ATOM)
         # stress
         if keys.STRESS in self.weight_dict:
             assert result[keys.VIRIAL].shape == target[keys.VIRIAL].shape
@@ -59,13 +74,17 @@ class MultiTaskLoss(nn.Module):
             )
             total_loss += self.weight_dict[keys.STRESS] * stress_loss
             loss_dict[keys.STRESS] = stress_loss
-            self.weight_dict.pop(keys.STRESS)
 
         # other cases
         for k, w in self.weight_dict.items():
+            if k in {keys.ENERGY_PER_ATOM, keys.STRESS}:
+                continue
             assert result[k].shape == target[k].shape
             loss = self.loss_fn(result[k], target[k])
             total_loss += w * loss
             loss_dict[k] = loss
 
         return total_loss, loss_dict
+
+    def __call__(self, *args, **kwargs) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        return super().__call__(*args, **kwargs)  # for type annotation

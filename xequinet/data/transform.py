@@ -1,6 +1,7 @@
 import abc
-from typing import Union, Iterable, Dict, Any
+from typing import Union, Iterable, Dict, List
 import functools
+from sys import maxsize as INT_MAX
 
 import torch
 from torch_cluster import radius_graph
@@ -56,7 +57,7 @@ class NeighborTransform(Transform):
                 x=data.pos,
                 r=self.cutoff,
                 batch=batch,
-                max_num_neighbors=None,
+                max_num_neighbors=INT_MAX,
                 batch_size=num_graphs,
             )
             data.edge_index = edge_index
@@ -67,7 +68,11 @@ class NeighborTransform(Transform):
 
 
 class DataTypeTransform(Transform):
-    def __init__(self, dtype: Union[str, torch.dtype]) -> None:
+    def __init__(
+        self,
+        dtype: Union[str, torch.dtype],
+        targets: Union[str, List[str]],
+    ) -> None:
         if isinstance(dtype, str):
             name_to_dtype = {
                 "float16": torch.float16,
@@ -78,15 +83,12 @@ class DataTypeTransform(Transform):
             self.dtype = name_to_dtype[dtype]
         else:
             self.dtype = dtype
-
-    def _is_float_type(self, tensor: torch.Tensor) -> bool:
-        float_type_set = {torch.float16, torch.float32, torch.float64}
-        return tensor.dtype in float_type_set
+        self.targets = targets if isinstance(targets, list) else [targets]
 
     def __call__(self, data: XequiData) -> XequiData:
-        for k in data.keys:
-            if self._is_float_type(data[k]):
-                data[k] = data[k].to(self.dtype)
+        for target in self.targets:
+            assert target in data, f"Invalid target {target}"
+            data[target] = data[target].to(dtype=self.dtype)
         return data
 
 
@@ -104,6 +106,23 @@ class UnitTransform(Transform):
             if prop not in new_data:
                 continue
             new_data[prop] *= qc.unit_conversion(unit, self.default_units[prop])
+        return new_data
+
+
+class DeltaTransform(Transform):
+    def __init__(self, base_targets: Union[str, List[str]]) -> None:
+        self.base_targets = (
+            base_targets if isinstance(base_targets, list) else [base_targets]
+        )
+        self.targets = [keys.BASE_PROPERTIES[t] for t in self.base_targets]
+
+    def __call__(self, data: XequiData) -> XequiData:
+        new_data = data.clone()
+        for t, bt in zip(self.targets, self.base_targets):
+            assert t in new_data, f"Invalid target {t}"
+            assert bt in new_data, f"Invalid base target {bt}"
+            new_data[t] -= new_data[bt]
+            del new_data[bt]
         return new_data
 
 

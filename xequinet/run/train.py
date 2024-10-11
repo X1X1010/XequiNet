@@ -1,3 +1,4 @@
+from typing import cast
 import os
 import random
 import argparse
@@ -9,26 +10,34 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
-from ..nn import resolve_model
-from ..utils import (
-    NetConfig,
+from omegaconf import OmegaConf
+
+from xequinet.utils import (
+    keys,
+    XequiConfig,
     ZeroLogger,
-    set_default_unit,
-    calculate_stats,
     distributed_zero_first,
+    set_default_units,
+    calculate_stats,
 )
-from ..data import create_dataset
+from xequinet.data import create_lmdb_dataset
+from ..nn import resolve_model
 
 
 def run_train(args: argparse.Namespace) -> None:
     # ------------------- set up ------------------- #
     # load config
     if os.path.isfile(args.config):
-        with open(args.config, "r") as json_file:
-            config = NetConfig.model_validate_json(json_file.read())
+        config = OmegaConf.merge(
+            OmegaConf.structured(XequiConfig),
+            OmegaConf.load(args.config),
+        )
+        config = cast(
+            XequiConfig, config
+        )  # this will do nothing, only for type annotation
     else:
         Warning(f"Config file {args.config} not found. Default config will be used.")
-        config = NetConfig()
+        config = XequiConfig()
 
     # parallel process
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -37,40 +46,46 @@ def run_train(args: argparse.Namespace) -> None:
     # set logger (only log when rank0)
     is_rank0 = local_rank == 0
     log = ZeroLogger(
-        is_rank0=is_rank0, output_dir=config.save_dir, log_file=config.log_file
+        is_rank0=is_rank0,
+        output_dir=config.trainer.save_dir,
+        log_file=config.trainer.log_file,
     )
 
     # set random seed
-    if config.seed is not None:
-        torch.manual_seed(config.seed)
-        torch.cuda.manual_seed(config.seed)
-        np.random.seed(config.seed)
-        random.seed(config.seed)
+    if config.trainer.seed is not None:
+        torch.manual_seed(config.trainer.seed)
+        torch.cuda.manual_seed(config.trainer.seed)
+        np.random.seed(config.trainer.seed)
+        random.seed(config.trainer.seed)
         torch.backends.cudnn.deterministic = True
 
     # set default dtype
-    if config.default_dtype == "float32":
-        torch.set_default_dtype(torch.float32)
-    elif config.default_dtype == "float64":
-        torch.set_default_dtype(torch.float64)
-    else:
-        raise NotImplementedError(f"Unknown default data type: {config.default_dtype}")
+    name_to_dtype = {
+        "float16": torch.float16,
+        "float32": torch.float32,
+        "float64": torch.float64,
+    }
+    torch.set_default_dtype(name_to_dtype[config.data.default_dtype])
 
     # set default unit
-    set_default_unit(config.default_property_unit, config.default_length_unit)
+    set_default_units(config.data.default_units)
 
     # set device
     device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
-    dist.init_process_group(backend="nccl")
+    backend = "nccl" if torch.cuda.is_available() else "gloo"
+    dist.init_process_group(backend=backend)
     torch.cuda.set_device(device)
 
     # ------------------- load dataset ------------------- #
-    train_dataset = create_dataset(config, "train", local_rank)
-    valid_dataset = create_dataset(config, "valid", local_rank)
-
-    if args.only_process:
-        log.s.info("Data processed.")
-        return
+    train_dataset, valid_dataset = create_lmdb_dataset(
+        db_path=config.data.db_path,
+        cutoff=config.data.cutoff,
+        split=config.data.split,
+        dtype=config.data.default_dtype,
+        targets=config.data.targets,
+        base_targets=config.data.base_targets,
+        mode="train",
+    )
 
     # set dataloader
     train_sampler = DistributedSampler(
@@ -81,15 +96,15 @@ def run_train(args: argparse.Namespace) -> None:
     )
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config.batch_size // world_size,
+        batch_size=config.trainer.batch_size // world_size,
         sampler=train_sampler,
-        num_workers=config.num_workers,
+        num_workers=config.trainer.num_workers,
         pin_memory=True,
         drop_last=True,
     )
     valid_loader = DataLoader(
         valid_dataset,
-        batch_size=config.vbatch_size // world_size,
+        batch_size=config.trainer.valid_batch_size // world_size,
         sampler=valid_sampler,
         num_workers=0,
         pin_memory=True,
@@ -97,26 +112,43 @@ def run_train(args: argparse.Namespace) -> None:
     )
 
     # calculate the mean and std of the training dataset
-    if config.node_average:
-        if config.node_average is True:
-            with distributed_zero_first(local_rank):
-                mean, std = calculate_stats(train_loader)
-                log.s.info(f"Mean: {mean:6.4f} {config.default_property_unit}")
-                log.s.info(f"Std : {std:6.4f} {config.default_property_unit}")
-                config.node_average = mean
-        else:
-            config.node_average = float(config.node_average)
-    else:
-        config.node_average = 0.0
+    # currently only for total energy
+    node_shift, node_scale = 0.0, 1.0
+    if config.trainer.ckpt_file is not None:
+        pass  # the mean and std are in the parameters
+    elif config.data.node_shift is True or config.data.node_scale is True:
+        with distributed_zero_first(local_rank):
+            mean, std = calculate_stats(
+                data_loader=train_loader,
+                divided_by_atoms=True,
+                target_property=keys.TOTAL_ENERGY,
+                base_property=keys.BASE_ENERGY,
+                max_num_samples=config.data.max_num_samples,
+            )
+        log.s.info(f"Mean: {mean:6.4f} {config.data.default_units[keys.TOTAL_ENERGY]}")
+        log.s.info(f"Std : {std:6.4f} {config.data.default_units[keys.TOTAL_ENERGY]}")
+        if config.data.node_shift is True:
+            node_shift = mean
+        if config.data.node_scale is True:
+            node_scale = std
+    if isinstance(config.data.node_shift, float):
+        node_shift = config.data.node_shift
+    if isinstance(config.data.node_scale, float):
+        node_scale = config.data.node_scale
 
     # -------------------  build model ------------------- #
     # initialize model
-    model = resolve_model(config)
+    model = resolve_model(
+        config.model.model_name,
+        node_shift=node_shift,
+        node_scale=node_scale,
+        **config.model.model_config,
+    )
     log.s.info(model)
     model.to(device)
 
     # distributed training
-    find_unused = True if config.finetune else False
+    find_unused = True if config.trainer.finetune else False
     ddp_model = DDP(
         model,
         device_ids=[local_rank],
@@ -125,9 +157,10 @@ def run_train(args: argparse.Namespace) -> None:
     )
 
     # record the number of parameters
+    # TODO: adjust the logic here
     n_params = 0
     for name, param in ddp_model.named_parameters():
-        if config.finetune and ("embed" in name or "output" in name):
+        if config.trainer.finetune and ("embed" in name or "output" in name):
             param.requires_grad = False
             log.s.info(f"{name}: {param.numel()} (frozen)")
         else:

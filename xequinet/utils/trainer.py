@@ -11,15 +11,16 @@ from torch.optim.swa_utils import AveragedModel
 from torch_geometric.loader import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
+from xequinet.data import XequiData
 from .functional import (
-    resolve_lossfn,
     resolve_optimizer,
     resolve_lr_scheduler,
     resolve_warmup_scheduler,
 )
-from .config import NetConfig
+from .loss import WeightedLoss
+from .config import XequiConfig
 from .logger import ZeroLogger
-from .qc import get_default_unit
+from .qc import get_default_units
 
 
 class loss2file:
@@ -88,7 +89,7 @@ class Trainer:
     def __init__(
         self,
         model: nn.parallel.DistributedDataParallel,
-        config: NetConfig,
+        config: XequiConfig,
         device: torch.device,
         train_loader: DataLoader,
         valid_loader: DataLoader,
@@ -106,53 +107,58 @@ class Trainer:
             `log`: logger
         """
         self.model = model
-        self.config = config
+        self.trainer_conf = config.trainer
         self.device = device
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.dist_sampler = dist_sampler
         self.log = log
 
+        self.model_conf = config.model.model_config
+
         # set loss function
-        self.lossfn = resolve_lossfn(config.lossfn).to(device)
+        self.lossfn = WeightedLoss(
+            self.trainer_conf.lossfn, **self.trainer_conf.losses_weight
+        )
         # set optimizer
         self.optimizer = resolve_optimizer(
-            optim_type=config.optimizer,
+            optim_type=self.trainer_conf.optimizer,
             params=filter(lambda p: p.requires_grad, model.parameters()),
-            lr=config.max_lr,
-            **config.optim_kwargs,
+            lr=self.trainer_conf.max_lr,
+            **self.trainer_conf.optim_kwargs,
         )
         # set lr scheduler
         self.lr_scheduler = resolve_lr_scheduler(
-            sched_type=config.lr_scheduler,
+            sched_type=self.trainer_conf.lr_scheduler,
             optimizer=self.optimizer,
-            max_lr=config.max_lr,
-            min_lr=config.min_lr,
-            max_epochs=config.max_epochs,
+            max_lr=self.trainer_conf.max_lr,
+            min_lr=self.trainer_conf.min_lr,
+            max_epochs=self.trainer_conf.max_epochs,
             steps_per_epoch=len(train_loader),
-            **config.lr_sche_kwargs,
+            **self.trainer_conf.lr_sche_kwargs,
         )
         # set warmup scheduler
-        if config.lr_scheduler == "plateau":
-            warm_steps = config.warmup_epochs
+        if self.trainer_conf.lr_scheduler == "plateau":
+            warm_steps = self.trainer_conf.warmup_epochs
         else:
-            warm_steps = config.warmup_epochs * len(train_loader)
+            warm_steps = self.trainer_conf.warmup_epochs * len(train_loader)
         self.warmup_scheduler = resolve_warmup_scheduler(
-            warm_type=config.warmup_scheduler,
+            warm_type=self.trainer_conf.warmup_scheduler,
             optimizer=self.optimizer,
             warm_steps=warm_steps,
         )
         # set early stopping (only work when lr_scheduler is plateau)
         self.early_stop = EarlyStopping(
-            patience=config.early_stop, min_lr=config.min_lr
+            patience=self.trainer_conf.early_stop, min_lr=self.trainer_conf.min_lr
         )
         # exponential moving average
         self.ema_model = None
-        if config.ema_decay is not None:
+        if self.trainer_conf.ema_decay is not None:
             ema_model = AveragedModel(
                 self.model.module,
-                avg_fn=lambda avg_param, param, num_avg: config.ema_decay * avg_param
-                + (1 - config.ema_decay) * param,
+                avg_fn=lambda avg_param, param, num_avg: self.trainer_conf.ema_decay
+                * avg_param
+                + (1 - self.trainer_conf.ema_decay) * param,
                 device=device,
             )
             self.ema_model = ema_model
@@ -161,21 +167,23 @@ class Trainer:
         self.best_l2fs: List[loss2file] = [
             loss2file(
                 float("inf"),
-                os.path.join(config.save_dir, f"{config.run_name}_{i}.pt"),
+                os.path.join(
+                    self.trainer_conf.save_dir, f"{self.trainer_conf.run_name}_{i}.pt"
+                ),
                 0,
             )
-            for i in range(config.best_k)
+            for i in range(self.trainer_conf.best_k)
         ]  # a max-heap, actually it is a min-heap
 
         # load checkpoint
         self.start_epoch = 1
-        if config.ckpt_file is not None:
-            self._load_params(config.ckpt_file)
+        if self.trainer_conf.ckpt_file is not None:
+            self._load_params(self.trainer_conf.ckpt_file)
 
     def _load_params(self, ckpt_file: str) -> None:
         state = torch.load(ckpt_file, map_location=self.device)
         self.model.module.load_state_dict(state["model"], strict=False)
-        if self.config.resume:
+        if self.trainer_conf.resume:
             self.optimizer.load_state_dict(state["optimizer"])
             self.lr_scheduler.load_state_dict(state["lr_scheduler"])
             self.warmup_scheduler.load_state_dict(state["warmup_scheduler"])
@@ -196,7 +204,7 @@ class Trainer:
             "optimizer": self.optimizer.state_dict(),
             "lr_scheduler": self.lr_scheduler.state_dict(),
             "warmup_scheduler": self.warmup_scheduler.state_dict(),
-            "config": self.config.model_hyper_params(),
+            "config": self.model_conf,
         }
         torch.save(state, ckpt_file)
 
@@ -212,27 +220,27 @@ class Trainer:
         self.model.train()
         self.dist_sampler.set_epoch(self.epoch)
         for step, data in enumerate(self.train_loader, start=1):
+            data: XequiData  # for type annotation
             self.meter.reset()
             data = data.to(self.device)
             # forward propagation
-            pred = self.model(data)
-            real = data.y - data.base_y if hasattr(data, "base_y") else data.y
-            loss = self.lossfn(pred, real)
+            result = self.model(data.to_dict())
+            loss, aux = self.lossfn(result, data)
             # backward propagation
             self.optimizer.zero_grad()
             # with torch.autograd.detect_anomaly():
             loss.backward()
             # gradient clipping
-            if self.config.grad_clip is not None:
+            if self.trainer_conf.grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.config.grad_clip
+                    self.model.parameters(), self.trainer_conf.grad_clip
                 )
             self.optimizer.step()
             # update EMA model
             if self.ema_model is not None:
                 self.ema_model.update_parameters(self.model)
             # update learning rate
-            if self.config.lr_scheduler != "plateau":
+            if self.trainer_conf.lr_scheduler != "plateau":
                 with self.warmup_scheduler.dampening():
                     self.lr_scheduler.step()
             # record l1 loss
@@ -240,8 +248,8 @@ class Trainer:
                 l1loss = F.l1_loss(pred, real, reduction="sum")
                 self.meter.update(l1loss.item(), real.numel())
             # logging
-            if self.epoch % self.config.log_epoch == 0 and (
-                step % self.config.log_step == 0 or step == len(self.train_loader)
+            if self.epoch % self.trainer_conf.log_epoch == 0 and (
+                step % self.trainer_conf.log_step == 0 or step == len(self.train_loader)
             ):
                 mae = self.meter.reduce()
                 self.log.f.info(
@@ -265,16 +273,17 @@ class Trainer:
             l1loss = F.l1_loss(pred, real, reduction="sum")
             self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
-        if self.epoch % self.config.log_epoch == 0:
+        if self.epoch % self.trainer_conf.log_epoch == 0:
             self.log.f.info(f"Validation MAE: {mae:10.7f}")
-        if self.config.lr_scheduler == "plateau":
+        if self.trainer_conf.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
         self.save_best_k(self.model.module, mae)
         self._save_params(
-            self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt"
+            self.model.module,
+            f"{self.trainer_conf.save_dir}/{self.trainer_conf.run_name}_last.pt",
         )
 
     @torch.no_grad()
@@ -290,9 +299,9 @@ class Trainer:
             l1loss = F.l1_loss(pred, real, reduction="sum")
             self.meter.update(l1loss.item(), real.numel())
         mae = self.meter.reduce()
-        if self.epoch % self.config.log_epoch == 0:
+        if self.epoch % self.trainer_conf.log_epoch == 0:
             self.log.f.info(f"EMA Valid MAE: {mae:10.7f}")
-        if self.config.lr_scheduler == "plateau":
+        if self.trainer_conf.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
             lr = self.optimizer.param_groups[0]["lr"]
@@ -300,19 +309,19 @@ class Trainer:
         self.save_best_k(self.ema_model.module, mae)
         self._save_params(
             self.ema_model.module,
-            f"{self.config.save_dir}/{self.config.run_name}_last.pt",
+            f"{self.trainer_conf.save_dir}/{self.trainer_conf.run_name}_last.pt",
         )
 
     def start(self) -> None:
         prop_unit, len_unit = get_default_unit()
         self.log.f.info(" --- Start training")
-        self.log.f.info(f" --- Task Name: {self.config.run_name}")
+        self.log.f.info(f" --- Task Name: {self.trainer_conf.run_name}")
         self.log.f.info(
-            f" --- Property: {self.config.label_name} --- Unit: {prop_unit} {len_unit}"
+            f" --- Property: {self.trainer_conf.label_name} --- Unit: {prop_unit} {len_unit}"
         )
 
         # training loop
-        for iepoch in range(self.start_epoch, self.config.max_epochs + 1):
+        for iepoch in range(self.start_epoch, self.trainer_conf.max_epochs + 1):
             self.epoch = iepoch
             self.train1epoch()
             if self.ema_model is None:
@@ -401,23 +410,23 @@ class GradTrainer(Trainer):
             lossE = self.lossfn(predE, realE)
             lossF = self.lossfn(predF, realF)
             loss = (
-                1 - self.config.force_weight
-            ) * lossE + self.config.force_weight * lossF
+                1 - self.trainer_conf.force_weight
+            ) * lossE + self.trainer_conf.force_weight * lossF
             # backward propagation
             self.optimizer.zero_grad()
             # with torch.autograd.detect_anomaly():
             loss.backward()
             # gradient clipping
-            if self.config.grad_clip is not None:
+            if self.trainer_conf.grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.config.grad_clip
+                    self.model.parameters(), self.trainer_conf.grad_clip
                 )
             self.optimizer.step()
             # update EMA model
             if self.ema_model is not None:
                 self.ema_model.update_parameters(self.model)
             # update learning rate
-            if self.config.lr_scheduler != "plateau":
+            if self.trainer_conf.lr_scheduler != "plateau":
                 with self.warmup_scheduler.dampening():
                     self.lr_scheduler.step()
             # record l1 loss
@@ -428,8 +437,8 @@ class GradTrainer(Trainer):
                     l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel()
                 )
             # logging
-            if self.epoch % self.config.log_epoch == 0 and (
-                step % self.config.log_step == 0 or step == len(self.train_loader)
+            if self.epoch % self.trainer_conf.log_epoch == 0 and (
+                step % self.trainer_conf.log_step == 0 or step == len(self.train_loader)
             ):
                 maeE, maeF = self.meter.reduce()
                 self.log.f.info(

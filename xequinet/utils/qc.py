@@ -72,7 +72,6 @@ globals().update(units)
 
 DEFAULT_UNITS_MAP = {
     keys.POSITIONS: "Angstrom",
-    keys.TOTAL_ENERGY: "eV",
 }
 
 
@@ -113,10 +112,26 @@ def unit_conversion(unit_in: Optional[str], unit_out: Optional[str]) -> float:
 
 def set_default_units(unit_dict: Dict[str, str]) -> None:
     for prop, unit in unit_dict.items():
+        if prop in keys.GRAD_PROPERTIES:
+            raise ValueError(
+                "Please do not set units for gradient properties directly, Set the units for the corresponding properties instead."
+            )
+        if prop in keys.BASE_PROPERTIES:
+            if not check_unit(unit):
+                raise ValueError(f"Invalid unit {unit} for property {prop}")
         if not check_unit(unit):
             raise ValueError(f"Invalid unit {unit} for property {prop}")
     DEFAULT_UNITS_MAP.update(unit_dict)
-    
+    # adjust some settings for gradient properties
+    if keys.TOTAL_ENERGY in DEFAULT_UNITS_MAP:
+        energy_unit = DEFAULT_UNITS_MAP[keys.TOTAL_ENERGY]
+        pos_unit = DEFAULT_UNITS_MAP[keys.POSITIONS]
+        DEFAULT_UNITS_MAP[keys.FORCES] = f"{energy_unit}/{pos_unit}"
+        DEFAULT_UNITS_MAP[keys.VIRIAL] = f"{energy_unit}/{pos_unit}^3"
+    for base_prop, prop in keys.BASE_PROPERTIES.items():
+        if prop in DEFAULT_UNITS_MAP:
+            DEFAULT_UNITS_MAP[base_prop] = DEFAULT_UNITS_MAP[prop]
+
 
 def get_default_units() -> Dict[str, str]:
     return DEFAULT_UNITS_MAP

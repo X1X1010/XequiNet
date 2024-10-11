@@ -1,5 +1,5 @@
 import os.path as osp
-from typing import TypeVar, Optional, Union, Literal, Tuple
+from typing import TypeVar, Optional, Union, Literal, Tuple, List
 
 import lmdb
 import pickle
@@ -12,6 +12,7 @@ from .transform import (
     NeighborTransform,
     UnitTransform,
     DataTypeTransform,
+    DeltaTransform,
     SequentialTransform,
 )
 
@@ -85,6 +86,8 @@ def create_lmdb_dataset(
     db_path: str,
     cutoff: float,
     split: str,
+    targets: Union[str, List[str]] = "energy",
+    base_targets: Optional[Union[str, List[str]]] = None,
     dtype: Optional[Union[str, torch.dtype]] = None,
     mode: Literal["train", "test"] = "train",
 ) -> Union[Tuple[torch_data.Dataset[T], torch_data.Dataset[T]], torch_data.Dataset[T]]:
@@ -102,20 +105,32 @@ def create_lmdb_dataset(
     assert osp.exists(split_path), f"Split file not found at {split_path}"
 
     # set transforms
+    transform_list = []
+
+    # delta transform
+    if base_targets is not None:
+        base_targets = (
+            base_targets if isinstance(base_targets, list) else [base_targets]
+        )
+        transform_list.append(DeltaTransform(base_targets=base_targets))
+
+    # data type transform
+    if dtype is None:
+        dtype = torch.get_default_dtype()
+    targets = targets if isinstance(targets, list) else [targets]
+    transform_list.append(DataTypeTransform(dtype=dtype, targets=targets))
+
     # unit transform
     with open(info_path, "r") as f:
         info = json.load(f)
         data_units = info["data_units"]
-    unit_transform = UnitTransform(data_units=data_units)
-    # data type transform
-    if dtype is None:
-        dtype = torch.get_default_dtype()
-    dtype_transform = DataTypeTransform(dtype=dtype)
+    transform_list.append(UnitTransform(data_units=data_units))
+
     # neighbor transform
     neighbor_transform = NeighborTransform(cutoff=cutoff)
-    transform = SequentialTransform(
-        transforms=[unit_transform, dtype_transform, neighbor_transform]
-    )
+    transform_list.append(neighbor_transform)
+
+    transform = SequentialTransform(transforms=transform_list)
 
     # load the dataset
     dataset = LMDBDataset(db_path=lmdb_path, transform=transform)

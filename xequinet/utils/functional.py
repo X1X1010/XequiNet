@@ -1,4 +1,4 @@
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Optional
 from copy import deepcopy
 from contextlib import contextmanager
 import torch
@@ -6,9 +6,11 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
 from torch_geometric.loader import DataLoader
+import pytorch_warmup as warmup
+
+from . import keys
 from .lr_scheduler import SmoothReduceLROnPlateau, get_polynomial_decay_schedule
 from .qc import ELEMENTS_LIST
-import pytorch_warmup as warmup
 
 
 @contextmanager
@@ -31,6 +33,9 @@ def distributed_zero_first(local_rank: int = None):
 def calculate_stats(
     dataloader: DataLoader,
     divided_by_atoms: bool = True,
+    target_property: str = keys.TOTAL_ENERGY,
+    base_property: Optional[str] = keys.BASE_ENERGY,
+    max_num_samples: int = 100000,
 ) -> Tuple[float, float]:
     """
     Aovid using atom_wise_mean when the dataset is too large.
@@ -41,13 +46,18 @@ def calculate_stats(
     mean, m2 = 0.0, 0.0
     count = 0
     for data in dataloader:
-        sample_y = data.y
-        if hasattr(data, "base_y"):
-            sample_y -= data.base_y
+        sample_y = data[target_property]
+        if base_property is not None and base_property in data:
+            sample_y -= data[base_property]
         batch_size = sample_y.size(0)
         new_count = count + batch_size
         if divided_by_atoms:
-            num_atoms = data.ptr[1:] - data.ptr[:-1]
+            if keys.BATCH_PTR in data:
+                num_atoms = data[keys.BATCH_PTR][1:] - data[keys.BATCH_PTR][:-1]
+            else:
+                num_atoms = torch.tensor(
+                    [data[keys.ATOMIC_NUMBERS].size(0)], device=sample_y.device
+                )
             sample_y /= num_atoms.view(-1, 1)
         sample_mean = torch.mean(sample_y, dim=0)
         sample_m2 = torch.sum((sample_y - sample_mean[:, None]) ** 2, dim=0)
@@ -57,39 +67,11 @@ def calculate_stats(
         corr = batch_size * count / new_count
         m2 += sample_m2 + delta**2 * corr
         count = new_count
+        if count > max_num_samples:
+            break
 
     std = torch.sqrt(m2 / count)
     return mean.item(), std.item()
-
-
-class MatCriterion(nn.Module):
-    """MSE + RMSE"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.mae_loss = nn.L1Loss()
-        self.mse_loss = nn.MSELoss()
-
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        mae = self.mae_loss(pred, target)
-        mse = self.mse_loss(pred, target)
-        loss = mae + torch.sqrt(mse)
-        return loss
-
-
-def resolve_lossfn(lossfn: str) -> nn.Module:
-    """Helper function to return loss function"""
-    lossfn = lossfn.lower()
-    if lossfn == "l2" or lossfn == "mse":
-        return nn.MSELoss()
-    elif lossfn == "l1" or lossfn == "mae":
-        return nn.L1Loss()
-    elif lossfn == "smoothl1":
-        return nn.SmoothL1Loss()
-    elif lossfn == "matloss":
-        return MatCriterion()
-    else:
-        raise NotImplementedError(f"Unsupported loss function {lossfn}")
 
 
 def resolve_optimizer(

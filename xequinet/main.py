@@ -43,12 +43,6 @@ def main() -> None:
         default=0,
         help="Verbose level (default: 0).",
     )
-    # train
-    parser.add_argument(
-        "--only-process",
-        action="store_true",
-        help="Whether to only process the data.",
-    )
     # test
     parser.add_argument(
         "--ckpt",

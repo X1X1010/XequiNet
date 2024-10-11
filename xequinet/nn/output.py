@@ -8,10 +8,11 @@ from torch_geometric.data import Data
 from torch_scatter import scatter_sum, scatter
 from e3nn import o3
 
-from xequinet.utils import keys, NetConfig, qc
+from xequinet.utils import keys, qc
 from .o3layer import Gate, resolve_actfn
 from .xe3net import SelfMixTP, Sph2Cart
 from .tp import get_feasible_tp
+from .electronic import CoulombWithCutoff
 
 
 class ScalarOut(nn.Module):
@@ -195,13 +196,15 @@ class ForceFieldOut(nn.Module):
         return data, result
 
 
-class ChargeOut(nn.Module):
+class AtomicChargesOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
         actfn: str = "silu",
-        conserve_charge: bool = True,
+        conservation: bool = True,
+        coulomb_interaction: bool = False,
+        coulomb_cutoff: Optional[float] = 10.0,
     ) -> None:
         """
         Args:
@@ -219,7 +222,11 @@ class ChargeOut(nn.Module):
         )
         nn.init.zeros_(self.out_mlp[0].bias)
         nn.init.zeros_(self.out_mlp[2].bias)
-        self.conserve_charge = conserve_charge
+        self.conservation = conservation
+        self.coulomb_interaction = coulomb_interaction
+        if self.coulomb_interaction:
+            assert coulomb_cutoff is not None
+            self.coulomb = CoulombWithCutoff(coulomb_cutoff)
 
     def forward(
         self, data: Dict[str, torch.Tensor]
@@ -229,7 +236,7 @@ class ChargeOut(nn.Module):
         total_charge = data[keys.TOTAL_CHARGE]
         batch = data[keys.BATCH]
         raw_charges = self.out_mlp(node_invt)
-        if self.conserve_charge:
+        if self.conservation:
             raw_total_charge = scatter_sum(raw_charges, batch, dim=0)
             num_atoms = scatter_sum(
                 torch.ones_like(raw_charges),
@@ -242,6 +249,9 @@ class ChargeOut(nn.Module):
 
         data[keys.ATOMIC_CHARGES] = atomic_charges
         result = {keys.ATOMIC_CHARGES: atomic_charges}
+        if self.coulomb_interaction:
+            data = self.coulomb(data)
+
         return data, result
 
 
@@ -625,81 +635,16 @@ class MegaCartTensorOut(nn.Module):
         return res
 
 
-def resolve_output(config: NetConfig):
-    splited_str = config.output_mode.rsplit("-", 1)
-    output_mode = splited_str[0]
-    extra = splited_str[1] if len(splited_str) == 2 else ""
-    if output_mode == "scalar":
-        return ScalarOut(
-            node_dim=config.node_dim,
-            hidden_dim=config.hidden_dim,
-            out_dim=config.output_dim,
-            actfn=config.activation,
-            node_bias=config.node_average,
-            reduce_op=config.reduce_op,
-        )
-    elif output_mode == "grad":
-        return ForceFieldOut(
-            node_dim=config.node_dim,
-            hidden_dim=config.hidden_dim,
-            actfn=config.activation,
-            node_bias=config.node_average,
-            reduce_op=config.reduce_op,
-        )
-    elif output_mode == "vector":
-        return VectorOut(
-            node_dim=config.node_dim,
-            node_irreps=config.node_irreps,
-            hidden_dim=config.hidden_dim,
-            hidden_irreps=config.hidden_irreps,
-            if_norm=(extra == "norm"),
-            actfn=config.activation,
-            reduce_op=config.reduce_op,
-        )
-    elif output_mode == "polar":
-        return PolarOut(
-            node_dim=config.node_dim,
-            node_irreps=config.node_irreps,
-            hidden_dim=config.hidden_dim,
-            hidden_irreps=config.hidden_irreps,
-            if_iso=(extra == "iso"),
-            actfn=config.activation,
-            reduce_op=config.reduce_op,
-        )
-    elif output_mode == "spatial":
-        return SpatialOut(
-            node_dim=config.node_dim,
-            hidden_dim=config.hidden_dim,
-            actfn=config.activation,
-            reduce_op=config.reduce_op,
-        )
-    elif output_mode == "cartesian":
-        return CartTensorOut(
-            node_dim=config.node_dim,
-            node_irreps=config.node_irreps,
-            hidden_dim=config.hidden_dim,
-            hidden_channels=config.hidden_channels,
-            order=config.order,
-            symmetry=config.required_symm,
-            if_iso=(extra == "iso"),
-            actfn=config.activation,
-            # norm_type=config.norm_type,
-            reduce_op=config.reduce_op,
-        )
-    elif output_mode == "megacart":
-        return MegaCartTensorOut(
-            node_dim=config.node_dim,
-            node_irreps=config.node_irreps,
-            hidden_dim=config.hidden_dim,
-            hidden_channels=config.hidden_channels,
-            order=config.order,
-            symmetry=config.required_symm,
-            if_iso=(extra == "iso"),
-            actfn=config.activation,
-            norm_type=config.norm_type,
-            reduce_op=config.reduce_op,
-        )
-    else:
-        raise NotImplementedError(
-            f"output mode {config.output_mode} is not implemented"
-        )
+def resolve_output(mode: str, **kwargs) -> nn.Module:
+
+    output_factory = {
+        "scalar": ScalarOut,
+        "forcefield": ForceFieldOut,
+        "charges": AtomicChargesOut,
+        "vector": VectorOut,
+        "polar": PolarOut,
+        "spatial": SpatialOut,
+        "cartesian": CartTensorOut,
+        "megacart": MegaCartTensorOut,
+    }
+    return output_factory[mode](**kwargs)
