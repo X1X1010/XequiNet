@@ -1,26 +1,26 @@
-from typing import Tuple, List, Optional
-import os
 import heapq
+import os
+from typing import Dict, Iterable, List, Optional
 
 import torch
-import torch.nn as nn
 import torch.distributed as dist
-import torch.nn.functional as F
-
+import torch.nn as nn
+from tabulate import tabulate
 from torch.optim.swa_utils import AveragedModel
-from torch_geometric.loader import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+from torch_geometric.loader import DataLoader
 
 from xequinet.data import XequiData
+from xequinet.utils import get_default_units, keys
+
+from .config import XequiConfig
 from .functional import (
-    resolve_optimizer,
     resolve_lr_scheduler,
+    resolve_optimizer,
     resolve_warmup_scheduler,
 )
-from .loss import WeightedLoss
-from .config import XequiConfig
 from .logger import ZeroLogger
-from .qc import get_default_units
+from .loss import L1Metric, WeightedLoss
 
 
 class loss2file:
@@ -34,26 +34,38 @@ class loss2file:
         return self.loss > other.loss
 
 
-class AverageMeter:
-    def __init__(self, device: torch.device) -> None:
+class AverageMetric:
+    def __init__(self, properties: Iterable, device: torch.device) -> None:
         self.device = device
+        self.properties = {
+            prop: torch.zeros((1,), device=self.device) for prop in properties
+        }
+        self.counts = {
+            prop: torch.zeros((1,), device=self.device) for prop in properties
+        }
         self.reset()
 
     def reset(self) -> None:
-        self.sum = torch.zeros((1,), device=self.device)
-        self.cnt = torch.zeros((1,), dtype=torch.int32, device=self.device)
+        for prop in self.properties:
+            self.properties[prop].zero_()
+            self.counts[prop].zero_()
 
-    def update(self, val: float, n: int = 1) -> None:
-        self.sum += val
-        self.cnt += n
+    @torch.no_grad()
+    def update(self, property: str, value: float, n: int = 1) -> None:
+        assert property in self.properties, f"Property {property} not found"
+        self.properties[property] += value
+        self.counts[property] += n
 
-    def reduce(self) -> float:
-        tmp_sum = self.sum.clone()
-        tmp_cnt = self.cnt.clone()
-        dist.all_reduce(tmp_sum, op=dist.ReduceOp.SUM)
-        dist.all_reduce(tmp_cnt, op=dist.ReduceOp.SUM)
-        avg = tmp_sum / tmp_cnt
-        return avg.item()
+    @torch.no_grad()
+    def reduce(self) -> Dict[str, float]:
+        result = {}
+        for prop, val in self.properties.items():
+            val = val.clone()
+            count = self.counts[prop].clone()
+            dist.all_reduce(val, op=dist.ReduceOp.SUM)
+            dist.all_reduce(count, op=dist.ReduceOp.SUM)
+            result[prop] = (val / count).item()
+        return result
 
 
 class EarlyStopping:
@@ -152,7 +164,7 @@ class Trainer:
             patience=self.trainer_conf.early_stop, min_lr=self.trainer_conf.min_lr
         )
         # exponential moving average
-        self.ema_model = None
+        self.ema_model: Optional[AveragedModel] = None
         if self.trainer_conf.ema_decay is not None:
             ema_model = AveragedModel(
                 self.model.module,
@@ -162,8 +174,13 @@ class Trainer:
                 device=device,
             )
             self.ema_model = ema_model
+        # set l1 metric
+        self.l1_metrics = L1Metric(*self.trainer_conf.losses_weight.keys())
         # loss recording, model saving and logging
-        self.meter = AverageMeter(device=device)
+        self.meter = AverageMetric(
+            properties=self.l1_metrics.properties,
+            device=device,
+        )
         self.best_l2fs: List[loss2file] = [
             loss2file(
                 float("inf"),
@@ -225,7 +242,7 @@ class Trainer:
             data = data.to(self.device)
             # forward propagation
             result = self.model(data.to_dict())
-            loss, aux = self.lossfn(result, data)
+            loss, _ = self.lossfn(result, data)
             # backward propagation
             self.optimizer.zero_grad()
             # with torch.autograd.detect_anomaly():
@@ -244,90 +261,78 @@ class Trainer:
                 with self.warmup_scheduler.dampening():
                     self.lr_scheduler.step()
             # record l1 loss
-            with torch.no_grad():
-                l1loss = F.l1_loss(pred, real, reduction="sum")
-                self.meter.update(l1loss.item(), real.numel())
+            l1_losses = self.l1_metrics(result, data)
+            for prop, (l1, n) in l1_losses.items():
+                self.meter.update(prop, l1, n)
+
             # logging
             if self.epoch % self.trainer_conf.log_epoch == 0 and (
                 step % self.trainer_conf.log_step == 0 or step == len(self.train_loader)
             ):
-                mae = self.meter.reduce()
+                reduced_l1 = self.meter.reduce()
+                header = ["", "Epoch", "Step", "LR"]
+                tabulate_data = [
+                    "Train MAE",
+                    self.epoch,
+                    f"{step}/{len(self.train_loader)}",
+                    f"{self.optimizer.param_groups[0]['lr']:3e}",
+                ]
+                header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
+                tabulate_data.extend(
+                    list(map(lambda x: f"{x:.7f}", reduced_l1.values()))
+                )
                 self.log.f.info(
-                    "Epoch: [{iepoch:>4}][{step:>4}/{nstep}]   lr: {lr:3e}   train MAE: {mae:10.7f}".format(
-                        iepoch=self.epoch,
-                        step=step,
-                        nstep=len(self.train_loader),
-                        lr=self.optimizer.param_groups[0]["lr"],
-                        mae=mae,
-                    )
+                    tabulate([tabulate_data], headers=header, tablefmt="plain")
                 )
 
-    @torch.no_grad()
     def validate(self) -> None:
-        self.model.eval()
+        valid_model = self.model.module if self.ema_model is None else self.ema_model
+        valid_model.eval()
         self.meter.reset()
         for data in self.valid_loader:
+            data: XequiData  # for type annotation
             data = data.to(self.device)
-            pred = self.model(data)
-            real = data.y - data.base_y if hasattr(data, "base_y") else data.y
-            l1loss = F.l1_loss(pred, real, reduction="sum")
-            self.meter.update(l1loss.item(), real.numel())
-        mae = self.meter.reduce()
-        if self.epoch % self.trainer_conf.log_epoch == 0:
-            self.log.f.info(f"Validation MAE: {mae:10.7f}")
+            result = valid_model(data.to_dict())
+            l1_losses = self.l1_metrics(result, data)
+            for prop, (l1, n) in l1_losses.items():
+                self.meter.update(prop, l1, n)
+        reduced_l1 = self.meter.reduce()
+        mae = 0.0
+        for prop, w in self.trainer_conf.losses_weight.items():
+            mae += w * reduced_l1[prop]
         if self.trainer_conf.lr_scheduler == "plateau":
             with self.warmup_scheduler.dampening():
                 self.lr_scheduler.step(mae)
             lr = self.optimizer.param_groups[0]["lr"]
             self.early_stop(mae, self.best_l2fs[0].loss, lr)
-        self.save_best_k(self.model.module, mae)
+        self.save_best_k(valid_model.module, mae)
         self._save_params(
-            self.model.module,
+            valid_model.module,
             f"{self.trainer_conf.save_dir}/{self.trainer_conf.run_name}_last.pt",
         )
-
-    @torch.no_grad()
-    def ema_validate(self) -> None:
-        if self.ema_model is None:
-            return
-        self.ema_model.eval()
-        self.meter.reset()
-        for data in self.valid_loader:
-            data = data.to(self.device)
-            pred = self.ema_model(data)
-            real = data.y - data.base_y if hasattr(data, "base_y") else data.y
-            l1loss = F.l1_loss(pred, real, reduction="sum")
-            self.meter.update(l1loss.item(), real.numel())
-        mae = self.meter.reduce()
         if self.epoch % self.trainer_conf.log_epoch == 0:
-            self.log.f.info(f"EMA Valid MAE: {mae:10.7f}")
-        if self.trainer_conf.lr_scheduler == "plateau":
-            with self.warmup_scheduler.dampening():
-                self.lr_scheduler.step(mae)
-            lr = self.optimizer.param_groups[0]["lr"]
-            self.early_stop(mae, self.best_l2fs[0].loss, lr)
-        self.save_best_k(self.ema_model.module, mae)
-        self._save_params(
-            self.ema_model.module,
-            f"{self.trainer_conf.save_dir}/{self.trainer_conf.run_name}_last.pt",
-        )
+            header = [""]
+            tabulate_data = (
+                ["Validation MAE"] if self.ema_model is None else ["EMA Valid MAE"]
+            )
+            header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
+            tabulate_data.extend(list(map(lambda x: f"{x:.7f}", reduced_l1.values())))
+            self.log.f.info(tabulate([tabulate_data], headers=header, tablefmt="plain"))
 
     def start(self) -> None:
-        prop_unit, len_unit = get_default_unit()
         self.log.f.info(" --- Start training")
         self.log.f.info(f" --- Task Name: {self.trainer_conf.run_name}")
-        self.log.f.info(
-            f" --- Property: {self.trainer_conf.label_name} --- Unit: {prop_unit} {len_unit}"
-        )
+        default_units = get_default_units()
+        for prop, unit in default_units.items():
+            if prop in keys.BASE_PROPERTIES:
+                continue
+            self.log.f.info(f" --- Property: {prop} --- Unit: {unit}")
 
         # training loop
         for iepoch in range(self.start_epoch, self.trainer_conf.max_epochs + 1):
             self.epoch = iepoch
             self.train1epoch()
-            if self.ema_model is None:
-                self.validate()
-            else:
-                self.ema_validate()
+            self.validate()
             if self.early_stop.stop:
                 self.log.f.info(f" --- Early Stopping at Epoch {iepoch}")
                 break
@@ -336,390 +341,4 @@ class Trainer:
         self.log.f.info(f" --- Best Valid MAE: {self.best_l2fs[-1].loss:.5f}")
         self.log.f.info(
             f" --- Best Checkpoint: {self.best_l2fs[-1].ptfile} at Epoch {self.best_l2fs[-1].epoch}"
-        )
-
-
-class WithForceMeter:
-    def __init__(self, device: torch.device) -> None:
-        self.device = device
-        self.reset()
-
-    def reset(self) -> None:
-        self.sum = torch.zeros((2,), device=self.device)
-        self.cnt = torch.zeros((2,), dtype=torch.int32, device=self.device)
-
-    def update(self, energy: float, force: float, n_ene: int, n_frc: int) -> None:
-        self.sum[0] += energy
-        self.sum[1] += force
-        self.cnt[0] += n_ene
-        self.cnt[1] += n_frc
-
-    def reduce(self) -> Tuple[float, float]:
-        tmp_sum = self.sum.clone()
-        tmp_cnt = self.cnt.clone()
-        dist.all_reduce(tmp_sum, op=dist.ReduceOp.SUM)
-        dist.all_reduce(tmp_cnt, op=dist.ReduceOp.SUM)
-        avg = tmp_sum / tmp_cnt
-        return avg[0].item(), avg[1].item()
-
-
-class GradTrainer(Trainer):
-    """
-    Trainer class for scalar and relative gradient property
-    """
-
-    def __init__(
-        self,
-        model: nn.parallel.DistributedDataParallel,
-        config: NetConfig,
-        device: torch.device,
-        train_loader: DataLoader,
-        valid_loader: DataLoader,
-        dist_sampler: DistributedSampler,
-        log: ZeroLogger,
-    ) -> None:
-        """
-        Args:
-            `model`: DistributedDataParallel model
-            `config`: network configuration
-            `device`: torch device
-            `train_loader`: training data loader
-            `valid_loader`: validation data loader
-            `dist_sampler`: distributed sampler
-            `log`: logger
-        """
-        super().__init__(
-            model, config, device, train_loader, valid_loader, dist_sampler, log
-        )
-        assert config.force_weight <= 1.0
-        self.meter = WithForceMeter(self.device)
-
-    def train1epoch(self) -> None:
-        self.model.train()
-        self.dist_sampler.set_epoch(self.epoch)
-        for step, data in enumerate(self.train_loader, start=1):
-            self.meter.reset()
-            data = data.to(self.device)
-            # forward propagation
-            data.pos.requires_grad_(True)
-            predE, predF = self.model(data)
-            realE, realF = data.y, data.force
-            if hasattr(data, "base_y") and hasattr(data, "base_force"):
-                realE -= data.base_y
-                realF -= data.base_force
-            lossE = self.lossfn(predE, realE)
-            lossF = self.lossfn(predF, realF)
-            loss = (
-                1 - self.trainer_conf.force_weight
-            ) * lossE + self.trainer_conf.force_weight * lossF
-            # backward propagation
-            self.optimizer.zero_grad()
-            # with torch.autograd.detect_anomaly():
-            loss.backward()
-            # gradient clipping
-            if self.trainer_conf.grad_clip is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.trainer_conf.grad_clip
-                )
-            self.optimizer.step()
-            # update EMA model
-            if self.ema_model is not None:
-                self.ema_model.update_parameters(self.model)
-            # update learning rate
-            if self.trainer_conf.lr_scheduler != "plateau":
-                with self.warmup_scheduler.dampening():
-                    self.lr_scheduler.step()
-            # record l1 loss
-            with torch.no_grad():
-                l1lossE = F.l1_loss(predE, realE, reduction="sum")
-                l1lossF = F.l1_loss(predF, realF, reduction="sum")
-                self.meter.update(
-                    l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel()
-                )
-            # logging
-            if self.epoch % self.trainer_conf.log_epoch == 0 and (
-                step % self.trainer_conf.log_step == 0 or step == len(self.train_loader)
-            ):
-                maeE, maeF = self.meter.reduce()
-                self.log.f.info(
-                    "Epoch: [{iepoch:>4}][{step:4d}/{nstep}]   lr: {lr:3e}   train MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}".format(
-                        iepoch=self.epoch,
-                        step=step,
-                        nstep=len(self.train_loader),
-                        lr=self.optimizer.param_groups[0]["lr"],
-                        maeE=maeE,
-                        maeF=maeF,
-                    )
-                )
-
-    def validate(self) -> None:
-        self.model.eval()
-        self.meter.reset()
-        for data in self.valid_loader:
-            data = data.to(self.device)
-            data.pos.requires_grad_(True)
-            predE, predF = self.model(data)
-            with torch.no_grad():
-                realE, realF = data.y, data.force
-                if hasattr(data, "base_y") and hasattr(data, "base_force"):
-                    realE -= data.base_y
-                    realF -= data.base_force
-                l1lossE = F.l1_loss(predE, realE, reduction="sum")
-                l1lossF = F.l1_loss(predF, realF, reduction="sum")
-                self.meter.update(
-                    l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel()
-                )
-        maeE, maeF = self.meter.reduce()
-        if self.epoch % self.config.log_epoch == 0:
-            self.log.f.info(f"Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}")
-        mae = (1 - self.config.force_weight) * maeE + self.config.force_weight * maeF
-        if self.config.lr_scheduler == "plateau":
-            with self.warmup_scheduler.dampening():
-                self.lr_scheduler.step(mae)
-            lr = self.optimizer.param_groups[0]["lr"]
-            self.early_stop(mae, self.best_l2fs[0].loss, lr)
-        self.save_best_k(self.model.module, mae)
-        self._save_params(
-            self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt"
-        )
-
-    def ema_validate(self) -> None:
-        if self.ema_model is None:
-            return
-        self.ema_model.eval()
-        self.meter.reset()
-        for data in self.valid_loader:
-            data = data.to(self.device)
-            data.pos.requires_grad_(True)
-            predE, predF = self.ema_model(data)
-            with torch.no_grad():
-                realE, realF = data.y, data.force
-                if hasattr(data, "base_y") and hasattr(data, "base_force"):
-                    realE -= data.base_y
-                    realF -= data.base_force
-                l1lossE = F.l1_loss(predE, realE, reduction="sum")
-                l1lossF = F.l1_loss(predF, realF, reduction="sum")
-                self.meter.update(
-                    l1lossE.item(), l1lossF.item(), realE.numel(), realF.numel()
-                )
-        maeE, maeF = self.meter.reduce()
-        if self.epoch % self.config.log_epoch == 0:
-            self.log.f.info(
-                f"EMA Validation MAE: Energy {maeE:10.7f}  Force {maeF:10.7f}"
-            )
-        mae = (1 - self.config.force_weight) * maeE + self.config.force_weight * maeF
-        if self.config.lr_scheduler == "plateau":
-            with self.warmup_scheduler.dampening():
-                self.lr_scheduler.step(mae)
-            lr = self.optimizer.param_groups[0]["lr"]
-            self.early_stop(mae, self.best_l2fs[0].loss, lr)
-        self.save_best_k(self.ema_model.module, mae)
-        self._save_params(
-            self.ema_model.module,
-            f"{self.config.save_dir}/{self.config.run_name}_last.pt",
-        )
-
-
-class GraphMeter:
-    """
-    Meter class for evaluating error metrics containing both node and edge labels.
-    """
-
-    def __init__(self, device: torch.device) -> None:
-        self.device = device
-        self.reset()
-
-    def reset(self) -> None:
-        self.sum = torch.zeros((2,), device=self.device)
-        self.cnt = torch.zeros((2,), device=self.device, dtype=torch.int32)
-
-    def update(
-        self,
-        node_datum: float,
-        edge_datum: float,
-        num_node: int,
-        num_edge: int,
-    ) -> None:
-        self.sum += torch.tensor([node_datum, edge_datum], device=self.device)
-        self.cnt += torch.tensor(
-            [num_node, num_edge], device=self.device, dtype=torch.int32
-        )
-
-    def reduce(self) -> Tuple[float, float, float]:
-        tmp_sum = self.sum.clone()
-        tmp_cnt = self.cnt.clone()
-        dist.all_reduce(tmp_sum, op=dist.ReduceOp.SUM)
-        dist.all_reduce(tmp_cnt, op=dist.ReduceOp.SUM)
-        avg = tmp_sum / tmp_cnt
-        avg_tot = tmp_sum.sum() / tmp_cnt.sum()
-        return avg[0].item(), avg[1].item(), avg_tot.item()
-
-
-class MatTrainer(Trainer):
-    """
-    Trainer class for general matrix properties calculated from quantum chemistry method
-    with a given basis set layout.
-    """
-
-    def __init__(
-        self,
-        model: nn.parallel.DistributedDataParallel,
-        config: NetConfig,
-        device: torch.device,
-        train_loader: DataLoader,
-        valid_loader: DataLoader,
-        dist_sampler: DistributedSampler,
-        log: ZeroLogger,
-    ) -> None:
-        super().__init__(
-            model, config, device, train_loader, valid_loader, dist_sampler, log
-        )
-        self.meter = GraphMeter(self.device)
-
-    def train1epoch(self) -> None:
-        self.model.train()
-        self.dist_sampler.set_epoch(self.epoch)
-
-        for step, data in enumerate(self.train_loader, start=1):
-            self.meter.reset()
-            data = data.to(self.device)
-            # forward propagation
-            pred_node_padded, pred_edge_padded = self.model(data)
-            node_mask, edge_mask = data.node_mask, data.edge_mask
-            pred_node, pred_edge = (
-                pred_node_padded[node_mask],
-                pred_edge_padded[edge_mask],
-            )
-            real_node, real_edge = (
-                data.node_label[node_mask],
-                data.edge_label[edge_mask],
-            )
-            batch_pred = torch.cat([pred_node, pred_edge], dim=0)
-            batch_real = torch.cat([real_node, real_edge], dim=0)
-            loss = self.lossfn(batch_pred, batch_real)
-            # back propagation
-            self.optimizer.zero_grad()
-            # with torch.autograd.detect_anomaly():
-            loss.backward()
-            # gradient clipping
-            if self.config.grad_clip is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
-                    self.config.grad_clip,
-                    error_if_nonfinite=True,
-                )
-            self.optimizer.step()
-            # update EMA model
-            if self.ema_model is not None:
-                self.ema_model.update_parameters(self.model)
-            # update learning rate
-            if self.config.lr_scheduler != "plateau":
-                with self.warmup_scheduler.dampening():
-                    self.lr_scheduler.step()
-            # record l1 loss
-            with torch.no_grad():
-                l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
-                l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
-                self.meter.update(
-                    l1loss_node.item(),
-                    l1loss_edge.item(),
-                    real_node.size(0),
-                    real_edge.size(0),
-                )
-            # logging
-            if self.epoch % self.config.log_epoch == 0 and (
-                step % self.config.log_step == 0 or step == len(self.train_loader)
-            ):
-                node_mae, edge_mae, total_mae = self.meter.reduce()
-                self.log.f.info(
-                    "Epoch: [{iepoch:>4}][{step:4d}/{nstep}]   lr: {lr:3e}   train MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}".format(
-                        iepoch=self.epoch,
-                        step=step,
-                        nstep=len(self.train_loader),
-                        lr=self.optimizer.param_groups[0]["lr"],
-                        node_mae=node_mae,
-                        edge_mae=edge_mae,
-                        total_mae=total_mae,
-                    )
-                )
-
-    @torch.no_grad()
-    def validate(self) -> None:
-        self.model.eval()
-        self.meter.reset()
-        for data in self.valid_loader:
-            data = data.to(self.device)
-            pred_node_padded, pred_edge_padded = self.model(data)
-            node_mask, edge_mask = data.node_mask, data.edge_mask
-            pred_node, pred_edge = (
-                pred_node_padded[node_mask],
-                pred_edge_padded[edge_mask],
-            )
-            real_node, real_edge = (
-                data.node_label[node_mask],
-                data.edge_label[edge_mask],
-            )
-            l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
-            l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
-            self.meter.update(
-                l1loss_node.item(),
-                l1loss_edge.item(),
-                real_node.size(0),
-                real_edge.size(0),
-            )
-        node_mae, edge_mae, total_mae = self.meter.reduce()
-        if self.epoch % self.config.log_epoch == 0:
-            self.log.f.info(
-                f"Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}"
-            )
-        if self.config.lr_scheduler == "plateau":
-            with self.warmup_scheduler.dampening():
-                self.lr_scheduler.step(total_mae)
-            lr = self.optimizer.param_groups[0]["lr"]
-            self.early_stop(total_mae, self.best_l2fs[0].loss, lr)
-        self.save_best_k(self.model.module, total_mae)
-        self._save_params(
-            self.model.module, f"{self.config.save_dir}/{self.config.run_name}_last.pt"
-        )
-
-    @torch.no_grad()
-    def ema_validate(self) -> None:
-        if self.ema_model is None:
-            return
-        self.ema_model.eval()
-        self.meter.reset()
-        for data in self.valid_loader:
-            data = data.to(self.device)
-            pred_node_padded, pred_edge_padded = self.ema_model(data)
-            node_mask, edge_mask = data.node_mask, data.edge_mask
-            pred_node, pred_edge = (
-                pred_node_padded[node_mask],
-                pred_edge_padded[edge_mask],
-            )
-            real_node, real_edge = (
-                data.node_label[node_mask],
-                data.edge_label[edge_mask],
-            )
-            l1loss_node = F.l1_loss(pred_node, real_node, reduction="sum")
-            l1loss_edge = F.l1_loss(pred_edge, real_edge, reduction="sum")
-            self.meter.update(
-                l1loss_node.item(),
-                l1loss_edge.item(),
-                real_node.size(0),
-                real_edge.size(0),
-            )
-        node_mae, edge_mae, total_mae = self.meter.reduce()
-        if self.epoch % self.config.log_epoch == 0:
-            self.log.f.info(
-                f"EMA Validation MAE: node: {node_mae:10.7f},  edge: {edge_mae:10.7f},  total: {total_mae:10.7f}"
-            )
-        if self.config.lr_scheduler == "plateau":
-            with self.warmup_scheduler.dampening():
-                self.lr_scheduler.step(total_mae)
-            lr = self.optimizer.param_groups[0]["lr"]
-            self.early_stop(total_mae, self.best_l2fs[0].loss, lr)
-        self.save_best_k(self.ema_model.module, total_mae)
-        self._save_params(
-            self.ema_model.module,
-            f"{self.config.save_dir}/{self.config.run_name}_last.pt",
         )

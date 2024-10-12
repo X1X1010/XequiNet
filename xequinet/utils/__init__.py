@@ -1,16 +1,13 @@
-from .config import XequiConfig, ModelConfig
+from .config import ModelConfig, XequiConfig
+from .functional import calculate_stats, distributed_zero_first
 from .logger import ZeroLogger
 from .qc import (
-    unit_conversion,
-    set_default_units,
     get_default_units,
     get_embedding_tensor,
+    set_default_units,
+    unit_conversion,
 )
-from .functional import (
-    distributed_zero_first,
-    calculate_stats,
-)
-
+from .trainer import Trainer
 
 __all__ = [
     "XequiConfig",
@@ -22,10 +19,10 @@ __all__ = [
     "get_embedding_tensor",
     "distributed_zero_first",
     "calculate_stats",
+    "Trainer",
 ]
 
 """
-from .trainer import Trainer, GradTrainer, MatTrainer
 from .functional import (
     distributed_zero_first,
     calculate_stats,

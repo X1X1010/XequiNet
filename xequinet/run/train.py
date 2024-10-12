@@ -1,27 +1,27 @@
-from typing import cast
+import argparse
 import os
 import random
-import argparse
+from typing import cast
 
 import numpy as np
 import torch
 import torch.distributed as dist
+from omegaconf import OmegaConf
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
-from omegaconf import OmegaConf
-
+from xequinet.data import create_lmdb_dataset
+from xequinet.nn import resolve_model
 from xequinet.utils import (
-    keys,
+    Trainer,
     XequiConfig,
     ZeroLogger,
-    distributed_zero_first,
-    set_default_units,
     calculate_stats,
+    distributed_zero_first,
+    keys,
+    set_default_units,
 )
-from xequinet.data import create_lmdb_dataset
-from ..nn import resolve_model
 
 
 def run_train(args: argparse.Namespace) -> None:
@@ -169,13 +169,13 @@ def run_train(args: argparse.Namespace) -> None:
     log.s.info(f"Total number of parameters to be optimized: {n_params}")
 
     # -------------------  train model ------------------- #
-    if "mat" in config.version:
-        from xequinet.utils import MatTrainer as MyTrainer
-    elif config.output_mode == "grad":
-        from xequinet.utils import GradTrainer as MyTrainer
-    else:
-        from xequinet.utils import Trainer as MyTrainer
-    trainer = MyTrainer(
-        ddp_model, config, device, train_loader, valid_loader, train_sampler, log
+    trainer = Trainer(
+        ddp_model,
+        config,
+        device,
+        train_loader,
+        valid_loader,
+        train_sampler,
+        log,
     )
     trainer.start()

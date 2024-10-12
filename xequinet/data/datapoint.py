@@ -27,6 +27,8 @@ class XequiData(Data):
         virial: Optional[torch.Tensor] = None,  # [1, 3, 3]
         atomic_charges: Optional[torch.Tensor] = None,  # [N_atoms]
         base_charges: Optional[torch.Tensor] = None,  # [1]
+        dipole: Optional[torch.Tensor] = None,  # [1, 3]
+        base_dipole: Optional[torch.Tensor] = None,  # [1, 3]
         **kwargs,
     ) -> None:
         super().__init__(edge_index=edge_index, pos=pos, **kwargs)
@@ -97,3 +99,9 @@ class XequiData(Data):
             assert base_charges.shape == (1,) and base_charges.dtype == dtype
             assert torch.allclose(base_charges.sum().round().to(torch.int), charge)
             self.base_charges = base_charges
+        if dipole is not None:
+            assert dipole.shape == (1, 3) and dipole.dtype == dtype
+            self.dipole = dipole
+        if base_dipole is not None:
+            assert base_dipole.shape == (1, 3) and base_dipole.dtype == dtype
+            self.base_dipole = base_dipole

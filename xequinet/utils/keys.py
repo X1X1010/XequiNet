@@ -1,4 +1,4 @@
-from typing import Final, Dict
+from typing import Dict, Final
 
 # basic keys in datapoints
 POSITIONS: Final[str] = "pos"
@@ -39,6 +39,8 @@ STRESS: Final[str] = "stress"
 ATOMIC_CHARGES: Final[str] = "atomic_charges"
 BASE_CHARGES: Final[str] = "base_charges"
 TOTAL_CHARGE: Final[str] = "charge"
+DIPOLE: Final[str] = "dipole"
+BASE_DIPOLE: Final[str] = "base_dipole"
 
 GRAD_PROPERTIES: Final[set] = {  # properties that are gradients got by autograd
     FORCES,
@@ -49,6 +51,7 @@ BASE_PROPERTIES: Final[Dict[str, str]] = {  # properties that are base propertie
     BASE_ENERGY: TOTAL_ENERGY,
     BASE_FORCES: FORCES,
     BASE_CHARGES: ATOMIC_CHARGES,
+    BASE_DIPOLE: DIPOLE,
 }
 
 # others

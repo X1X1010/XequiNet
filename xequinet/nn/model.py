@@ -1,16 +1,13 @@
-from typing import Union, Dict, List
+from typing import Dict, List, Optional, Union
 
 import torch
 import torch.nn as nn
 
 from xequinet.utils import keys
+
 from .electronic import HierarchicalCutoff
-from .xpainn import (
-    XEmbedding,
-    XPainnMessage,
-    XPainnUpdate,
-)
 from .output import resolve_output
+from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
 
 
 def compute_edge_data(
@@ -101,6 +98,8 @@ class XPaiNN(nn.Module):
     eXtended PaiNN.
     """
 
+    cutoff_radius: float
+
     def __init__(self, **kwargs) -> None:
         super().__init__()
         node_dim: int = kwargs.get("node_dim", 128)
@@ -119,8 +118,10 @@ class XPaiNN(nn.Module):
 
         # charge
         coulomb_interaction: bool = kwargs.get("coulomb_interaction", False)
+        coulomb_cutoff: Optional[float] = None
         if coulomb_interaction:
-            coulomb_cutoff: float = kwargs.get("coulomb_cutoff", 10.0)
+            coulomb_cutoff: Optional[float] = kwargs.get("coulomb_cutoff", 10.0)
+            assert cutoff <= coulomb_cutoff
             hierarchical_cutoff = HierarchicalCutoff(
                 long_cutoff=coulomb_cutoff,
                 short_cutoff=cutoff,
@@ -160,6 +161,8 @@ class XPaiNN(nn.Module):
         self.output_blocks = nn.ModuleList()
         for mode in output_modes:
             self.output_blocks.append(resolve_output(mode, **kwargs))
+
+        self.cutoff_radius = coulomb_cutoff if coulomb_interaction else cutoff
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 

@@ -2,6 +2,7 @@ from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from xequinet.utils import keys
 
@@ -51,7 +52,7 @@ class WeightedLoss(nn.Module):
 
         device = next(iter(result.values())).device
         total_loss = torch.tensor(0.0, device=device)
-        loss_dict = {}
+        losses_dict = {}
 
         # special case needed for extra processing
         # energy per atom
@@ -63,7 +64,7 @@ class WeightedLoss(nn.Module):
                 target[keys.TOTAL_ENERGY] / n_atoms,
             )
             total_loss += self.weight_dict[keys.ENERGY_PER_ATOM] * energy_per_atom_loss
-            loss_dict[keys.ENERGY_PER_ATOM] = energy_per_atom_loss
+            losses_dict[keys.ENERGY_PER_ATOM] = energy_per_atom_loss
         # stress
         if keys.STRESS in self.weight_dict:
             assert result[keys.VIRIAL].shape == target[keys.VIRIAL].shape
@@ -73,7 +74,7 @@ class WeightedLoss(nn.Module):
                 -target[keys.VIRIAL] / volume,
             )
             total_loss += self.weight_dict[keys.STRESS] * stress_loss
-            loss_dict[keys.STRESS] = stress_loss
+            losses_dict[keys.STRESS] = stress_loss
 
         # other cases
         for k, w in self.weight_dict.items():
@@ -82,9 +83,77 @@ class WeightedLoss(nn.Module):
             assert result[k].shape == target[k].shape
             loss = self.loss_fn(result[k], target[k])
             total_loss += w * loss
-            loss_dict[k] = loss
+            losses_dict[k] = loss
 
-        return total_loss, loss_dict
+        return total_loss, losses_dict
 
     def __call__(self, *args, **kwargs) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         return super().__call__(*args, **kwargs)  # for type annotation
+
+
+class L1Metric:
+    def __init__(self, *args) -> None:
+        self.properties = set()
+        for prop in args:
+            self.properties.add(prop)
+            if prop == keys.TOTAL_ENERGY:
+                self.properties.add(prop)
+                self.properties.add(keys.ENERGY_PER_ATOM)
+            elif prop == keys.ENERGY_PER_ATOM:
+                self.properties.add(keys.TOTAL_ENERGY)
+                self.properties.add(prop)
+            elif prop == keys.VIRIAL:
+                self.properties.add(prop)
+                self.properties.add(keys.STRESS)
+            elif prop in keys.STRESS:
+                self.properties.add(keys.VIRIAL)
+                self.properties.add(prop)
+            else:
+                self.properties.add(prop)
+
+    @torch.no_grad()
+    def __call__(
+        self,
+        result: Dict[str, torch.Tensor],
+        target: Dict[str, torch.Tensor],
+    ) -> Dict[str, Tuple[float, int]]:
+
+        metrics_dict = {}
+
+        # special case needed for extra processing
+        # energy per atom
+        if keys.ENERGY_PER_ATOM in self.properties:
+            assert result[keys.TOTAL_ENERGY].shape == target[keys.TOTAL_ENERGY].shape
+            n_atoms = target[keys.BATCH_PTR][1:] - target[keys.BATCH_PTR][:-1]
+            energy_per_atom_l1 = F.l1_loss(
+                result[keys.TOTAL_ENERGY] / n_atoms,
+                target[keys.TOTAL_ENERGY] / n_atoms,
+                reduce="sum",
+            )
+            metrics_dict[keys.ENERGY_PER_ATOM] = (
+                energy_per_atom_l1.item(),
+                target[keys.TOTAL_ENERGY].numel(),
+            )
+        # stress
+        if keys.STRESS in self.properties:
+            assert result[keys.VIRIAL].shape == target[keys.VIRIAL].shape
+            volume = torch.det(target[keys.CELL]).abs().reshape(-1, 1, 1)
+            stress_l1 = F.l1_loss(
+                -result[keys.VIRIAL] / volume,
+                -target[keys.VIRIAL] / volume,
+                reduce="sum",
+            )
+            metrics_dict[keys.STRESS] = (
+                stress_l1.item(),
+                target[keys.VIRIAL].numel(),
+            )
+
+        # other cases
+        for prop in self.properties:
+            if prop in {keys.ENERGY_PER_ATOM, keys.STRESS}:
+                continue
+            assert result[prop].shape == target[prop].shape
+            l1 = F.l1_loss(result[prop], target[prop], reduce="sum")
+            metrics_dict[prop] = (l1.item(), target[prop].numel())
+
+        return metrics_dict
