@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, Union, List
+from typing import Any, Dict, List, Optional, Union
 
 
 @dataclass
@@ -90,9 +90,30 @@ class XequiConfig:
     data: DataConfig = DataConfig()
 
 
+@dataclass
+class MDConfig:
+    """Config for the Molecular Dynamics with ASE"""
+    ensembles: List[Dict[str, Any]] = field(default_factory=list)
+    input_file: str = "input.xyz"
+    model_file: str = "model.jit"
+
+    init_temperature: float = 300.0  # Kelvin
+
+    logfile: str = "md.log"
+    append_logfile: bool = False
+    trajectory: Optional[str] = None
+    append_trajectory: bool = False
+    xyz_traj: Optional[str] = None
+    columns: Optional[List[str]] = None
+
+    dtype: str = "float32"
+    seed: Optional[int] = None
+
+
 if __name__ == "__main__":
-    from omegaconf import OmegaConf
     from typing import cast
+
+    from omegaconf import OmegaConf
 
     schema = OmegaConf.structured(XequiConfig)
     config = cast(XequiConfig, schema)

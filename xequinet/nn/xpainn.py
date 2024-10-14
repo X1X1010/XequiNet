@@ -1,19 +1,19 @@
 import math
-from typing import Iterable, Dict
-
-from scipy import constants
+from typing import Dict, Iterable
 
 import torch
 import torch.nn as nn
-from torch_geometric.utils import softmax
 from e3nn import o3
+from scipy import constants
+from torch_geometric.utils import softmax
 
-from xequinet.utils import keys, get_default_units, unit_conversion
+from xequinet.utils import get_default_units, keys, unit_conversion
+
 from .o3layer import (
-    Invariant,
     EquivariantDot,
     Int2c1eEmbedding,
-    resolve_actfn,
+    Invariant,
+    resolve_activation,
     resolve_norm,
     resolve_o3norm,
 )
@@ -95,7 +95,7 @@ class XPainnMessage(nn.Module):
         node_dim: int = 128,
         node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         num_basis: int = 20,
-        actfn: str = "silu",
+        activation: str = "silu",
         norm_type: str = "layer",
     ) -> None:
         """
@@ -103,7 +103,7 @@ class XPainnMessage(nn.Module):
             `node_dim`: Node dimension.
             `node_irreps`: Node irreps.
             `num_basis`: Number of the radial basis functions.
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -114,7 +114,7 @@ class XPainnMessage(nn.Module):
         # scalar feature
         self.scalar_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.node_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.node_dim, self.hidden_dim),
         )
         # spherical feature
@@ -166,14 +166,14 @@ class XPainnUpdate(nn.Module):
         self,
         node_dim: int = 128,
         node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
-        actfn: str = "silu",
+        activation: str = "silu",
         norm_type: str = "layer",
     ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
             `node_irreps`: Node irreps.
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -192,7 +192,7 @@ class XPainnUpdate(nn.Module):
         # scalar feature
         self.update_mlp = nn.Sequential(
             nn.Linear(self.node_dim + self.node_num_irreps, self.node_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.node_dim, self.hidden_dim),
         )
         # normalization

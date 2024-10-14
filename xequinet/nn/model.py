@@ -124,7 +124,7 @@ class XPaiNN(nn.Module):
             assert cutoff <= coulomb_cutoff
             hierarchical_cutoff = HierarchicalCutoff(
                 long_cutoff=coulomb_cutoff,
-                short_cutoff=cutoff,
+                cutoff=cutoff,
             )
             self.body_blocks.append(hierarchical_cutoff)
 
@@ -144,18 +144,18 @@ class XPaiNN(nn.Module):
                 node_dim=node_dim,
                 node_irreps=node_irreps,
                 num_basis=num_basis,
-                actfn=activation,
+                activation=activation,
                 norm_type=norm_type,
             )
             update = XPainnUpdate(
                 node_dim=node_dim,
                 node_irreps=node_irreps,
-                actfn=activation,
+                activation=activation,
                 norm_type=norm_type,
             )
             self.body_blocks.extend([message, update])
 
-        output_modes: Union[str, List[str]] = kwargs.get("output_mode", ["scalar"])
+        output_modes: Union[str, List[str]] = kwargs.get("output_modes", ["scalar"])
         if not isinstance(output_modes, list):
             output_modes = [output_modes]
         self.output_blocks = nn.ModuleList()
@@ -164,8 +164,16 @@ class XPaiNN(nn.Module):
 
         self.cutoff_radius = coulomb_cutoff if coulomb_interaction else cutoff
 
+        self.compute_forces = kwargs.get("compute_forces", False)
+        self.compute_virial = kwargs.get("compute_virial", False)
+
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
+        data = compute_edge_data(
+            data=data,
+            compute_forces=self.compute_forces,
+            compute_virial=self.compute_virial,
+        )
         for body_block in self.body_blocks:
             data = body_block(data)
         result = {}

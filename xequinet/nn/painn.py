@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter
 
-from .o3layer import resolve_actfn, Int2c1eEmbedding
+from .o3layer import Int2c1eEmbedding, resolve_activation
 from .rbf import resolve_cutoff, resolve_rbf
 
 
@@ -59,7 +59,7 @@ class PainnMessage(nn.Module):
         node_dim: int = 128,
         vec_dim: int = 128,
         num_basis: int = 20,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         super().__init__()
         self.node_dim = node_dim
@@ -69,7 +69,7 @@ class PainnMessage(nn.Module):
         # scalar feature
         self.scalar_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.node_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.node_dim, self.hidden_dim),
         )
         # vector feature
@@ -111,7 +111,7 @@ class PainnUpdate(nn.Module):
         self,
         node_dim: int = 128,
         vec_dim: int = 128,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         super().__init__()
         assert node_dim == vec_dim, "node_dim must be equal to vec_dim"
@@ -125,7 +125,7 @@ class PainnUpdate(nn.Module):
         # scalar feature
         self.update_mlp = nn.Sequential(
             nn.Linear(self.node_dim + self.vec_dim, self.node_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.node_dim, self.hidden_dim),
         )
 

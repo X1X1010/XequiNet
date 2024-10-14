@@ -1,12 +1,12 @@
-from typing import Optional, Union, Tuple, Dict
-from math import pi
-import warnings
 import re
+import warnings
+from math import pi
 from pathlib import Path
+from typing import Dict, Optional, Tuple, Union
 
-from pyscf import gto
 import numpy as np
 import torch
+from pyscf import gto
 
 from xequinet.utils import keys
 
@@ -117,8 +117,9 @@ def set_default_units(unit_dict: Dict[str, str]) -> None:
                 "Please do not set units for gradient properties directly, Set the units for the corresponding properties instead."
             )
         if prop in keys.BASE_PROPERTIES:
-            if not check_unit(unit):
-                raise ValueError(f"Invalid unit {unit} for property {prop}")
+            raise ValueError(
+                "Please do not set units for base properties directly, Set the units for the corresponding properties instead."
+            )
         if not check_unit(unit):
             raise ValueError(f"Invalid unit {unit} for property {prop}")
     DEFAULT_UNITS_MAP.update(unit_dict)
@@ -227,7 +228,7 @@ def gen_atom_sp(atom_ref: str) -> None:
             energy = calc.singlepoint().get("energy")
             atom_sp_dict[ELEMENTS_LIST[at_no]] = energy
     else:
-        from pyscf import dft, scf, cc
+        from pyscf import cc, dft, scf
         if "xyg" in atom_ref or "xdh" in atom_ref:
             from pyscf import dh
         method, basis = atom_ref.split("/")

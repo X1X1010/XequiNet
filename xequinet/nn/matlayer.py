@@ -2,14 +2,14 @@
 Scripts containing E(3) NN blocks for qc matrice output from QHNet
 Original from https://github.com/divelab/AIRS/OpenDFT/QHBench
 """
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
+
 import torch
 import torch.nn as nn
 from e3nn import o3
 
-from .tp import prod, get_feasible_tp
-from .o3layer import Gate, EquivariantDot
-from .o3layer import resolve_actfn
+from .o3layer import EquivariantDot, Gate, resolve_activation
+from .tp import get_feasible_tp, prod
 
 
 class SelfLayer(nn.Module):
@@ -21,13 +21,13 @@ class SelfLayer(nn.Module):
         self,
         irreps_in: o3.Irreps,
         irreps_hidden: o3.Irreps,
-        actfn: str = "silu",
+        activation: str = "silu",
     ):
         """
         Args:
             `irreps_in`: Input node-wise irreps.
             `irreps_hidden`: Output irreps for node-wise representation.
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
         """
         super().__init__()
         self.irreps_in = irreps_in
@@ -49,9 +49,9 @@ class SelfLayer(nn.Module):
         self.linear_l = o3.Linear(self.irreps_in, self.irreps_in, biases=True)
         self.linear_r = o3.Linear(self.irreps_in, self.irreps_in, biases=True)
         self.linear_p = o3.Linear(self.irreps_tp_out, self.irreps_hidden, biases=False)
-        self.gate_l = Gate(self.irreps_in, actfn=actfn, refine=True)
-        self.gate_r = Gate(self.irreps_in, actfn=actfn, refine=True)
-        self.gate_p = Gate(self.irreps_tp_out, actfn=actfn, refine=True)
+        self.gate_l = Gate(self.irreps_in, activation=activation, refine=True)
+        self.gate_r = Gate(self.irreps_in, activation=activation, refine=True)
+        self.gate_p = Gate(self.irreps_tp_out, activation=activation, refine=True)
 
     def forward(self, x: torch.Tensor, fii_in: Optional[torch.Tensor]) -> torch.Tensor:
         xl = self.linear_l(self.gate_l(x))
@@ -73,13 +73,13 @@ class PairLayer(nn.Module):
         irreps_in: o3.Irreps,
         irreps_hidden: o3.Irreps,
         edge_attr_dim: int = 20,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         super().__init__()
         self.irreps_in = irreps_in
         self.irreps_hidden = irreps_hidden
         self.edge_attr_dim = edge_attr_dim
-        self.actfn = resolve_actfn(actfn)
+        self.activation = resolve_activation(activation)
 
         self.linear_node_pre = o3.Linear(self.irreps_in, self.irreps_in, biases=True)
         self.inner_dot = EquivariantDot(self.irreps_in)
@@ -99,19 +99,19 @@ class PairLayer(nn.Module):
         )
         self.mlp_edge_scalar = nn.Sequential(
             nn.Linear(self.irreps_in[0].mul + self.irreps_in.num_irreps, 128),
-            self.actfn,
+            self.activation,
             nn.Linear(128, self.pair_tp.weight_numel),
         )
         self.mlp_edge_rbf = nn.Sequential(
             nn.Linear(self.edge_attr_dim, 128),
-            self.actfn,
+            self.activation,
             nn.Linear(128, self.pair_tp.weight_numel),
         )
         self.linear_node_post = o3.Linear(
             self.irreps_tp_out, self.irreps_hidden, biases=False
         )
-        self.gate_pre = Gate(self.irreps_in, actfn=actfn, refine=True)
-        self.gate_post = Gate(self.irreps_tp_out, actfn=actfn, refine=True)
+        self.gate_pre = Gate(self.irreps_in, activation=activation, refine=True)
+        self.gate_post = Gate(self.irreps_tp_out, activation=activation, refine=True)
         # the last index of the scalar part
         self.num_scalar = self.irreps_in[0].mul
 
@@ -153,13 +153,13 @@ class Expansion(nn.Module):
         irreps_block: o3.Irreps,
         irreps_out: o3.Irreps,
         node_dim: int,
-        actfn: str = "silu",
+        activation: str = "silu",
         pair_out: bool = False,
     ) -> None:
         super().__init__()
         self.irreps_block = irreps_block
         self.irreps_out = irreps_out
-        self.actfn = resolve_actfn(actfn)
+        self.activation = resolve_activation(activation)
 
         self.instructions, self.w3j_matrices = self.get_expansion_path(
             irreps_block, irreps_out, irreps_out
@@ -173,12 +173,12 @@ class Expansion(nn.Module):
         node_dim_in = 2 * node_dim if pair_out else node_dim
         self.lin_weight = nn.Sequential(
             nn.Linear(node_dim_in, 64),
-            self.actfn,
+            self.activation,
             nn.Linear(64, self.num_path_weight),
         )
         self.lin_bias = nn.Sequential(
             nn.Linear(node_dim_in, 64),
-            self.actfn,
+            self.activation,
             nn.Linear(64, self.num_bias),
         )
         # get the slice and shape for each irrep

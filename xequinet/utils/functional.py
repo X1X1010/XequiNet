@@ -1,12 +1,13 @@
-from typing import List, Union, Tuple, Optional
-from copy import deepcopy
 from contextlib import contextmanager
+from copy import deepcopy
+from typing import List, Optional, Tuple, Union
+
+import pytorch_warmup as warmup
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
 from torch_geometric.loader import DataLoader
-import pytorch_warmup as warmup
 
 from . import keys
 from .lr_scheduler import SmoothReduceLROnPlateau, get_polynomial_decay_schedule
@@ -172,41 +173,3 @@ def resolve_warmup_scheduler(
     else:
         raise NotImplementedError(f"Unsupported warmup scheduler {warm_type}")
 
-
-def gen_3Dinfo_str(
-    at_no: torch.Tensor,
-    info_3d: Union[List[torch.Tensor], torch.Tensor],
-    title: Union[List[str], str],
-    precision: Union[List[int], int] = 6,
-) -> str:
-    """
-    Generate 3D info string for a molecule.
-    """
-    titles = [title] if isinstance(title, str) else deepcopy(title)
-    info_3ds = [info_3d] if isinstance(info_3d, torch.Tensor) else info_3d
-    assert len(titles) == len(info_3ds)
-    precisions = [precision] * len(titles) if isinstance(precision, int) else precision
-    assert len(titles) == len(precisions)
-    assert len(at_no) == info_3ds[0].size(0)
-    info_lists = []
-    for i, a in enumerate(at_no):
-        at_symbol = ELEMENTS_LIST[a.item()]
-        lines = [f"  {at_symbol: <2}  "]
-        for cs, p in zip(info_3ds, precisions):
-            c = cs[i]
-            float_fmt = f"{p+6}.{p}f"
-            cx = c[0].item()
-            cy = c[1].item()
-            cz = c[2].item()
-            lines.append(f"{cx:{float_fmt}}{cy:{float_fmt}}{cz:{float_fmt}}")
-        info_lists.append(lines)
-    num_chs = [len(ac) for ac in info_lists[0]]
-    titles.insert(0, "Atom")
-    filled_titles = [f"{t: ^{n}}" for t, n in zip(titles, num_chs)]
-    title_str = "    ".join(filled_titles)
-    info_strs = ["    ".join(line) for line in info_lists]
-    parting_line = "-" * len(title_str)
-    results = [parting_line, title_str, parting_line]
-    results.extend(info_strs)
-    results.append(parting_line + "\n")
-    return "\n".join(results)

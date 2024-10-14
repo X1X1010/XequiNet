@@ -1,9 +1,8 @@
 from typing import Iterable
 
+import e3nn
 import torch
 import torch.nn as nn
-
-import e3nn
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
@@ -46,35 +45,35 @@ class Invariant(nn.Module):
             return torch.sqrt(out + self.eps**2) - self.eps
 
 
-def resolve_actfn(actfn: str, devide_x: bool = False) -> nn.Module:
+def resolve_activation(activation: str, devide_x: bool = False) -> nn.Module:
     """Helper function to return activation function"""
-    actfn = actfn.lower()
-    actfn_div_x = {"silu": "sigmoid", "relu": "identity", "leakyrelu": "identity"}
-    if devide_x and actfn in actfn_div_x:
-        actfn = actfn_div_x[actfn]
-    if actfn == "relu":
+    activation = activation.lower()
+    activation_div_x = {"silu": "sigmoid", "relu": "identity", "leakyrelu": "identity"}
+    if devide_x and activation in activation_div_x:
+        activation = activation_div_x[activation]
+    if activation == "relu":
         return nn.ReLU()
-    elif actfn == "leakyrelu":
+    elif activation == "leakyrelu":
         return nn.LeakyReLU()
-    elif actfn == "softplus":
+    elif activation == "softplus":
         return nn.Softplus()
-    elif actfn == "sigmoid":
+    elif activation == "sigmoid":
         return nn.Sigmoid()
-    elif actfn == "silu":
+    elif activation == "silu":
         return nn.SiLU()
-    elif actfn == "tanh":
+    elif activation == "tanh":
         return nn.Tanh()
-    elif actfn == "identity":
+    elif activation == "identity":
         return nn.Identity()
     else:
-        raise NotImplementedError(f"Unsupported activation function {actfn}")
+        raise NotImplementedError(f"Unsupported activation function {activation}")
 
 
 class Gate(nn.Module):
     def __init__(
         self,
         irreps_in: Iterable,
-        actfn: str = "silu",
+        activation: str = "silu",
         refine: bool = False,
     ) -> None:
         super().__init__()
@@ -83,13 +82,13 @@ class Gate(nn.Module):
         if refine:
             self.activation = nn.Sequential(
                 nn.Linear(irreps_in.num_irreps, irreps_in.num_irreps),
-                resolve_actfn(actfn, devide_x=True),
+                resolve_activation(activation, devide_x=True),
                 nn.Linear(irreps_in.num_irreps, irreps_in.num_irreps),
             )
             nn.init.zeros_(self.activation[0].bias)
             nn.init.zeros_(self.activation[2].bias)
         else:
-            self.activation = resolve_actfn(actfn, devide_x=True)
+            self.activation = resolve_activation(activation, devide_x=True)
         self.scalar_mul = o3.ElementwiseTensorProduct(
             irreps_in, f"{irreps_in.num_irreps}x0e"
         )

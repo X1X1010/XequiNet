@@ -1,15 +1,16 @@
 import abc
-from typing import Union, Iterable, Dict, List
 import functools
-from sys import maxsize as INT_MAX
+from typing import Dict, Iterable, List, Union
 
 import torch
 from torch_cluster import radius_graph
 
 from xequinet.utils import keys, qc
+
 from .datapoint import XequiData
 from .radius_graph import radius_graph_pbc
 
+INT_MAX = 2**31 - 1
 
 class Transform(abc.ABC):
     @abc.abstractmethod
@@ -37,7 +38,7 @@ class NeighborTransform(Transform):
 
         if has_pbc and has_cell:
 
-            if hasattr(data, keys.EDGE_INDEX) and hasattr(data, keys.CELL_OFFSETS):
+            if data.edge_index is not None and data.cell_offsets is not None:
                 return data
             edge_index, cell_offsets = radius_graph_pbc(
                 pos=data.pos,
@@ -51,7 +52,7 @@ class NeighborTransform(Transform):
 
         elif not has_pbc and not has_cell:
 
-            if hasattr(data, keys.EDGE_INDEX):
+            if data.edge_index is not None:
                 return data
             edge_index = radius_graph(
                 x=data.pos,
@@ -71,7 +72,6 @@ class DataTypeTransform(Transform):
     def __init__(
         self,
         dtype: Union[str, torch.dtype],
-        targets: Union[str, List[str]],
     ) -> None:
         if isinstance(dtype, str):
             name_to_dtype = {
@@ -83,12 +83,16 @@ class DataTypeTransform(Transform):
             self.dtype = name_to_dtype[dtype]
         else:
             self.dtype = dtype
-        self.targets = targets if isinstance(targets, list) else [targets]
+
+    def _is_float_dtype(self, t: torch.Tensor) -> bool:
+        float_types = {torch.float16, torch.float32, torch.float64}
+        return t.dtype in float_types
 
     def __call__(self, data: XequiData) -> XequiData:
-        for target in self.targets:
-            assert target in data, f"Invalid target {target}"
-            data[target] = data[target].to(dtype=self.dtype)
+        for k in data.keys():
+            if self._is_float_dtype(data[k]):
+                data[k] = data[k].to(self.dtype)
+
         return data
 
 

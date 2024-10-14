@@ -105,7 +105,7 @@ class Trainer:
         device: torch.device,
         train_loader: DataLoader,
         valid_loader: DataLoader,
-        dist_sampler: Optional[DistributedSampler],
+        dist_sampler: DistributedSampler,
         log: ZeroLogger,
     ) -> None:
         """

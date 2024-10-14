@@ -32,9 +32,8 @@ def run_train(args: argparse.Namespace) -> None:
             OmegaConf.structured(XequiConfig),
             OmegaConf.load(args.config),
         )
-        config = cast(
-            XequiConfig, config
-        )  # this will do nothing, only for type annotation
+        # this will do nothing, only for type annotation
+        config = cast(XequiConfig, config)
     else:
         Warning(f"Config file {args.config} not found. Default config will be used.")
         config = XequiConfig()
@@ -138,11 +137,17 @@ def run_train(args: argparse.Namespace) -> None:
 
     # -------------------  build model ------------------- #
     # initialize model
+    extra_kwargs = {}
+    if keys.FORCES in config.trainer.losses_weight:
+        extra_kwargs["compute_forces"] = True
+    if keys.VIRIAL in config.trainer.losses_weight or keys.STRESS in config.trainer.losses_weight:
+        extra_kwargs["compute_virial"] = True
     model = resolve_model(
         config.model.model_name,
         node_shift=node_shift,
         node_scale=node_scale,
         **config.model.model_config,
+        **extra_kwargs,
     )
     log.s.info(model)
     model.to(device)
@@ -170,12 +175,12 @@ def run_train(args: argparse.Namespace) -> None:
 
     # -------------------  train model ------------------- #
     trainer = Trainer(
-        ddp_model,
-        config,
-        device,
-        train_loader,
-        valid_loader,
-        train_sampler,
-        log,
+        model=ddp_model,
+        config=config,
+        device=device,
+        train_loader=train_loader,
+        valid_loader=valid_loader,
+        dist_sampler=train_sampler,
+        log=log,
     )
     trainer.start()

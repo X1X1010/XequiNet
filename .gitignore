@@ -1,4 +1,6 @@
 .vscode
+.gitignore
+experimental
 dataset
 debug
 experiment

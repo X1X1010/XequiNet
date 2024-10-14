@@ -1,11 +1,12 @@
-from typing import Dict
 import math
+from typing import Dict
 
-from scipy import constants
 import torch
 import torch.nn as nn
+from scipy import constants
 
-from xequinet.utils import keys, get_default_units, unit_conversion
+from xequinet.utils import get_default_units, keys, unit_conversion
+
 from .rbf import resolve_cutoff
 
 
@@ -51,12 +52,12 @@ class CoulombWithCutoff(nn.Module):
         long_edge_index = data[keys.LONG_EDGE_INDEX]
         center_idx = long_edge_index[keys.CENTER_IDX]
         neighbor_idx = long_edge_index[keys.NEIGHBOR_IDX]
-        long_dist = data[keys.LONG_EDGE_LENGTH].unsqueeze(-1)
+        long_dist = data[keys.LONG_EDGE_LENGTH]  # [n_edges]
         atomic_charges = data[keys.ATOMIC_CHARGES]
 
         q1 = atomic_charges[center_idx]
         q2 = atomic_charges[neighbor_idx]
-        envelope = self.flat_envelope(long_dist)
+        envelope = self.flat_envelope(long_dist)  # [n_edges]
         # half of the Coulomb energy to avoid double counting
         pair_energies = 0.5 * envelope * self.constant * q1 * q2 / long_dist
         if keys.ATOMIC_ENERGIES in data:
@@ -64,7 +65,7 @@ class CoulombWithCutoff(nn.Module):
         else:
             atomic_energies = torch.zeros_like(atomic_charges)
         atomic_energies = atomic_energies.index_add(
-            0, center_idx, pair_energies.squeeze()
+            0, center_idx, pair_energies
         )
         data[keys.ATOMIC_ENERGIES] = atomic_energies
 

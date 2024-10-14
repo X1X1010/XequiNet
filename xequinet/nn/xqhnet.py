@@ -1,18 +1,18 @@
 """
 This Python file holds E3 NN blocks for qc matrix output.
 """
-from typing import Tuple, Iterable, Optional
+from typing import Iterable, Optional, Tuple
 
 import torch
 import torch.nn as nn
 from e3nn import o3
 from torch_scatter import scatter
 
-from .rbf import resolve_rbf, resolve_cutoff
-from .o3layer import resolve_actfn, EquivariantDot, Int2c1eEmbedding, Gate
-from .xpainn import EleEmbedding
+from .matlayer import Expansion, PairLayer, SelfLayer
+from .o3layer import EquivariantDot, Gate, Int2c1eEmbedding, resolve_activation
+from .rbf import resolve_cutoff, resolve_rbf
 from .tp import get_feasible_tp
-from .matlayer import SelfLayer, PairLayer, Expansion
+from .xpainn import EleEmbedding
 
 
 class MatEmbedding(nn.Module):
@@ -111,7 +111,7 @@ class NodewiseInteraction(nn.Module):
         irreps_node_in: Iterable,
         irreps_node_out: Iterable,
         edge_attr_dim: int = 20,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         super().__init__()
         # check input and output irreps
@@ -122,7 +122,7 @@ class NodewiseInteraction(nn.Module):
 
         max_l = self.irreps_node_out.lmax
         self.irreps_rsh = o3.Irreps.spherical_harmonics(max_l)
-        self.activation = resolve_actfn(actfn)
+        self.activation = resolve_activation(activation)
         self.inner_dot = EquivariantDot(self.irreps_node_in)
         # tensor product between node and rij
         self.irreps_tp_out, instruct = get_feasible_tp(
@@ -211,7 +211,7 @@ class MatrixTrans(nn.Module):
         hidden_channels: int = 64,
         max_l: int = 4,
         edge_attr_dim: int = 20,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         super().__init__()
         self.irreps_in = o3.Irreps(
@@ -223,9 +223,9 @@ class MatrixTrans(nn.Module):
             irreps_hidden.append((hidden_channels, (l, 1)))
         self.irreps_hidden = o3.Irreps(irreps_hidden)
         # buliding block
-        self.self_layer = SelfLayer(self.irreps_in, self.irreps_hidden, actfn)
+        self.self_layer = SelfLayer(self.irreps_in, self.irreps_hidden, activation)
         self.pair_layer = PairLayer(
-            self.irreps_in, self.irreps_hidden, edge_attr_dim, actfn
+            self.irreps_in, self.irreps_hidden, edge_attr_dim, activation
         )
 
     def forward(
@@ -248,7 +248,7 @@ class MatrixOut(nn.Module):
         hidden_channels: int = 64,
         irreps_out: Iterable = "3x0e + 2x1o + 1x2e",
         max_l: int = 4,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         super().__init__()
         block_channels = hidden_channels // 2
@@ -266,10 +266,10 @@ class MatrixOut(nn.Module):
         self.lin_out_ii = o3.Linear(self.irreps_hidden, self.irreps_block, biases=False)
         self.lin_out_ij = o3.Linear(self.irreps_hidden, self.irreps_block, biases=False)
         self.expand_ii = Expansion(
-            self.irreps_block, self.irreps_out, node_dim, actfn, pair_out=False
+            self.irreps_block, self.irreps_out, node_dim, activation, pair_out=False
         )
         self.expand_ij = Expansion(
-            self.irreps_block, self.irreps_out, node_dim, actfn, pair_out=True
+            self.irreps_block, self.irreps_out, node_dim, activation, pair_out=True
         )
 
     def forward(
@@ -306,13 +306,13 @@ class NodeInterWithEle(NodewiseInteraction):
         irreps_node_in: Iterable,
         irreps_node_out: Iterable,
         edge_attr_dim: int = 20,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         super().__init__(
             irreps_node_in,
             irreps_node_out,
             edge_attr_dim,
-            actfn,
+            activation,
         )
         self.charge_ebd = EleEmbedding(self.num_scalar)
         self.spin_ebd = EleEmbedding(self.num_scalar)

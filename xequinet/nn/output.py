@@ -1,18 +1,18 @@
-from typing import Iterable, Tuple, Optional, Dict
-
 import math
+from typing import Dict, Iterable, Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch_geometric.data import Data
-from torch_scatter import scatter_sum, scatter
 from e3nn import o3
+from torch_geometric.data import Data
+from torch_scatter import scatter, scatter_sum
 
 from xequinet.utils import keys, qc
-from .o3layer import Gate, resolve_actfn
-from .xe3net import SelfMixTP, Sph2Cart
-from .tp import get_feasible_tp
+
 from .electronic import CoulombWithCutoff
+from .o3layer import Gate, resolve_activation
+from .tp import get_feasible_tp
+from .xe3net import SelfMixTP, Sph2Cart
 
 
 class ScalarOut(nn.Module):
@@ -21,7 +21,7 @@ class ScalarOut(nn.Module):
         node_dim: int = 128,
         hidden_dim: int = 64,
         out_dim: int = 1,
-        actfn: str = "silu",
+        activation: str = "silu",
         node_bias: float = 0.0,
         reduce_op: Optional[str] = "sum",
     ) -> None:
@@ -30,7 +30,7 @@ class ScalarOut(nn.Module):
             `node_dim`: Node dimension.
             `hidden_dim`: Dimension of hidden layer.
             `out_dim`: Output dimension.
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
             `node_bias`: Bias for atomic wise output.
             `reduce_op`: Reduce operation for the output.
         """
@@ -40,7 +40,7 @@ class ScalarOut(nn.Module):
         self.out_dim = out_dim
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, self.out_dim),
         )
         nn.init.constant_(self.out_mlp[2].bias, node_bias)
@@ -72,16 +72,17 @@ class ForceFieldOut(nn.Module):
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
-        actfn: str = "silu",
+        activation: str = "silu",
         node_bias: float = 0.0,
         compute_forces: bool = True,
         compute_virial: bool = False,
+        **kwargs,
     ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
             `hidden_dim`: Dimension of hidden layer.
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
             `node_bias`: Bias for atomic wise output.
             `compute_forces`: Whether to compute forces.
             `compute_virial`: Whether to compute virial.
@@ -91,7 +92,7 @@ class ForceFieldOut(nn.Module):
         self.hidden_dim = hidden_dim
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, 1),
         )
         nn.init.constant_(self.out_mlp[2].bias, node_bias)
@@ -159,7 +160,7 @@ class ForceFieldOut(nn.Module):
 
         batch = data[keys.BATCH]
         node_invt = data[keys.NODE_INVARIANT]
-        atom_eng_out = self.out_mlp(node_invt)
+        atom_eng_out = self.out_mlp(node_invt).reshape(-1)
 
         if keys.ATOMIC_ENERGIES in data:
             atomic_energies = data[keys.ATOMIC_ENERGIES] + atom_eng_out
@@ -201,23 +202,24 @@ class AtomicChargesOut(nn.Module):
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
-        actfn: str = "silu",
+        activation: str = "silu",
         conservation: bool = True,
         coulomb_interaction: bool = False,
         coulomb_cutoff: Optional[float] = 10.0,
+        **kwargs,
     ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
             `hidden_dim`: Dimension of hidden layer.
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, 1),
         )
         nn.init.zeros_(self.out_mlp[0].bias)
@@ -233,9 +235,8 @@ class AtomicChargesOut(nn.Module):
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
 
         node_invt = data[keys.NODE_INVARIANT]
-        total_charge = data[keys.TOTAL_CHARGE]
         batch = data[keys.BATCH]
-        raw_charges = self.out_mlp(node_invt)
+        raw_charges = self.out_mlp(node_invt).reshape(-1)
         if self.conservation:
             raw_total_charge = scatter_sum(raw_charges, batch, dim=0)
             num_atoms = scatter_sum(
@@ -243,6 +244,10 @@ class AtomicChargesOut(nn.Module):
                 batch,
                 dim=0,
             )
+            if keys.TOTAL_CHARGE in data:
+                total_charge = data[keys.TOTAL_CHARGE]
+            else:
+                total_charge = torch.zeros((num_atoms,), dtype=torch.int, device=batch.device)
             atomic_charges = raw_charges + (total_charge - raw_total_charge) / num_atoms
         else:
             atomic_charges = raw_charges
@@ -263,7 +268,7 @@ class VectorOut(nn.Module):
         hidden_dim: int = 64,
         hidden_irreps: Iterable = "32x1o",
         if_norm: bool = False,
-        actfn: str = "silu",
+        activation: str = "silu",
         reduce_op: Optional[str] = "sum",
     ) -> None:
         """
@@ -273,7 +278,7 @@ class VectorOut(nn.Module):
             `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
             `if_norm`: Whether to normalize the output.
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -282,12 +287,12 @@ class VectorOut(nn.Module):
         self.hidden_irreps = o3.Irreps(hidden_irreps)
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, 1),
         )
         self.spherical_out_mlp = nn.Sequential(
             o3.Linear(self.node_irreps, self.hidden_irreps),
-            Gate(self.hidden_irreps, actfn=actfn),
+            Gate(self.hidden_irreps, activation=activation),
             o3.Linear(self.hidden_irreps, "1x1o"),
         )
         self.if_norm = if_norm
@@ -328,7 +333,7 @@ class PolarOut(nn.Module):
         hidden_dim: int = 64,
         hidden_irreps: Iterable = "64x0e + 16x2e",
         if_iso: bool = False,
-        actfn: str = "silu",
+        activation: str = "silu",
         reduce_op: Optional[str] = "sum",
     ) -> None:
         """
@@ -338,7 +343,7 @@ class PolarOut(nn.Module):
             `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
             `output_dim`: Output dimension. (9 for 3x3 matrix and 1 for trace of the matrix)
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -347,12 +352,12 @@ class PolarOut(nn.Module):
         self.hidden_irreps = o3.Irreps(hidden_irreps)
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, 2),
         )
         self.spherical_out_mlp = nn.Sequential(
             o3.Linear(self.node_irreps, self.hidden_irreps, biases=True),
-            Gate(self.hidden_irreps, actfn=actfn),
+            Gate(self.hidden_irreps, activation=activation),
             o3.Linear(self.hidden_irreps, "1x0e + 1x2e", biases=True),
         )
         self.rsh_conv = o3.ElementwiseTensorProduct("1x0e + 1x2e", "2x0e")
@@ -409,14 +414,14 @@ class SpatialOut(nn.Module):
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
-        actfn: str = "silu",
+        activation: str = "silu",
         reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
             `node_dim`: Node dimension.
             `hidden_dim`: Hidden dimension.
-            `actfn`: Activation function type.
+            `activation`: Activation function type.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -424,7 +429,7 @@ class SpatialOut(nn.Module):
         self.register_buffer("masses", torch.Tensor(qc.ATOM_MASS))
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, 1),
         )
         self.reduce_op = reduce_op
@@ -474,7 +479,7 @@ class CartTensorOut(nn.Module):
         symmetry: str = "ij",
         # vector_space: Optional[Dict[str, str]] = None,
         if_iso: bool = False,
-        actfn: str = "silu",
+        activation: str = "silu",
         # norm_type: str = "layer",
         reduce_op: Optional[str] = "sum",
     ) -> None:
@@ -514,7 +519,7 @@ class CartTensorOut(nn.Module):
         )
         self.weight_mlp = nn.Sequential(
             nn.Linear(node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, self.tp.weight_numel),
         )
         if sph_irreps != self.rtp_irreps:
@@ -568,7 +573,7 @@ class MegaCartTensorOut(nn.Module):
         symmetry: str = "ij",
         # vector_space: Optional[Dict[str, str]] = None,
         if_iso: bool = False,
-        actfn: str = "silu",
+        activation: str = "silu",
         norm_type: str = "layer",
         reduce_op: Optional[str] = "sum",
     ) -> None:
@@ -597,7 +602,7 @@ class MegaCartTensorOut(nn.Module):
         )
         self.weight_mlp = nn.Sequential(
             nn.Linear(node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, self.tp.weight_numel),
         )
         if sph_irreps != self.rtp_irreps:

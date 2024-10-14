@@ -1,13 +1,13 @@
-from typing import Dict, Tuple
 import math
+from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
 from torch_cluster import radius_graph
 
-from ..nn import resolve_actfn
+from ..nn import resolve_activation
 from ..nn.xpainn import XEmbedding, XPainnMessage, XPainnUpdate
-from ..utils import NetConfig, unit_conversion, get_default_unit, get_atomic_energy
+from ..utils import NetConfig, get_atomic_energy, get_default_unit, unit_conversion
 
 
 class JitGradOut(nn.Module):
@@ -15,20 +15,20 @@ class JitGradOut(nn.Module):
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         """
         Args:
             `node_dim`: Dimension of node feature.
             `hidden_dim`: Dimension of hidden layer.
-            `actfn`: Activation function.
+            `activation`: Activation function.
         """
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, 1),
         )
 
@@ -87,7 +87,7 @@ class JitPaiNN(nn.Module):
                     node_dim=config.node_dim,
                     node_irreps=config.node_irreps,
                     num_basis=config.num_basis,
-                    actfn=config.activation,
+                    activation=config.activation,
                     norm_type=config.norm_type,
                 )
                 for _ in range(config.action_blocks)
@@ -98,7 +98,7 @@ class JitPaiNN(nn.Module):
                 XPainnUpdate(
                     node_dim=config.node_dim,
                     node_irreps=config.node_irreps,
-                    actfn=config.activation,
+                    activation=config.activation,
                     norm_type=config.norm_type,
                 )
                 for _ in range(config.action_blocks)
@@ -107,7 +107,7 @@ class JitPaiNN(nn.Module):
         self.out = JitGradOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
-            actfn=config.activation,
+            activation=config.activation,
         )
         self.cutoff = config.cutoff
         self.max_edges = config.max_edges

@@ -1,53 +1,71 @@
-import json
 import argparse
+from typing import Any, Dict, Optional, Tuple, cast
 
 import numpy as np
-
 import torch
-
-from ase import Atoms
-from ase import units
-from ase.io import read as ase_read, write as ase_write
+from ase import Atoms, optimize, units
 from ase.io import Trajectory
+from ase.io import read as ase_read
+from ase.io import write as ase_write
+from ase.md import andersen, langevin, md, npt, nptberendsen, nvtberendsen, verlet
 from ase.md.velocitydistribution import (
     MaxwellBoltzmannDistribution,
     Stationary,
     ZeroRotation,
 )
+from omegaconf import OmegaConf
 
-from ..interface import XeqCalculator
+from xequinet.interface import XequiCalculator
+from xequinet.utils import MDConfig
 
 
-default_settings = {
-    "init_xyz": "init.extxyz",
-    "charge": 0,
-    "multiplicity": 1,
-    "ckpt_file": "model.jit",
-    "cutoff": 5.0,
-    "max_edges": 100,
-    "ensemble": "NVT",  # choices=["NVE", "NVT", "NPT"]
-    "dynamics": "Nose-Hoover",  # choices=["Langevin", "Andersen", "Nose-Hoover", "Berendsen", "Parrinello-Rahman"]
-    "timestep": 1.0,  # (fs)
-    "steps": 50,
-    "temperature": 298.15,  # (K)
-    "friction": 0.002,  # for Langevin
-    "andersen_prob": 0.01,  # for Andersen
-    "taut": 100.0,  # for Nose-Hoover and Berendsen (fs)
-    "taup": 500.0,  # for Berendsen (fs)
-    # "externalstress": 1.01325, # for Parrinello-Rahman (bar)
-    "pressure": 1.01325,  # for Berendsen or Parrinello-Rahman (bar)
-    "pfactor": 1.0,  # for Parrinello-Rahman (GPa)
-    "compressibility": 5e-7,  # for Berendsen (1/bar)
-    "mask": None,  # for Parrinello-Rahman
-    "fixcm": True,
-    "logfile": "md.log",
-    "loginterval": 5,
-    "trajectory": "md.traj",
-    "append_trajectory": False,
-    "traj_xyz": None,
-    "columns": ["symbols", "positions"],
-    "seed": None,
-}
+def resolve_ensemble(
+    atoms: Atoms,
+    ensemble: Dict[str, Any],
+    logfile: str,
+    trajectory: Optional[str] = None,
+) -> Tuple[md.MolecularDynamics, Optional[int], Optional[int]]:
+    ensemble_factory = {
+        "VelocityVerlet": verlet.VelocityVerlet,
+        "Langevin": langevin.Langevin,
+        "Andersen": andersen.Andersen,
+        "NVTBerendsen": nvtberendsen.NVTBerendsen,
+        "NPTBerendsen": nptberendsen.NPTBerendsen,
+        "NPT": npt.NPT,
+    }
+    ensemble_name = ensemble.pop("name")
+    if ensemble_name in ensemble_factory:
+        ensemble_cls = ensemble_factory[ensemble_name]
+    elif hasattr(optimize, ensemble_name):
+        ensemble_cls = getattr(optimize, ensemble_name)
+    else:
+        raise ValueError(f"Unknown ensemble: {ensemble_name}")
+
+    # adjust some units
+    # time related units
+    time_args = ["timestep", "ttime", "taut", "taup"]
+    for t_unit in time_args:
+        if t_unit in ensemble:
+            ensemble[t_unit] *= units.fs
+    if "friction" in ensemble:
+        ensemble["friction"] /= units.fs
+    # pressure related units
+    if "externalstress" in ensemble:
+        ensemble["externalstress"] *= units.GPa
+    if "pressure" in ensemble:
+        ensemble["pressure"] *= units.GPa
+    if "pfactor" in ensemble:
+        ensemble["pfactor"] *= (units.GPa * units.fs**2)
+    
+    steps = ensemble.pop("steps", None)
+    fmax = ensemble.pop("fmax", None)
+    dyn = ensemble_cls(
+        atoms=atoms,
+        logfile=logfile,
+        trajectory=trajectory,
+        **ensemble,
+    )
+    return dyn, steps, fmax
 
 
 def traj2xyz(
@@ -69,164 +87,54 @@ def traj2xyz(
         )
 
 
-def resolve_ensemble(atoms: Atoms, **kwargs):
-    ensemble = kwargs["ensemble"]
-    dynamics = kwargs["dynamics"]
-    if ensemble == "NVE":
-        from ase.md.verlet import VelocityVerlet
-
-        return VelocityVerlet(
-            atoms,
-            timestep=kwargs["timestep"] * units.fs,
-            trajectory=kwargs["trajectory"],
-            logfile=kwargs["logfile"],
-            loginterval=kwargs["loginterval"],
-            append_trajectory=kwargs["append_trajectory"],
-        )
-    elif ensemble == "NVT":
-        if dynamics == "Langevin":
-            from ase.md.langevin import Langevin
-
-            return Langevin(
-                atoms,
-                timestep=kwargs["timestep"] * units.fs,
-                temperature_K=kwargs["temperature"],
-                friction=kwargs["friction"] / units.fs,
-                fixcm=kwargs["fixcm"],
-                trajectory=kwargs["trajectory"],
-                logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"],
-                append_trajectory=kwargs["append_trajectory"],
-            )
-        if dynamics == "Andersen":
-            from ase.md.andersen import Andersen
-
-            return Andersen(
-                atoms,
-                timestep=kwargs["timestep"] * units.fs,
-                temperature_K=kwargs["temperature"],
-                andersen_prob=kwargs["andersen_prob"],
-                fixcm=kwargs["fixcm"],
-                trajectory=kwargs["trajectory"],
-                logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"],
-                append_trajectory=kwargs["append_trajectory"],
-            )
-        elif dynamics == "Nose-Hoover":  # Nose-Hoover NVT is NPT with no pressure
-            from ase.md.npt import NPT
-
-            if np.all(atoms.cell == 0):  # if cell is not set
-                atoms.set_cell(np.eye(3) * 100.0)
-            return NPT(
-                atoms,
-                timestep=kwargs["timestep"] * units.fs,
-                temperature_K=kwargs["temperature"],
-                externalstress=0.0,
-                ttime=kwargs["taut"] * units.fs,
-                trajectory=kwargs["trajectory"],
-                logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"],
-                append_trajectory=kwargs["append_trajectory"],
-            )
-        elif dynamics == "Berendsen":
-            from ase.md.nvtberendsen import NVTBerendsen
-
-            return NVTBerendsen(
-                atoms,
-                timestep=kwargs["timestep"] * units.fs,
-                temperature_K=kwargs["temperature"],
-                taut=kwargs["taut"] * units.fs,
-                fixcm=kwargs["fixcm"],
-                trajectory=kwargs["trajectory"],
-                logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"],
-                append_trajectory=kwargs["append_trajectory"],
-            )
-        else:
-            raise NotImplementedError(f"Unknown dynamics: {dynamics}")
-    elif ensemble == "NPT":
-        if dynamics == "Parrinello-Rahman":  # with Nose-Hoover thermostat
-            from ase.md.npt import NPT
-
-            return NPT(
-                atoms,
-                timestep=kwargs["timestep"] * units.fs,
-                temperature_K=kwargs["temperature"],
-                ttime=kwargs["taut"] * units.fs,
-                externalstress=kwargs["pressure"] * units.bar,
-                pfactor=kwargs["pfactor"] * units.GPa * (units.fs**2),
-                mask=kwargs["mask"],
-                trajectory=kwargs["trajectory"],
-                logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"],
-                append_trajectory=kwargs["append_trajectory"],
-            )
-        elif dynamics == "Berendsen":  # with Berendsen thermostat
-            from ase.md.nptberendsen import NPTBerendsen
-
-            return NPTBerendsen(
-                atoms,
-                timestep=kwargs["timestep"] * units.fs,
-                temperature_K=kwargs["temperature"],
-                taut=kwargs["taut"] * units.fs,
-                taup=kwargs["taup"] * units.fs,
-                pressure=kwargs["pressure"] * units.bar,
-                compressibility_au=kwargs["compressibility"] / units.bar,
-                fixcm=kwargs["fixcm"],
-                trajectory=kwargs["trajectory"],
-                logfile=kwargs["logfile"],
-                loginterval=kwargs["loginterval"],
-                append_trajectory=kwargs["append_trajectory"],
-            )
-        else:
-            raise NotImplementedError(f"Unknown dynamics: {dynamics}")
-    else:
-        raise NotImplementedError(f"Unknown ensemble: {ensemble}")
-
-
 def run_md(args: argparse.Namespace) -> None:
-    # dump settings
-    settings = default_settings.copy()
-    if args.input is not None:
-        with open(args.input, "r") as f:
-            settings.update(json.load(f))
+    # load md config
+    if args.config is None:
+        raise ValueError("Config file is required.")
+    config = OmegaConf.merge(
+        OmegaConf.structured(MDConfig),
+        OmegaConf.load(args.config),
+    )
+    # this will do nothing, only for type annotation
+    config = cast(MDConfig, config)
 
     # set random seed
-    seed = settings["seed"]
-    if seed is not None:
-        np.random.seed(seed)
-        torch.manual_seed(seed)
+    if config.seed is not None:
+        np.random.seed(config.seed)
+        torch.manual_seed(config.seed)
 
     # load atoms
-    atoms = ase_read(settings["init_xyz"], index=0)
+    atoms = ase_read(config.input_file, index=0)
 
     # set calculator
-    if "spin" in settings:
-        settings["multiplicity"] = settings.pop("spin") + 1
-    calc = XeqCalculator(
-        ckpt_file=settings["ckpt_file"],
-        cutoff=settings["cutoff"],
-        charge=settings["charge"],
-        spin=settings["multiplicity"] - 1,
+    calc = XequiCalculator(
+        ckpt_file=config.model_file,
     )
     atoms.set_calculator(calc)
 
     # set starting tempeature
-    MaxwellBoltzmannDistribution(atoms, temperature_K=settings["temperature"])
-    # TODO: reconsideration
+    MaxwellBoltzmannDistribution(atoms, temperature_K=config.init_temperature)
     ZeroRotation(atoms)
     Stationary(atoms)
 
-    # set ensemble
-    dyn = resolve_ensemble(atoms, **settings)
-
     # initialize log file
-    with open(settings["logfile"], "w"):
-        pass
+    if not config.append_logfile:
+        with open(config.logfile, "w"):
+            pass
 
+    # set ensemble
+    ensembles = []
+    for ensemble in config.ensembles:
+        ensembles.append(
+            resolve_ensemble(atoms, ensemble, config.logfile, config.trajectory)
+        )
     # run dynamics
-    dyn.run(settings["steps"])
+    for (dyn, steps, fmax) in ensembles:
+        if fmax is None:
+            dyn.run(steps)
+        else:
+            dyn.run(fmax=fmax)
 
     # convert trajectory to xyz
-    if settings["traj_xyz"] is not None:
-        traj2xyz(settings["trajectory"], settings["traj_xyz"], settings["columns"])
+    if config.xyz_traj is not None:
+        traj2xyz(config.trajectory, config.xyz_traj, config.columns)

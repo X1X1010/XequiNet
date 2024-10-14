@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Iterable
+from typing import Dict, Iterable, Tuple
 
 import torch
 import torch.nn as nn
@@ -6,9 +6,9 @@ from e3nn import o3
 
 from xequinet.utils import NetConfig
 
-from ..nn import resolve_actfn
+from ..nn import resolve_activation
 from ..nn.xpainn import XEmbedding, XPainnMessage, XPainnUpdate
-from ..utils import NetConfig, unit_conversion, get_default_unit, get_atomic_energy
+from ..utils import NetConfig, get_atomic_energy, get_default_unit, unit_conversion
 
 
 class MDEmbedding(XEmbedding):
@@ -72,20 +72,20 @@ class MDGradOut(nn.Module):
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
-        actfn: str = "silu",
+        activation: str = "silu",
     ) -> None:
         """
         Args:
             `node_dim`: Dimension of node feature.
             `hidden_dim`: Dimension of hidden layer.
-            `actfn`: Activation function.
+            `activation`: Activation function.
         """
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
-            resolve_actfn(actfn),
+            resolve_activation(activation),
             nn.Linear(self.hidden_dim, 1),
         )
 
@@ -153,7 +153,7 @@ class MDPaiNN(nn.Module):
                     node_dim=config.node_dim,
                     node_irreps=config.node_irreps,
                     num_basis=config.num_basis,
-                    actfn=config.activation,
+                    activation=config.activation,
                     norm_type=config.norm_type,
                 )
                 for _ in range(config.action_blocks)
@@ -164,7 +164,7 @@ class MDPaiNN(nn.Module):
                 XPainnUpdate(
                     node_dim=config.node_dim,
                     node_irreps=config.node_irreps,
-                    actfn=config.activation,
+                    activation=config.activation,
                     norm_type=config.norm_type,
                 )
                 for _ in range(config.action_blocks)
@@ -173,7 +173,7 @@ class MDPaiNN(nn.Module):
         self.out = MDGradOut(
             node_dim=config.node_dim,
             hidden_dim=config.hidden_dim,
-            actfn=config.activation,
+            activation=config.activation,
         )
         self.prop_unit, self.len_unit = get_default_unit()
         atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(

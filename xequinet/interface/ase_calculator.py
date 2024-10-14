@@ -1,13 +1,13 @@
 from typing import Dict
-import torch
 
-from ase.stress import full_3x3_to_voigt_6_stress
+import torch
 from ase.calculators.calculator import Calculator, all_changes
+from ase.stress import full_3x3_to_voigt_6_stress
 
 from ..utils import radius_graph_pbc
 
 
-class XeqCalculator(Calculator):
+class XequiCalculator(Calculator):
     """
     ASE calculator for XequiNet models.
     """
@@ -16,10 +16,6 @@ class XeqCalculator(Calculator):
     implemented_properties += ["stress", "stresses"]
     default_parameters = {
         "ckpt_file": "model.jit",
-        "cutoff": 5.0,
-        "max_edges": 100,
-        "charge": 0,
-        "spin": 0,
     }
 
     def __init__(self, **kwargs) -> None:
