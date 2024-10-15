@@ -114,11 +114,15 @@ def set_default_units(unit_dict: Dict[str, str]) -> None:
     for prop, unit in unit_dict.items():
         if prop in keys.GRAD_PROPERTIES:
             raise ValueError(
-                "Please do not set units for gradient properties directly, Set the units for the corresponding properties instead."
+                "Please do not set units for gradient properties directly. Set the units for the corresponding properties instead."
             )
         if prop in keys.BASE_PROPERTIES:
             raise ValueError(
-                "Please do not set units for base properties directly, Set the units for the corresponding properties instead."
+                "Please do not set units for base properties directly. Set the units for the corresponding properties instead."
+            )
+        if prop == keys.ATOMIC_CHARGES:
+            raise ValueError(
+                "Please do not set units for atomic charges. Set the charge instead."
             )
         if not check_unit(unit):
             raise ValueError(f"Invalid unit {unit} for property {prop}")
@@ -129,6 +133,8 @@ def set_default_units(unit_dict: Dict[str, str]) -> None:
         pos_unit = DEFAULT_UNITS_MAP[keys.POSITIONS]
         DEFAULT_UNITS_MAP[keys.FORCES] = f"{energy_unit}/{pos_unit}"
         DEFAULT_UNITS_MAP[keys.VIRIAL] = f"{energy_unit}/{pos_unit}^3"
+    if keys.TOTAL_CHARGE in DEFAULT_UNITS_MAP:
+        DEFAULT_UNITS_MAP[keys.ATOMIC_CHARGES] = DEFAULT_UNITS_MAP[keys.TOTAL_CHARGE]
     for base_prop, prop in keys.BASE_PROPERTIES.items():
         if prop in DEFAULT_UNITS_MAP:
             DEFAULT_UNITS_MAP[base_prop] = DEFAULT_UNITS_MAP[prop]

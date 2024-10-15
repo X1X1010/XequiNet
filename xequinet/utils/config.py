@@ -25,6 +25,10 @@ class ModelConfig:
             output_mode="scalar",
         )
     )
+    default_units: Dict[str, str] = field(
+        default_factory=lambda: dict(pos="Angstrom")
+    )
+
 
 
 @dataclass
@@ -73,9 +77,6 @@ class DataConfig:
     targets: Union[str, List[str]] = "energy"
     base_targets: Optional[Union[str, List[str]]] = None
     default_dtype: str = "float32"
-    default_units: Dict[str, str] = field(
-        default_factory=lambda: dict(energy="eV", pos="Angstrom")
-    )
     node_shift: Union[float, bool] = False
     node_scale: Union[float, bool] = False
     max_num_samples: int = 1000000

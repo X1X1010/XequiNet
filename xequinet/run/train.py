@@ -67,7 +67,7 @@ def run_train(args: argparse.Namespace) -> None:
     torch.set_default_dtype(name_to_dtype[config.data.default_dtype])
 
     # set default unit
-    set_default_units(config.data.default_units)
+    set_default_units(config.model.default_units)
 
     # set device
     device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
@@ -124,8 +124,8 @@ def run_train(args: argparse.Namespace) -> None:
                 base_property=keys.BASE_ENERGY,
                 max_num_samples=config.data.max_num_samples,
             )
-        log.s.info(f"Mean: {mean:6.4f} {config.data.default_units[keys.TOTAL_ENERGY]}")
-        log.s.info(f"Std : {std:6.4f} {config.data.default_units[keys.TOTAL_ENERGY]}")
+        log.s.info(f"Mean: {mean:6.4f} {config.model.default_units[keys.TOTAL_ENERGY]}")
+        log.s.info(f"Std : {std:6.4f} {config.model.default_units[keys.TOTAL_ENERGY]}")
         if config.data.node_shift is True:
             node_shift = mean
         if config.data.node_scale is True:

@@ -1,10 +1,11 @@
 import argparse
+from typing import cast
 
 import torch
-import torch_cluster
+from omegaconf import OmegaConf
 
-from ..interface import resolve_md_model, resolve_jit_model
-from ..utils import NetConfig, set_default_unit
+from xequinet.interface import resolve_jit_model
+from xequinet.utils import ModelConfig, qc, set_default_units
 
 
 def compile_model(args: argparse.Namespace) -> None:
@@ -13,28 +14,32 @@ def compile_model(args: argparse.Namespace) -> None:
 
     # load checkpoint and config
     ckpt = torch.load(args.ckpt, map_location=device)
-    config = NetConfig.model_validate(ckpt["config"])
+    config = OmegaConf.merge(
+        OmegaConf.structured(ModelConfig),
+        OmegaConf.load(ckpt["config"]),
+    )
+    # this will do nothing, only for type annotation
+    config = cast(ModelConfig, config)
 
     # set default unit
-    set_default_unit(config.default_property_unit, config.default_length_unit)
+    set_default_units(config.default_units)
 
     # build model
-    if args.for_md:
-        # result contains "energy", atomic "energies", "forces", "virial" and atomic "virials"
-        # the input unit of "coordinates" and "shifts" calculate from lattice is Angstrom
-        # the output unit of "energy" and "virial" is eV, and the output unit of "forces" is eV/Angstrom
-        model = resolve_md_model(config).to(device)
-    else:
-        # result contains "energy" and nuclear "gradient"
-        # the input unit of "coordinates" and "shifts" calculate from lattice is Bohr
-        # the output unit of a.u.
-        model = resolve_jit_model(config).to(device)
+    model = resolve_jit_model(config.model_name, **config.model_config)
+    model.to(device)
 
-    model.load_state_dict(ckpt["model"], strict=False)
+    model.load_state_dict(ckpt["model"])
     model_script = torch.jit.script(model)
+
+    extra_file = {
+        "cutoff_radius": model.cutoff_radius,
+    }
+    extra_file.update(qc.ELEMENTS_DICT)
+    _extra_file = {k: str(v).encode("ascii") for k, v in extra_file.items()}
+
     output_file = (
         f"{args.ckpt.split('/')[-1].split('.')[0]}.jit"
         if args.output is None
         else args.output
     )
-    model_script.save(output_file)
+    model_script.save(output_file, _extra_files=_extra_file)

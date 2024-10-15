@@ -93,12 +93,23 @@ def compute_edge_data(
     return data
 
 
-class XPaiNN(nn.Module):
+class BaseModel(nn.Module):
+    
+    cutoff_radius: float
+
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        compute_forces: bool = True,
+        compute_virial: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        raise NotImplementedError
+
+
+class XPaiNN(BaseModel):
     """
     eXtended PaiNN.
     """
-
-    cutoff_radius: float
 
     def __init__(self, **kwargs) -> None:
         super().__init__()
@@ -186,10 +197,10 @@ class XPaiNN(nn.Module):
         return result
 
 
-def resolve_model(model_name: str, **kwargs) -> nn.Module:
+def resolve_model(model_name: str, **kwargs) -> BaseModel:
     models_factory = {
         "xpainn": XPaiNN,
     }
-    if model_name not in models_factory:
+    if model_name.lower() not in models_factory:
         raise NotImplementedError(f"Unsupported model {model_name}")
-    return models_factory[model_name](**kwargs)
+    return models_factory[model_name.lower()](**kwargs)

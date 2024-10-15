@@ -270,6 +270,7 @@ class DipoleOut(nn.Module):
         hidden_irreps: Iterable = "32x1o",
         activation: str = "silu",
         magnitude: bool = False,
+        **kwargs,
     ) -> None:
         """
         Args:
@@ -333,6 +334,7 @@ class PolarOut(nn.Module):
         hidden_irreps: Iterable = "64x0e + 16x2e",
         activation: str = "silu",
         isotropic: bool = False,
+        **kwargs,
     ) -> None:
         """
         Args:
@@ -412,6 +414,7 @@ class SpatialOut(nn.Module):
         node_dim: int = 128,
         hidden_dim: int = 64,
         activation: str = "silu",
+        **kwargs,
     ) -> None:
         """
         Args:
@@ -469,6 +472,7 @@ class CartTensorOut(nn.Module):
         norm_type: str = "layer",
         isotropic: bool = False,
         output_field: str = keys.CARTESIAN_TENSOR,
+        **kwargs,
     ) -> None:
         super().__init__()
 
