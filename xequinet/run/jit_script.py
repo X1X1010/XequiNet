@@ -26,7 +26,7 @@ def compile_model(args: argparse.Namespace) -> None:
 
     # build model
     model = resolve_jit_model(config.model_name, **config.model_config)
-    model.to(device)
+    model.eval().to(device)
 
     model.load_state_dict(ckpt["model"])
     model_script = torch.jit.script(model)

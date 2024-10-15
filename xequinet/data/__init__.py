@@ -4,6 +4,7 @@ from .fmt_conversion import (
     datapoint_from_pyscf,
     datapoint_to_ase,
     datapoint_to_pyscf,
+    datapoint_to_xtb,
 )
 from .lmdb_data import create_lmdb_dataset
 from .transform import (
@@ -20,6 +21,7 @@ __all__ = [
     "datapoint_from_pyscf",
     "datapoint_to_ase",
     "datapoint_to_pyscf",
+    "datapoint_to_xtb",
     "Transform",
     "NeighborTransform",
     "DataTypeTransform",

@@ -84,12 +84,6 @@ def main() -> None:
         default=None,
         help="Output file name.",
     )
-    # jit
-    parser.add_argument(
-        "--for-md",
-        action="store_true",
-        help="Whether the model is used for molecular dynamics.",
-    )
     # geometry
     parser.add_argument(
         "--max-steps",
@@ -98,7 +92,7 @@ def main() -> None:
         help="Maximum number of optimization steps.",
     )
     parser.add_argument(
-        "--cons",
+        "--constraints",
         type=str,
         default=None,
         help="Constraints file for optimization.",
@@ -109,12 +103,12 @@ def main() -> None:
         help="Calculate vibrational frequencies.",
     )
     parser.add_argument(
-        "--numer",
+        "--numerical",
         action="store_true",
         help="Calculate hessian with numerical second derivative.",
     )
     parser.add_argument(
-        "--shm",
+        "--shermo",
         action="store_true",
         help="Whether to write shermo input file.",
     )

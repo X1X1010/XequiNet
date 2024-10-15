@@ -64,6 +64,12 @@ SPATIAL_EXTENT: Final[str] = "spatial_extent"
 SCALAR_OUTPUT: Final[str] = "scalar_output"
 CARTESIAN_TENSOR: Final[str] = "cartesian_tensor"
 
+# xTB methods
+xTB_METHODS: Final[Dict[str, str]] = {
+    "gfn1-xtb": "GFN1-xTB",
+    "gfn2-xtb": "GFN2-xTB",
+}
+
 # others
 TRAIN: Final[str] = "train"
 VALID: Final[str] = "valid"

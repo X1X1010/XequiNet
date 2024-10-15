@@ -40,13 +40,23 @@ class XequiCalculator(Calculator):
         if changed_parameters:
             self.reset()
         if "dtype" in changed_parameters:
-            dtype_map = {"float16": torch.float16, "float32": torch.float32, "float64": torch.float64}
+            dtype_map = {
+                "float16": torch.float16,
+                "float32": torch.float32,
+                "float64": torch.float64,
+            }
             self.dtype = dtype_map[self.parameters.dtype]
             torch.set_default_dtype(self.dtype)
         if "ckpt_file" in changed_parameters or self.model is None:
             _extra_files = {"cutoff_radius": b""}
-            self.model = torch.jit.load(
-                self.parameters.ckpt_file, map_location=self.device, _extra_files=_extra_files
+            self.model = (
+                torch.jit.load(
+                    self.parameters.ckpt_file,
+                    map_location=self.device,
+                    _extra_files=_extra_files,
+                )
+                .to(device=self.device)
+                .eval()
             )
             cutoff_radius = float(_extra_files["cutoff_radius"].decode("ascii"))
             self.transform = SequentialTransform(
@@ -66,12 +76,14 @@ class XequiCalculator(Calculator):
             properties = self.implemented_properties
 
         Calculator.calculate(self, atoms, properties, system_changes)
-        
-        data = datapoint_from_ase(self.atoms)
+
+        data = datapoint_from_ase(self.atoms).to(self.device)
         data = self.transform(data)
         compute_forces = "forces" in properties
         compute_virial = "stress" in properties
-        result: Dict[str, torch.Tensor] = self.model(data.to_dict(), compute_forces, compute_virial)
+        result: Dict[str, torch.Tensor] = self.model(
+            data.to_dict(), compute_forces, compute_virial
+        )
         self.results["energy"] = result[keys.TOTAL_ENERGY].item()
         self.results["energies"] = result[keys.ATOMIC_ENERGIES].detach().cpu().numpy()
         if compute_forces:
