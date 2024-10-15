@@ -164,21 +164,23 @@ class XPaiNN(nn.Module):
 
         self.cutoff_radius = coulomb_cutoff if coulomb_interaction else cutoff
 
-        self.compute_forces = kwargs.get("compute_forces", False)
-        self.compute_virial = kwargs.get("compute_virial", False)
-
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        compute_forces: bool = True,
+        compute_virial: bool = False,
+    ) -> Dict[str, torch.Tensor]:
 
         data = compute_edge_data(
             data=data,
-            compute_forces=self.compute_forces,
-            compute_virial=self.compute_virial,
+            compute_forces=compute_forces,
+            compute_virial=compute_virial,
         )
         for body_block in self.body_blocks:
             data = body_block(data)
         result = {}
         for output_block in self.output_blocks:
-            data, output = output_block(data)
+            data, output = output_block(data, compute_forces, compute_virial)
             result.update(output)
 
         return result

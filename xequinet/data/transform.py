@@ -33,7 +33,7 @@ class NeighborTransform(Transform):
             n_nodes_per_graph = torch.tensor([data.pos.shape[0]], device=device)  # [1]
             batch = None
 
-        has_pbc = hasattr(data, keys.PBC)
+        has_pbc = hasattr(data, keys.PBC) and data.pbc.any()
         has_cell = hasattr(data, keys.CELL)
 
         if has_pbc and has_cell:

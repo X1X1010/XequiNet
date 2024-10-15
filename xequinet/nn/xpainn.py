@@ -129,7 +129,7 @@ class XPainnMessage(nn.Module):
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
-        node_invt = self.norm(data[keys.NODE_INVARIANT])
+        node_scalar = self.norm(data[keys.NODE_INVARIANT])
         node_equi = self.o3norm(data[keys.NODE_EQUIVARIANT])
         rbf = data[keys.RADIAL_BASIS_FUNCTION]
         fcut = data[keys.ENVELOPE_FUNCTION]
@@ -138,7 +138,7 @@ class XPainnMessage(nn.Module):
         center_idx = edge_index[keys.CENTER_IDX]
         neighbor_idx = edge_index[keys.NEIGHBOR_IDX]
 
-        inv_out = self.scalar_mlp(node_invt)
+        inv_out = self.scalar_mlp(node_scalar)
         filter_weight = self.rbf_lin(rbf) * fcut
         filter_out = inv_out[neighbor_idx] * filter_weight
 
@@ -201,14 +201,14 @@ class XPainnUpdate(nn.Module):
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
-        node_invt = self.norm(data[keys.NODE_INVARIANT])
+        node_scalar = self.norm(data[keys.NODE_INVARIANT])
         node_equi = self.o3norm(data[keys.NODE_EQUIVARIANT])
 
         U_equi = self.update_U(node_equi)
         V_equi = self.update_V(node_equi)
 
         V_invt = self.invariant(V_equi)
-        mlp_in = torch.cat([node_invt, V_invt], dim=-1)
+        mlp_in = torch.cat([node_scalar, V_invt], dim=-1)
         mlp_out = self.update_mlp(mlp_in)
 
         a_vv, a_sv, a_ss = torch.split(

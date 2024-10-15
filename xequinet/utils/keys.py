@@ -39,8 +39,12 @@ STRESS: Final[str] = "stress"
 ATOMIC_CHARGES: Final[str] = "atomic_charges"
 BASE_CHARGES: Final[str] = "base_charges"
 TOTAL_CHARGE: Final[str] = "charge"
+
 DIPOLE: Final[str] = "dipole"
 BASE_DIPOLE: Final[str] = "base_dipole"
+DIPOLE_MAGNITUDE: Final[str] = "dipole_magnitude"
+POLARIZABILITY: Final[str] = "polarizability"
+ISO_POLARIZABILITY: Final[str] = "iso_polarizability"
 
 GRAD_PROPERTIES: Final[set] = {  # properties that are gradients got by autograd
     FORCES,
@@ -53,6 +57,12 @@ BASE_PROPERTIES: Final[Dict[str, str]] = {  # properties that are base propertie
     BASE_CHARGES: ATOMIC_CHARGES,
     BASE_DIPOLE: DIPOLE,
 }
+
+SPATIAL_EXTENT: Final[str] = "spatial_extent"
+
+# general-purpose properties
+SCALAR_OUTPUT: Final[str] = "scalar_output"
+CARTESIAN_TENSOR: Final[str] = "cartesian_tensor"
 
 # others
 TRAIN: Final[str] = "train"

@@ -1,14 +1,15 @@
-import warnings
 import argparse
+import warnings
+
 from xequinet.run import (
-    run_train,
-    run_test,
-    run_infer,
     compile_model,
-    run_opt,
+    run_infer,
     run_md,
+    run_opt,
     run_pimd,
     run_std_from_fock,
+    run_test,
+    run_train,
 )
 
 
@@ -53,20 +54,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--batch-size",
-        "-b",
+        "-bs",
         type=int,
         default=32,
         help="Batch size for testing or inference. (default: 32)",
     )
     parser.add_argument(
         "--no-force",
-        "-nf",
         action="store_true",
         help="Whether testing without force when output mode is 'grad'.",
     )
     parser.add_argument(
         "--force",
-        "-f",
         action="store_true",
         help="Whether testing force additionlly when output mode is 'scalar'.",
     )

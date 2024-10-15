@@ -137,17 +137,11 @@ def run_train(args: argparse.Namespace) -> None:
 
     # -------------------  build model ------------------- #
     # initialize model
-    extra_kwargs = {}
-    if keys.FORCES in config.trainer.losses_weight:
-        extra_kwargs["compute_forces"] = True
-    if keys.VIRIAL in config.trainer.losses_weight or keys.STRESS in config.trainer.losses_weight:
-        extra_kwargs["compute_virial"] = True
     model = resolve_model(
         config.model.model_name,
         node_shift=node_shift,
         node_scale=node_scale,
         **config.model.model_config,
-        **extra_kwargs,
     )
     log.s.info(model)
     model.to(device)

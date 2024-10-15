@@ -4,7 +4,6 @@ from typing import Dict, Iterable, Optional, Tuple
 import torch
 import torch.nn as nn
 from e3nn import o3
-from torch_geometric.data import Data
 from torch_scatter import scatter, scatter_sum
 
 from xequinet.utils import keys, qc
@@ -20,10 +19,12 @@ class ScalarOut(nn.Module):
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
-        out_dim: int = 1,
         activation: str = "silu",
-        node_bias: float = 0.0,
+        node_shift: float = 0.0,
+        node_scale: float = 1.0,
         reduce_op: Optional[str] = "sum",
+        output_field: str = keys.SCALAR_OUTPUT,
+        **kwargs,
     ) -> None:
         """
         Args:
@@ -31,40 +32,37 @@ class ScalarOut(nn.Module):
             `hidden_dim`: Dimension of hidden layer.
             `out_dim`: Output dimension.
             `activation`: Activation function type.
-            `node_bias`: Bias for atomic wise output.
+            `node_shift`: Shift for atomic wise output.
+            `node_scale`: Scale for atomic wise output.
             `reduce_op`: Reduce operation for the output.
         """
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
-        self.out_dim = out_dim
+
+        final_linear = nn.Linear(self.hidden_dim, 1)
+        final_linear.weight.data *= node_scale
+        nn.init.constant_(final_linear.bias, node_shift)
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_activation(activation),
-            nn.Linear(self.hidden_dim, self.out_dim),
+            final_linear,
         )
-        nn.init.constant_(self.out_mlp[2].bias, node_bias)
         self.reduce_op = reduce_op
+        self.output_field = output_field
 
     def forward(
-        self,
-        data: Data,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            `data`: pyg `Data` object.
-            `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features. (Unused in this module)
-        Returns:
-            `res`: Scalar output.
-        """
-        batch = data.batch
-        res = self.out_mlp(x_scalar)
+        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+
+        batch = data[keys.BATCH]
+        node_scalar = data[keys.NODE_INVARIANT]
+        res = self.out_mlp(node_scalar).reshape(-1)
+
         if self.reduce_op is not None:
             res = scatter(res, batch, dim=0, reduce=self.reduce_op)
-        return res
+
+        return data, {self.output_field: res}
 
 
 class ForceFieldOut(nn.Module):
@@ -73,9 +71,8 @@ class ForceFieldOut(nn.Module):
         node_dim: int = 128,
         hidden_dim: int = 64,
         activation: str = "silu",
-        node_bias: float = 0.0,
-        compute_forces: bool = True,
-        compute_virial: bool = False,
+        node_shift: float = 0.0,
+        node_scale: float = 1.0,
         **kwargs,
     ) -> None:
         """
@@ -83,21 +80,23 @@ class ForceFieldOut(nn.Module):
             `node_dim`: Node dimension.
             `hidden_dim`: Dimension of hidden layer.
             `activation`: Activation function type.
-            `node_bias`: Bias for atomic wise output.
+            `node_shift`: Shift for atomic wise output.
+            `node_scale`: Scale for atomic wise output.
             `compute_forces`: Whether to compute forces.
             `compute_virial`: Whether to compute virial.
         """
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
+
+        final_linear = nn.Linear(self.hidden_dim, 1)
+        final_linear.weight.data *= node_scale
+        nn.init.constant_(final_linear.bias, node_shift)
         self.out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_activation(activation),
-            nn.Linear(self.hidden_dim, 1),
+            final_linear,
         )
-        nn.init.constant_(self.out_mlp[2].bias, node_bias)
-        self.compute_forces = compute_forces
-        self.compute_virial = compute_virial
 
     def _compute_forces(
         self,
@@ -156,11 +155,13 @@ class ForceFieldOut(nn.Module):
     def forward(
         self,
         data: Dict[str, torch.Tensor],
+        compute_forces: bool = True,
+        compute_virial: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
 
         batch = data[keys.BATCH]
-        node_invt = data[keys.NODE_INVARIANT]
-        atom_eng_out = self.out_mlp(node_invt).reshape(-1)
+        node_scalar = data[keys.NODE_INVARIANT]
+        atom_eng_out = self.out_mlp(node_scalar).reshape(-1)
 
         if keys.ATOMIC_ENERGIES in data:
             atomic_energies = data[keys.ATOMIC_ENERGIES] + atom_eng_out
@@ -174,7 +175,7 @@ class ForceFieldOut(nn.Module):
             keys.TOTAL_ENERGY: total_energy,
             keys.ATOMIC_ENERGIES: atomic_energies,
         }
-        if self.compute_forces and self.compute_virial:
+        if compute_forces and compute_virial:
             forces, virial = self._compute_forces_and_virial(
                 energy=total_energy,
                 pos=data[keys.POSITIONS],
@@ -182,13 +183,13 @@ class ForceFieldOut(nn.Module):
             )
             result[keys.FORCES] = forces
             result[keys.VIRIAL] = virial
-        elif self.compute_forces:
+        elif compute_forces:
             forces = self._compute_forces(
                 energy=total_energy,
                 pos=data[keys.POSITIONS],
             )
             result[keys.FORCES] = forces
-        elif self.compute_virial:
+        elif compute_virial:
             virial = self._compute_virial(
                 energy=total_energy,
                 strain=data[keys.STRAIN],
@@ -231,17 +232,17 @@ class AtomicChargesOut(nn.Module):
             self.coulomb = CoulombWithCutoff(coulomb_cutoff)
 
     def forward(
-        self, data: Dict[str, torch.Tensor]
+        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
 
-        node_invt = data[keys.NODE_INVARIANT]
+        node_scalar = data[keys.NODE_INVARIANT]
         batch = data[keys.BATCH]
-        raw_charges = self.out_mlp(node_invt).reshape(-1)
+        raw_charges = self.out_mlp(node_scalar).reshape(-1)
         if self.conservation:
             raw_total_charge = scatter_sum(raw_charges, batch, dim=0)
             num_atoms = scatter_sum(
-                torch.ones_like(raw_charges),
-                batch,
+                src=torch.ones_like(raw_charges),
+                index=batch,
                 dim=0,
             )
             if keys.TOTAL_CHARGE in data:
@@ -260,16 +261,15 @@ class AtomicChargesOut(nn.Module):
         return data, result
 
 
-class VectorOut(nn.Module):
+class DipoleOut(nn.Module):
     def __init__(
         self,
         node_dim: int = 128,
         node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
         hidden_irreps: Iterable = "32x1o",
-        if_norm: bool = False,
         activation: str = "silu",
-        reduce_op: Optional[str] = "sum",
+        magnitude: bool = False,
     ) -> None:
         """
         Args:
@@ -277,8 +277,8 @@ class VectorOut(nn.Module):
             `node_irreps`: Node irreps.
             `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
-            `if_norm`: Whether to normalize the output.
             `activation`: Activation function type.
+            `magnitude`: Whether to compute the magnitude of the dipole.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -290,39 +290,38 @@ class VectorOut(nn.Module):
             resolve_activation(activation),
             nn.Linear(self.hidden_dim, 1),
         )
-        self.spherical_out_mlp = nn.Sequential(
+        nn.init.zeros_(self.scalar_out_mlp[0].bias)
+        nn.init.zeros_(self.scalar_out_mlp[2].bias)
+        self.equi_out_mlp = nn.Sequential(
             o3.Linear(self.node_irreps, self.hidden_irreps),
             Gate(self.hidden_irreps, activation=activation),
             o3.Linear(self.hidden_irreps, "1x1o"),
         )
-        self.if_norm = if_norm
-        self.reduce_op = reduce_op
+        self.magnitude = magnitude
 
     def forward(
-        self,
-        data: Data,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            `data`: pyg `Data` object.
-            `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features.
-        Returns:
-            `res`: Vector output.
-        """
-        batch = data.batch
-        spherical_out = self.spherical_out_mlp(x_spherical)[
+        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+        
+        batch = data[keys.BATCH]
+        node_scalar = data[keys.NODE_INVARIANT]
+        node_equi = data[keys.NODE_EQUIVARIANT]
+
+        equi_out = self.equi_out_mlp(node_equi)[
             :, [2, 0, 1]
         ]  # [y, z, x] -> [x, y, z]
-        scalar_out = self.scalar_out_mlp(x_scalar)
-        res = spherical_out * scalar_out
-        if self.reduce_op is not None:
-            res = scatter(res, batch, dim=0, reduce=self.reduce_op)
-        if self.if_norm:
-            res = torch.linalg.norm(res, dim=-1, keepdim=True)
-        return res
+        scalar_out = self.scalar_out_mlp(node_scalar)
+        dipole = scatter_sum(
+            src=equi_out * scalar_out,
+            index=batch,
+            dim=0,
+        )
+        result = {keys.DIPOLE: dipole}
+
+        if self.magnitude:
+            dipole_norm = torch.linalg.norm(dipole, dim=-1)
+            result[keys.DIPOLE_MAGNITUDE] = dipole_norm
+        return data, result
 
 
 class PolarOut(nn.Module):
@@ -332,9 +331,8 @@ class PolarOut(nn.Module):
         node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         hidden_dim: int = 64,
         hidden_irreps: Iterable = "64x0e + 16x2e",
-        if_iso: bool = False,
         activation: str = "silu",
-        reduce_op: Optional[str] = "sum",
+        isotropic: bool = False,
     ) -> None:
         """
         Args:
@@ -342,8 +340,8 @@ class PolarOut(nn.Module):
             `node_irreps`: Node irreps.
             `hidden_dim`: Hidden dimension.
             `hidden_irreps`: Hidden irreps.
-            `output_dim`: Output dimension. (9 for 3x3 matrix and 1 for trace of the matrix)
             `activation`: Activation function type.
+            `isotropic`: Whether to compute the isotropic polarizability.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -355,35 +353,31 @@ class PolarOut(nn.Module):
             resolve_activation(activation),
             nn.Linear(self.hidden_dim, 2),
         )
-        self.spherical_out_mlp = nn.Sequential(
+        nn.init.zeros_(self.scalar_out_mlp[0].bias)
+        nn.init.zeros_(self.scalar_out_mlp[2].bias)
+        self.equi_out_mlp = nn.Sequential(
             o3.Linear(self.node_irreps, self.hidden_irreps, biases=True),
             Gate(self.hidden_irreps, activation=activation),
             o3.Linear(self.hidden_irreps, "1x0e + 1x2e", biases=True),
         )
         self.rsh_conv = o3.ElementwiseTensorProduct("1x0e + 1x2e", "2x0e")
-        self.if_iso = if_iso
-        self.reduce_op = reduce_op
+        self.isotropic = isotropic
 
     def forward(
-        self,
-        data: Data,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            `data`: pyg `Data` object.
-            `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features. (Unused in this module)
-        Returns:
-            `res`: Polarizability.
-        """
-        batch = data.batch
-        spherical_out = self.spherical_out_mlp(x_spherical)
-        scalar_out = self.scalar_out_mlp(x_scalar)
-        polar_out = self.rsh_conv(spherical_out, scalar_out)
-        if self.reduce_op is not None:
-            polar_out = scatter(polar_out, batch, dim=0, reduce=self.reduce_op)
+        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+
+        batch = data[keys.BATCH]
+        node_scalar = data[keys.NODE_INVARIANT]
+        node_equi = data[keys.NODE_EQUIVARIANT]
+
+        equi_out = self.equi_out_mlp(node_equi)
+        scalar_out = self.scalar_out_mlp(node_scalar)
+        polar_out = scatter_sum(
+            src=self.rsh_conv(equi_out, scalar_out),
+            index=batch,
+            dim=0,
+        )
         zero_order = polar_out[:, 0:1]
         second_order = polar_out[:, 1:6]
         # build zero order output
@@ -403,19 +397,21 @@ class PolarOut(nn.Module):
         second_out[:, 1, 2] = second_out[:, 2, 1] = dyz
         second_out[:, 0, 2] = second_out[:, 2, 0] = dzx
         # add together
-        res = zero_out + second_out
-        if self.if_iso == 1:
-            res = torch.diagonal(res, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
-        return res
+        polarizability = zero_out + second_out
+        result = {keys.POLARIZABILITY: polarizability}
+        if self.isotropic:
+            iso_polar = torch.diagonal(polarizability, dim1=-2, dim2=-1).mean(dim=-1)
+            result[keys.ISO_POLARIZABILITY] = iso_polar
+        return data, result
 
 
 class SpatialOut(nn.Module):
+    masses: torch.Tensor
     def __init__(
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
         activation: str = "silu",
-        reduce_op: Optional[str] = "sum",
     ) -> None:
         """
         Args:
@@ -426,42 +422,33 @@ class SpatialOut(nn.Module):
         super().__init__()
         self.node_dim = node_dim
         self.hidden_dim = hidden_dim
-        self.register_buffer("masses", torch.Tensor(qc.ATOM_MASS))
         self.scalar_out_mlp = nn.Sequential(
             nn.Linear(self.node_dim, self.hidden_dim),
             resolve_activation(activation),
             nn.Linear(self.hidden_dim, 1),
         )
-        self.reduce_op = reduce_op
+        nn.init.zeros_(self.scalar_out_mlp[0].bias)
+        nn.init.zeros_(self.scalar_out_mlp[2].bias)
+        self.register_buffer("masses", torch.Tensor(qc.ATOM_MASS))
 
     def forward(
-        self,
-        data: Data,
-        x_scalar: torch.Tensor,
-        x_spherical: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            `data`: pyg `Data` object.
-            `x_scalar`: Scalar features.
-            `x_spherical`: Spherical features.
-        Returns:
-            `res`: Spatial output.
-        """
-        batch = data.batch
-        coord = data.pos
-        at_no = data.at_no
-        masses = self.masses[at_no]
-        centroids = scatter(masses * coord, batch, dim=0) / scatter(
+        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+        
+        batch = data[keys.BATCH]
+        pos = data[keys.POSITIONS]
+        atomic_numbers = data[keys.ATOMIC_NUMBERS]
+        masses = self.masses[atomic_numbers]
+        centroids = scatter(masses * pos, batch, dim=0) / scatter(
             masses, batch, dim=0
         )
-        coord -= centroids[batch]
-        scalar_out = self.scalar_out_mlp(x_scalar)
-        spatial = torch.square(coord).sum(dim=1, keepdim=True)
-        res = scalar_out * spatial
-        if self.reduce_op is not None:
-            res = scatter(res, batch, dim=0, reduce=self.reduce_op)
-        return res
+        pos -= centroids[batch]
+
+        node_scalar = data[keys.NODE_INVARIANT]
+        scalar_out = self.scalar_out_mlp(node_scalar)
+        spatial = torch.square(pos).sum(dim=1, keepdim=True)
+        spatial_extent = scatter_sum(scalar_out * spatial, batch, dim=0)
+        return data, {keys.SPATIAL_EXTENT: spatial_extent}
 
 
 class CartTensorOut(nn.Module):
@@ -477,113 +464,23 @@ class CartTensorOut(nn.Module):
         hidden_channels: int = 32,
         order: int = 2,
         symmetry: str = "ij",
-        # vector_space: Optional[Dict[str, str]] = None,
-        if_iso: bool = False,
         activation: str = "silu",
-        # norm_type: str = "layer",
         reduce_op: Optional[str] = "sum",
-    ) -> None:
-        super().__init__()
-        # self-mix tensor product layer to generize high `l`
-        # self.selfmix_tp = SelfMixTP(node_irreps, hidden_channels, norm_type)
-        # self.mixed_irreps = self.selfmix_tp.irreps_out
-        self.node_irreps = o3.Irreps(node_irreps)
-        hidden_irreps = []
-        for mul, irrep in self.node_irreps:
-            hidden_irreps.append((hidden_channels, irrep))
-        self.hidden_irreps = o3.Irreps(hidden_irreps)
-        self.pre_lin = o3.Linear(node_irreps, self.hidden_irreps, biases=False)
-
-        # spherical to cartesian transform
-        # vec_space = vector_space if vector_space is not None else {i: "1o" for i in indices}
-        self.sph2cart = Sph2Cart(formula=symmetry)
-        self.rtp_irreps = self.sph2cart.rtp_irreps
-
-        # tensor product to form spherical output
-        self.hidden_dim = hidden_dim
-        # sph_irreps, instruct = get_feasible_tp(
-        #     self.mixed_irreps, self.mixed_irreps, self.rtp_irreps, "uuw"
-        # )
-        sph_irreps, instruct = get_feasible_tp(
-            self.hidden_irreps, self.hidden_irreps, self.rtp_irreps, "uuw"
-        )
-        self.tp = o3.TensorProduct(
-            # self.mixed_irreps,
-            # self.mixed_irreps,
-            self.hidden_irreps,
-            self.hidden_irreps,
-            sph_irreps,
-            instruct,
-            internal_weights=False,
-            shared_weights=False,
-        )
-        self.weight_mlp = nn.Sequential(
-            nn.Linear(node_dim, self.hidden_dim),
-            resolve_activation(activation),
-            nn.Linear(self.hidden_dim, self.tp.weight_numel),
-        )
-        if sph_irreps != self.rtp_irreps:
-            self.post_lin = o3.Linear(sph_irreps, self.rtp_irreps, biases=False)
-        else:
-            self.post_lin = None
-
-        self.reduce_op = reduce_op
-        self.if_trace = if_iso and order == 2
-
-    def forward(
-        self, data: Data, x_scalar: torch.Tensor, x_spherical: torch.Tensor
-    ) -> torch.Tensor:
-        # self mix to expand the spherical features
-        # x_in = self.selfmix_tp(x_spherical)
-        x_in = self.pre_lin(x_spherical)
-        # get the weight for tensor product
-        tp_weight = self.weight_mlp(x_scalar)
-        # tensor product
-        x_sph = self.tp(x_in, x_in, tp_weight)
-        if self.post_lin is not None:
-            x_sph = self.post_lin(x_sph)
-        # cartesian transform
-        x_cart = self.sph2cart(x_sph)
-        if self.reduce_op is not None:
-            x_cart = scatter(x_cart, data.batch, dim=0, reduce=self.reduce_op)
-        if self.if_trace:
-            res = (
-                torch.diagonal(x_cart, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
-            )
-        else:
-            # [y, z, x] -> [x, y, z]
-            for i_dim in range(1, x_cart.dim()):
-                x_cart = x_cart.roll(shifts=1, dims=i_dim)
-            res = x_cart
-        return res
-
-
-class MegaCartTensorOut(nn.Module):
-    """
-    Output Module for order n tensor via tensor product of input hidden irreps and cartesian transform.
-    """
-
-    def __init__(
-        self,
-        node_dim: int = 128,
-        node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
-        hidden_dim: int = 64,
-        hidden_channels: int = 32,
-        order: int = 2,
-        symmetry: str = "ij",
-        # vector_space: Optional[Dict[str, str]] = None,
-        if_iso: bool = False,
-        activation: str = "silu",
         norm_type: str = "layer",
-        reduce_op: Optional[str] = "sum",
+        isotropic: bool = False,
+        output_field: str = keys.CARTESIAN_TENSOR,
     ) -> None:
         super().__init__()
+
+        if order != 2 and isotropic:
+            raise ValueError("Isotropic output is only supported for order 2 tensor.")
+        self.isotropic = isotropic
+
         # self-mix tensor product layer to generize high `l`
         self.selfmix_tp = SelfMixTP(node_irreps, hidden_channels, norm_type)
         self.mixed_irreps = self.selfmix_tp.irreps_out
 
         # spherical to cartesian transform
-        # vec_space = vector_space if vector_space is not None else {i: "1o" for i in indices}
         self.sph2cart = Sph2Cart(formula=symmetry)
         self.rtp_irreps = self.sph2cart.rtp_irreps
 
@@ -611,33 +508,40 @@ class MegaCartTensorOut(nn.Module):
             self.post_lin = None
 
         self.reduce_op = reduce_op
-        self.if_trace = if_iso and order == 2
+        self.output_field = output_field
 
     def forward(
-        self, data: Data, x_scalar: torch.Tensor, x_spherical: torch.Tensor
-    ) -> torch.Tensor:
+        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+        
+        batch = data[keys.BATCH]
+        node_scalar = data[keys.NODE_INVARIANT]
+        node_equi = data[keys.NODE_EQUIVARIANT]
+
         # self mix to expand the spherical features
-        x_in = self.selfmix_tp(x_spherical)
+        tp_in = self.selfmix_tp(node_equi)
         # get the weight for tensor product
-        tp_weight = self.weight_mlp(x_scalar)
+        tp_weight = self.weight_mlp(node_scalar)
         # tensor product
-        x_sph = self.tp(x_in, x_in, tp_weight)
+        out_equi = self.tp(tp_in, tp_in, tp_weight)
         if self.post_lin is not None:
-            x_sph = self.post_lin(x_sph)
+            out_equi = self.post_lin(out_equi)
         # cartesian transform
-        x_cart = self.sph2cart(x_sph)
+        out_cart = self.sph2cart(out_equi)
         if self.reduce_op is not None:
-            x_cart = scatter(x_cart, data.batch, dim=0, reduce=self.reduce_op)
-        if self.if_trace:
-            res = (
-                torch.diagonal(x_cart, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True) / 3.0
+            out_cart = scatter(out_cart, batch, dim=0, reduce=self.reduce_op)
+        
+        if self.isotropic:
+            assert out_cart.dim() == 3
+            cart_tensor = (
+                torch.diagonal(out_cart, dim1=-2, dim2=-1).mean(dim=-1)
             )
         else:
             # [y, z, x] -> [x, y, z]
-            for i_dim in range(1, x_cart.dim()):
-                x_cart = x_cart.roll(shifts=1, dims=i_dim)
-            res = x_cart
-        return res
+            for i_dim in range(1, out_cart.dim()):
+                out_cart = out_cart.roll(shifts=1, dims=i_dim)
+            cart_tensor = out_cart
+        return data, {self.output_field: cart_tensor}
 
 
 def resolve_output(mode: str, **kwargs) -> nn.Module:
@@ -646,10 +550,9 @@ def resolve_output(mode: str, **kwargs) -> nn.Module:
         "scalar": ScalarOut,
         "forcefield": ForceFieldOut,
         "charges": AtomicChargesOut,
-        "vector": VectorOut,
+        "vector": DipoleOut,
         "polar": PolarOut,
         "spatial": SpatialOut,
         "cartesian": CartTensorOut,
-        "megacart": MegaCartTensorOut,
     }
     return output_factory[mode](**kwargs)
