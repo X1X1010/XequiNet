@@ -25,7 +25,7 @@ def compile_model(args: argparse.Namespace) -> None:
     set_default_units(config.default_units)
 
     # build model
-    model = resolve_jit_model(config.model_name, **config.model_config)
+    model = resolve_jit_model(config.model_name, **config.model_kwargs)
     model.eval().to(device)
 
     model.load_state_dict(ckpt["model"])

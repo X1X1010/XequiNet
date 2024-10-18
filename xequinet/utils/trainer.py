@@ -34,7 +34,7 @@ class loss2file:
         return self.loss > other.loss
 
 
-class AverageMetric:
+class DistAverageMetric:
     def __init__(self, properties: Iterable, device: torch.device) -> None:
         self.device = device
         self.properties = {
@@ -126,14 +126,17 @@ class Trainer:
         self.dist_sampler = dist_sampler
         self.log = log
 
-        self.model_conf = config.model.model_config
+        self.model_conf = config.model.model_kwargs
 
         # set loss function
         self.lossfn = WeightedLoss(
             self.trainer_conf.lossfn, **self.trainer_conf.losses_weight
         )
         self.compute_forces = keys.FORCES in self.trainer_conf.losses_weight
-        self.compute_virial = keys.VIRIAL in self.trainer_conf.losses_weight or keys.STRESS in self.trainer_conf.losses_weight
+        self.compute_virial = (
+            keys.VIRIAL in self.trainer_conf.losses_weight
+            or keys.STRESS in self.trainer_conf.losses_weight
+        )
         # set optimizer
         self.optimizer = resolve_optimizer(
             optim_type=self.trainer_conf.optimizer,
@@ -179,7 +182,7 @@ class Trainer:
         # set l1 metric
         self.l1_metrics = L1Metric(*self.trainer_conf.losses_weight.keys())
         # loss recording, model saving and logging
-        self.meter = AverageMetric(
+        self.meter = DistAverageMetric(
             properties=self.l1_metrics.properties,
             device=device,
         )
@@ -243,7 +246,9 @@ class Trainer:
             self.meter.reset()
             data = data.to(self.device)
             # forward propagation
-            result = self.model(data.to_dict(), self.compute_forces, self.compute_virial)
+            result = self.model(
+                data.to_dict(), self.compute_forces, self.compute_virial
+            )
             loss, _ = self.lossfn(result, data)
             # backward propagation
             self.optimizer.zero_grad()
@@ -294,7 +299,9 @@ class Trainer:
         for data in self.valid_loader:
             data: XequiData  # for type annotation
             data = data.to(self.device)
-            result = valid_model(data.to_dict(), self.compute_forces, self.compute_virial)
+            result = valid_model(
+                data.to_dict(), self.compute_forces, self.compute_virial
+            )
             l1_losses = self.l1_metrics(result, data)
             for prop, (l1, n) in l1_losses.items():
                 self.meter.update(prop, l1, n)

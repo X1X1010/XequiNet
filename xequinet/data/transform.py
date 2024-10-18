@@ -12,6 +12,7 @@ from .radius_graph import radius_graph_pbc
 
 INT_MAX = 2**31 - 1
 
+
 class Transform(abc.ABC):
     @abc.abstractmethod
     def __call__(self, data: XequiData) -> XequiData:
@@ -110,6 +111,23 @@ class UnitTransform(Transform):
             if prop not in new_data:
                 continue
             new_data[prop] *= qc.unit_conversion(unit, self.default_units[prop])
+        return new_data
+
+
+class DeltaTransform(Transform):
+    def __init__(self, base_targets: Union[str, List[str]]) -> None:
+        self.base_targets = (
+            base_targets if isinstance(base_targets, list) else [base_targets]
+        )
+        self.targets = [keys.BASE_PROPERTIES[t] for t in self.base_targets]
+
+    def __call__(self, data: XequiData) -> XequiData:
+        new_data = data.clone()
+        for t, bt in zip(self.targets, self.base_targets):
+            assert t in new_data, f"Invalid target {t}"
+            assert bt in new_data, f"Invalid base target {bt}"
+            new_data[t] -= new_data[bt]
+            del new_data[bt]
         return new_data
 
 

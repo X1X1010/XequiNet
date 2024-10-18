@@ -43,9 +43,8 @@ def run_train(args: argparse.Namespace) -> None:
     world_size = int(os.environ["WORLD_SIZE"])
 
     # set logger (only log when rank0)
-    is_rank0 = local_rank == 0
     log = ZeroLogger(
-        is_rank0=is_rank0,
+        is_rank0=(local_rank == 0),
         output_dir=config.trainer.save_dir,
         log_file=config.trainer.log_file,
     )
@@ -87,23 +86,32 @@ def run_train(args: argparse.Namespace) -> None:
     )
 
     # set dataloader
+    sampler_seed = config.trainer.seed if config.trainer.seed is not None else 0
     train_sampler = DistributedSampler(
-        train_dataset, world_size, local_rank, shuffle=True
+        dataset=train_dataset,
+        num_replicas=world_size,
+        rank=local_rank,
+        seed=sampler_seed,
+        shuffle=True,
     )
     valid_sampler = DistributedSampler(
-        valid_dataset, world_size, local_rank, shuffle=False
+        dataset=valid_dataset,
+        num_replicas=world_size,
+        rank=local_rank,
+        seed=sampler_seed,
+        shuffle=False,
     )
     train_loader = DataLoader(
-        train_dataset,
-        batch_size=config.trainer.batch_size // world_size,
+        dataset=train_dataset,
+        batch_size=config.data.batch_size // world_size,
         sampler=train_sampler,
         num_workers=config.trainer.num_workers,
         pin_memory=True,
         drop_last=True,
     )
     valid_loader = DataLoader(
-        valid_dataset,
-        batch_size=config.trainer.valid_batch_size // world_size,
+        dataset=valid_dataset,
+        batch_size=config.data.valid_batch_size // world_size,
         sampler=valid_sampler,
         num_workers=0,
         pin_memory=True,
@@ -138,10 +146,10 @@ def run_train(args: argparse.Namespace) -> None:
     # -------------------  build model ------------------- #
     # initialize model
     model = resolve_model(
-        config.model.model_name,
+        model_name=config.model.model_name,
         node_shift=node_shift,
         node_scale=node_scale,
-        **config.model.model_config,
+        **config.model.model_kwargs,
     )
     log.s.info(model)
     model.to(device)
@@ -149,7 +157,7 @@ def run_train(args: argparse.Namespace) -> None:
     # distributed training
     find_unused = True if config.trainer.finetune else False
     ddp_model = DDP(
-        model,
+        module=model,
         device_ids=[local_rank],
         output_device=device,
         find_unused_parameters=find_unused,

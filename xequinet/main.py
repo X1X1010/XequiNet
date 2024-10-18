@@ -52,23 +52,6 @@ def main() -> None:
         default=None,
         help="Checkpoint file for testing.",
     )
-    parser.add_argument(
-        "--batch-size",
-        "-bs",
-        type=int,
-        default=32,
-        help="Batch size for testing or inference. (default: 32)",
-    )
-    parser.add_argument(
-        "--no-force",
-        action="store_true",
-        help="Whether testing without force when output mode is 'grad'.",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Whether testing force additionlly when output mode is 'scalar'.",
-    )
     # inference
     parser.add_argument(
         "--delta",

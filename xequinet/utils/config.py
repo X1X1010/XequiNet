@@ -7,7 +7,7 @@ class ModelConfig:
     """Config for the model"""
 
     model_name: str = "xpainn"
-    model_config: Dict[str, Any] = field(
+    model_kwargs: Dict[str, Any] = field(
         default_factory=lambda: dict(
             embed_basis="gfn2-xtb",
             aux_basis="aux56",
@@ -25,10 +25,7 @@ class ModelConfig:
             output_mode="scalar",
         )
     )
-    default_units: Dict[str, str] = field(
-        default_factory=lambda: dict(pos="Angstrom")
-    )
-
+    default_units: Dict[str, str] = field(default_factory=lambda: dict(pos="Angstrom"))
 
 
 @dataclass
@@ -36,8 +33,6 @@ class TrainerConfig:
     """Config for the trainer"""
 
     run_name: str = "xequinet"
-    batch_size: int = 64
-    valid_batch_size: int = 64
     ckpt_file: Optional[str] = None
     resume: bool = False
     finetune: bool = False
@@ -80,6 +75,8 @@ class DataConfig:
     node_shift: Union[float, bool] = False
     node_scale: Union[float, bool] = False
     max_num_samples: int = 1000000
+    batch_size: int = 64
+    valid_batch_size: int = 64
 
 
 @dataclass
@@ -94,6 +91,7 @@ class XequiConfig:
 @dataclass
 class MDConfig:
     """Config for the Molecular Dynamics with ASE"""
+
     ensembles: List[Dict[str, Any]] = field(default_factory=list)
     input_file: str = "input.xyz"
     model_file: str = "model.jit"

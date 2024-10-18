@@ -1,4 +1,4 @@
-from .config import MDConfig, ModelConfig, XequiConfig
+from .config import DataConfig, MDConfig, ModelConfig, XequiConfig
 from .functional import calculate_stats, distributed_zero_first
 from .logger import ZeroLogger
 from .qc import (
@@ -10,15 +10,16 @@ from .qc import (
 from .trainer import Trainer
 
 __all__ = [
-    "XequiConfig",
-    "ModelConfig",
+    "DataConfig",
     "MDConfig",
+    "ModelConfig",
+    "XequiConfig",
+    "calculate_stats",
+    "distributed_zero_first",
     "ZeroLogger",
-    "unit_conversion",
-    "set_default_units",
     "get_default_units",
     "get_embedding_tensor",
-    "distributed_zero_first",
-    "calculate_stats",
+    "set_default_units",
+    "unit_conversion",
     "Trainer",
 ]
