@@ -28,18 +28,20 @@ def compile_model(args: argparse.Namespace) -> None:
     model = resolve_jit_model(config.model_name, **config.model_kwargs)
     model.eval().to(device)
 
+    # load checkpoint
     model.load_state_dict(ckpt["model"])
     model_script = torch.jit.script(model)
 
-    extra_file = {
+    # save model
+    extra_files = {
         "cutoff_radius": model.cutoff_radius,
     }
-    extra_file.update(qc.ELEMENTS_DICT)
-    _extra_file = {k: str(v).encode("ascii") for k, v in extra_file.items()}
+    extra_files.update(qc.ELEMENTS_DICT)
+    _extra_files = {k: str(v).encode("ascii") for k, v in extra_files.items()}
 
     output_file = (
         f"{args.ckpt.split('/')[-1].split('.')[0]}.jit"
         if args.output is None
         else args.output
     )
-    model_script.save(output_file, _extra_files=_extra_file)
+    model_script.save(output_file, _extra_files=_extra_files)

@@ -1,5 +1,5 @@
 import argparse
-from typing import Any, Dict, Iterable, Tuple, cast
+from typing import Any, Dict, Iterable, Optional, Tuple, cast
 
 import torch
 from omegaconf import OmegaConf
@@ -43,6 +43,7 @@ class AverageMetric:
         return result
 
 
+@torch.no_grad()
 def test(
     model: torch.nn.Module,
     data_loader: DataLoader,
@@ -51,30 +52,37 @@ def test(
     device: torch.device,
     compute_forces: bool = False,
     compute_virial: bool = False,
-) -> Tuple[Dict[str, float], Dict[str, Any]]:
+    verbose: int = 0,
+) -> Tuple[Dict[str, float], Optional[Dict[str, Any]]]:
 
     data_list, results_list = [], []
     for data in data_loader:
         data: XequiData
         data = data.to(device)
-        result = model(data.to_dict(), compute_forces, compute_virial)
+        with torch.enable_grad():
+            result = model(data.to_dict(), compute_forces, compute_virial)
         l1_losses = l1_metric(result, data)
         for prop, (l1, n) in l1_losses.items():
             meter.update(prop, l1, n)
-        data_list.append(data)
-        results_list.append(result)
+        if verbose > 0:
+            data_list.append(data)
+            results_list.append(result)
     # reduce the meter
     reduced_l1 = meter.reduce()
-    # collate data
-    batch_data = Batch.from_data_list(data_list)
-    # concatenate results
-    cated_results = {}
-    for prop in results_list[0]:
-        cated_results[prop] = torch.cat(
-            [result[prop] for result in results_list], dim=0
-        )
+    if verbose > 0:
+        # collate data
+        batch_data = Batch.from_data_list(data_list)
+        # concatenate results
+        cated_results = {}
+        for prop in results_list[0]:
+            cated_results[prop] = torch.cat(
+                [result[prop] for result in results_list], dim=0
+            )
+        results = {"data": batch_data, "results": cated_results}
+    else:
+        results = None
 
-    return reduced_l1, {"data": batch_data, "results": cated_results}
+    return reduced_l1, results
 
 
 def run_test(args: argparse.Namespace) -> None:
@@ -151,6 +159,7 @@ def run_test(args: argparse.Namespace) -> None:
         device=device,
         compute_forces=compute_forces,
         compute_virial=compute_virial,
+        verbose=args.verbose,
     )
     if args.output is None:
         output_file = f"{args.config.split('/')[-1].split('.')[0]}_test.log"
@@ -170,6 +179,6 @@ def run_test(args: argparse.Namespace) -> None:
         f.write(tabulate([tabulate_data], headers=header, tablefmt="plain"))
         f.write("\n")
 
-    if args.verbose >= 1:
+    if args.verbose > 0:
         results_file = output_file.replace(".log", ".pt")
         torch.save(results, results_file)

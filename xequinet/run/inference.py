@@ -1,304 +1,190 @@
-import warnings
 import argparse
+from typing import Any, Dict, Optional, cast
 
+import ase.io
 import torch
-from torch_scatter import scatter
-from torch_cluster import radius_graph
+from ase.stress import full_3x3_to_voigt_6_stress
+from omegaconf import OmegaConf
+from tabulate import tabulate
+from torch_geometric.data import Batch
 from torch_geometric.loader import DataLoader
 
-try:
-    import tblite.interface as xtb
-except:
-    warnings.warn("xtb is not installed, xtb calculation will not be performed.")
-
-from ..nn import resolve_model
-from ..utils import (
-    NetConfig,
-    set_default_unit,
-    get_default_unit,
-    unit_conversion,
-    get_atomic_energy,
-    gen_3Dinfo_str,
-    radius_batch_pbc,
+from xequinet.data import (
+    NeighborTransform,
+    Transform,
+    XequiData,
+    datapoint_from_ase,
+    datapoint_to_xtb,
 )
-from ..data import TextDataset
+from xequinet.nn import resolve_model
+from xequinet.utils import (
+    ModelConfig,
+    get_default_units,
+    keys,
+    qc,
+    set_default_units,
+    unit_conversion,
+)
 
 
 @torch.no_grad()
-def predict_scalar(
+def inference(
     model: torch.nn.Module,
-    cutoff: float,
-    max_edges: int,
+    transform: Transform,
     dataloader: DataLoader,
     device: torch.device,
     output_file: str,
-    atom_sp: torch.Tensor,
-    base_method: str = None,
+    compute_forces: bool = False,
+    compute_virial: bool = False,
+    base_method: Optional[str] = None,
     verbose: int = 0,
-) -> None:
-    wf = open(output_file, "a")
-    p_unit, l_unit = get_default_unit()
+) -> Optional[Dict[str, Any]]:
+    # get default units
+    default_units = get_default_units()
+    # save the results if verbose > 0
+    data_list, results_list = [], []
+    # loop over the dataloader
     for data in dataloader:
-        if hasattr(data, "pbc") and data.pbc.any():
-            data.edge_index, data.shifts = radius_batch_pbc(
-                data.pos, data.pbc, data.lattice, cutoff, max_num_neighbors=max_edges
-            )
-            data = data.to(device)
-        else:
-            data = data.to(device)
-            data.edge_index = radius_graph(
-                data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges
-            )
-        # change the prediction unit to atomic unit
-        nn_preds = model(data).double() * unit_conversion(p_unit, "AU")
-        # the atomic reference is already in atomic unit
-        atom_refs = scatter(atom_sp[data.at_no], data.batch, dim=0).unsqueeze(-1)
-        for i in range(len(data)):
-            datum = data[i].cpu()
-            nn_pred = nn_preds[i].cpu()
-            atom_ref = atom_refs[i].cpu()
+        data: XequiData  # batch data
+        data = data.to(device)
+        data = transform(data)
+        batch = data[keys.BATCH]
+        with torch.enable_grad():
+            result = model(data.to_dict(), compute_forces, compute_virial)
+
+        if all(prop not in result for prop in keys.STANDARD_PROPERTIES):
+            if verbose < 1:
+                raise RuntimeError(
+                    "No standard properties found in the model output, so nothing will be printed. \
+                    Please set larger verbose for saving the results to pt file."
+                )
+            continue
+        # loop over the batch
+        for i in len(data):
+            datum: XequiData = data[i]  # single data point
+
+            # add semi-empirical results if using delta-learning
             if base_method is not None:
-                m_dict = {
-                    "gfn2-xtb": "GFN2-xTB",
-                    "gfn1-xtb": "GFN1-xTB",
-                    "ipea1-xtb": "IPEA1-xTB",
-                }
-                calc = xtb.Calculator(
-                    method=m_dict[base_method.lower()],
-                    numbers=datum.at_no.numpy(),
-                    positions=datum.pos.numpy() * unit_conversion(l_unit, "Bohr"),
-                    charge=int(datum.charge.item()),
-                    uhf=int(datum.spin.item()),
-                )
-                res = calc.singlepoint()
-                delta = res.get("energy")  # the delta value is already in atomic unit
-            else:
-                delta = 0.0
-            total = nn_pred + atom_ref + delta
-            if verbose >= 2:  # print coordinates
-                wf.write(
-                    gen_3Dinfo_str(
-                        datum.at_no,
-                        datum.pos
-                        * unit_conversion(l_unit, "Angstrom"),  # change to Angstrom
-                        title="Coordinates (Angstrom)",
+                xtb_calc = datapoint_to_xtb(datum, method=base_method)
+                xtb_res = xtb_calc.singlepoint()
+                if keys.TOTAL_ENERGY in result:
+                    xtb_energy = xtb_res.get("energy") * unit_conversion(
+                        "Hartree", default_units[keys.TOTAL_ENERGY]
                     )
-                )
-                wf.write(
-                    f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
-                )
-            if verbose >= 1:  # print detailed information
-                wf.write("NN Contribution         :")
-                for v_nn in nn_pred:
-                    wf.write(f"    {v_nn.item():10.7f} a.u.")
-                wf.write("\nSum of Atomic Reference :")
-                for v_at in atom_ref:
-                    wf.write(f"    {v_at.item():10.7f} a.u.")
-                if base_method is not None:
-                    wf.write("\nDelta Method Base       :")
-                    wf.write(f"    {delta.item():10.7f} a.u.")
-                wf.write("\n")
-            wf.write("Total Property          :")
-            for v_tot in total:
-                wf.write(f"    {v_tot.item():10.7f} a.u.")
-            wf.write("\n\n")
-            wf.flush()
-    wf.close()
-
-
-def predict_grad(
-    model: torch.nn.Module,
-    cutoff: float,
-    max_edges: int,
-    dataloader: DataLoader,
-    device: torch.device,
-    output_file: str,
-    atom_sp: torch.Tensor,
-    base_method: str = None,
-    verbose: int = 0,
-) -> None:
-    wf = open(output_file, "a")
-    p_unit, l_unit = get_default_unit()
-    for data in dataloader:
-        if hasattr(data, "pbc") and data.pbc.any():
-            data.edge_index, data.shifts = radius_batch_pbc(
-                data.pos, data.pbc, data.lattice, cutoff, max_num_neighbors=max_edges
-            )
-            data = data.to(device)
-        else:
-            data = data.to(device)
-            data.edge_index = radius_graph(
-                data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges
-            )
-        data.pos.requires_grad = True
-        nn_predEs, nn_predFs = model(data)
-        # change the prediction unit to atomic unit
-        nn_predEs *= unit_conversion(p_unit, "AU")
-        nn_predFs *= unit_conversion(f"{p_unit}/{l_unit}", "AU")
-        # the atomic reference is already in atomic unit
-        atom_Es = scatter(atom_sp[data.at_no], data.batch, dim=0)
-        for i in range(len(data)):
-            datum = data[i].cpu()
-            nn_predE = nn_predEs[i].cpu()
-            nn_predF = nn_predFs[i].cpu()
-            atom_E = atom_Es[i].cpu()
-            if base_method is not None:
-                m_dict = {
-                    "gfn2-xtb": "GFN2-xTB",
-                    "gfn1-xtb": "GFN1-xTB",
-                    "ipea1-xtb": "IPEA1-xTB",
-                }
-                calc = xtb.Calculator(
-                    method=m_dict[base_method.lower()],
-                    numbers=datum.at_no.numpy(),
-                    positions=datum.pos.numpy() * unit_conversion(l_unit, "Bohr"),
-                    charge=int(datum.charge.item()),
-                    uhf=int(datum.spin.item()),
-                )
-                res = calc.singlepoint()
-                d_ene = res.get("energy")  # the delta value is already in atomic unit
-                d_grad = res.get(
-                    "gradient"
-                )  # the delta gradient is already in atomic unit
-            else:
-                d_ene = 0.0
-                d_grad = torch.zeros_like(nn_predF)
-            totalE = nn_predE + atom_E + d_ene
-            totalF = nn_predF - d_grad
-            if verbose >= 2:  # print coordinates
-                wf.write(
-                    gen_3Dinfo_str(
-                        datum.at_no,
-                        datum.pos
-                        * unit_conversion(
-                            get_default_unit()[1], "Angstrom"
-                        ),  # change to Angstrom
-                        title="Coordinates (Angstrom)",
+                    result[keys.TOTAL_ENERGY][i] += xtb_energy
+                if keys.FORCES in result:
+                    xtb_forces = -xtb_res.get("gradient") * unit_conversion(
+                        "a.u.", default_units[keys.FORCES]
                     )
-                )
-                wf.write(
-                    f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
-                )
-            if verbose >= 1:  # print detailed information
-                wf.write("NN Contribution         :")
-                wf.write(f"    {nn_predE.item():10.7f} a.u.\n")
-                wf.write("Sum of Atomic Reference :")
-                wf.write(f"    {atom_E[i].item():10.7f} a.u.\n")
-                if base_method is not None:
-                    wf.write("Delta Method Base       :")
-                    wf.write(f"    {d_ene:10.7f} a.u.\n")
-            wf.write(f"Total Energy            :")
-            wf.write(f"    {totalE.item():10.7f} a.u.\n")
-            allFs, titles = [], []
-            if verbose >= 1 and base_method is not None:
-                allFs.extend([nn_predF, -d_grad])
-                titles.append(["NN Forces (a.u.)", "Delta Forces (a.u.)"])
-            allFs.append(totalF)
-            titles.append("Total Forces (a.u.)")
-            wf.write(gen_3Dinfo_str(datum.at_no, allFs, titles, precision=9))
-            wf.write("\n")
-            wf.flush()
-    wf.close()
-
-
-@torch.no_grad()
-def predict_vector(
-    model: torch.nn.Module,
-    cutoff: float,
-    max_edges: int,
-    dataloader: DataLoader,
-    device: torch.device,
-    output_file: str,
-    verbose: int = 0,
-) -> None:
-    wf = open(output_file, "a")
-    p_unit, l_unit = get_default_unit()
-    for data in dataloader:
-        if hasattr(data, "pbc") and data.pbc.any():
-            data.edge_index, data.shifts = radius_batch_pbc(
-                data.pos, data.pbc, data.lattice, cutoff, max_num_neighbors=max_edges
-            )
-            data = data.to(device)
-        else:
-            data = data.to(device)
-            data.edge_index = radius_graph(
-                data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges
-            )
-        pred = model(data)
-        pred *= unit_conversion(p_unit, "AU")
-        for i in range(len(data)):
-            datum = data[i]
-            vector = pred[i]
-            if verbose >= 2:  # print coordinates
-                wf.write(
-                    gen_3Dinfo_str(
-                        datum.at_no,
-                        datum.pos * unit_conversion(l_unit, "Angstrom"),
-                        title="Coordinates (Angstrom)",
+                    result[keys.FORCES][batch == i] += xtb_forces
+                if keys.VIRIAL in result:
+                    xtb_virial = xtb_res.get("virial") * unit_conversion(
+                        "a.u.", default_units[keys.VIRIAL]
                     )
-                )
-                wf.write(
-                    f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
-                )
-            wf.write(f"Vector Property (a.u.):\n")
-            wf.write(
-                f"X{vector[0].item():12.6f}  Y{vector[1].item():12.6f}  Z{vector[2].item():12.6f}\n\n"
-            )
-            wf.flush()
-    wf.close()
-
-
-@torch.no_grad()
-def predict_polar(
-    model: torch.nn.Module,
-    cutoff: float,
-    max_edges: int,
-    dataloader: DataLoader,
-    device: torch.device,
-    output_file: str,
-    verbose: int = 0,
-) -> None:
-    wf = open(output_file, "a")
-    p_unit, l_unit = get_default_unit()
-    for data in dataloader:
-        if hasattr(data, "pbc") and data.pbc.any():
-            data.edge_index, data.shifts = radius_batch_pbc(
-                data.pos, data.pbc, data.lattice, cutoff, max_num_neighbors=max_edges
-            )
-            data = data.to(device)
-        else:
-            data = data.to(device)
-            data.edge_index = radius_graph(
-                data.pos, r=cutoff, batch=data.batch, max_num_neighbors=max_edges
-            )
-        pred = model(data)
-        pred *= unit_conversion(p_unit, "AU")
-        for i in range(len(data)):
-            datum = data[i]
-            polar = pred[i]
-            if verbose >= 2:  # print coordinates
-                wf.write(
-                    gen_3Dinfo_str(
-                        datum.at_no,
-                        datum.pos * unit_conversion(l_unit, "Angstrom"),
-                        title="Coordinates (Angstrom)",
+                    result[keys.VIRIAL][i] += xtb_virial
+                if keys.ATOMIC_CHARGES in result:
+                    xtb_charges = xtb_res.get("charges") * unit_conversion(
+                        "e", default_units[keys.TOTAL_CHARGE]
                     )
-                )
-                wf.write(
-                    f"Charge {int(datum.charge.item())}   Multiplicity {int(datum.spin.item()) + 1}\n"
-                )
-            wf.write("Polar property (a.u.):\n")
-            wf.write(
-                f"XX{polar[0,0].item():12.6f}  XY{polar[0,1].item():12.6f}  XZ{polar[0,2].item():12.6f}\n"
+                    result[keys.ATOMIC_CHARGES][batch == i] += xtb_charges
+                if keys.DIPOLE in result:
+                    xtb_dipole = xtb_res.get("dipole") * unit_conversion(
+                        "a.u.", default_units[keys.DIPOLE]
+                    )
+                    result[keys.DIPOLE][i] += xtb_dipole
+
+            # write to output file
+            with open(output_file, "a") as f:
+
+                # write the cell information
+                if hasattr(datum, keys.PBC) and datum[keys.PBC].any():
+                    header = ["Cell", "x", "y", "z"]
+                    table = [
+                        ["a"] + [f"{x.item():.6f}" for x in datum[keys.CELL][0]],
+                        ["b"] + [f"{x.item():.6f}" for x in datum[keys.CELL][1]],
+                        ["c"] + [f"{x.item():.6f}" for x in datum[keys.CELL][2]],
+                    ]
+                    f.write(tabulate(table, headers=header, tablefmt="plain"))
+
+                # write the positions, forces, and charges
+                header = ["Atoms", "x", "y", "z"]
+                if keys.FORCES in result:
+                    header.extend(["Fx", "Fy", "Fz"])
+                if keys.ATOMIC_CHARGES in result:
+                    header.append("Charges")
+                table = []
+                for j, atomic_number in enumerate(datum.atomic_numbers):
+                    row = [qc.ELEMENTS_LIST[atomic_number]]
+                    row.extend([f"{x.item():.6f}" for x in datum[keys.POSITIONS][j]])
+                    if keys.FORCES in result:
+                        row.extend(
+                            [f"{x.item():.6f}" for x in result[keys.FORCES][i][j]]
+                        )
+                    if keys.ATOMIC_CHARGES in result:
+                        row.append(f"{result[keys.ATOMIC_CHARGES][i][j].item():.6f}")
+                    table.append(row)
+                f.write(tabulate(table, headers=header, tablefmt="simple"))
+                f.write("\n")
+
+                # write the energy
+                if keys.TOTAL_ENERGY in result:
+                    f.write(f"Total energy {result[keys.TOTAL_ENERGY][i].item():.6f}\n")
+
+                # write the stress
+                if keys.VIRIAL in result:
+                    header = ["", "xx", "yy", "zz", "xy", "xz", "yz"]
+                    stress = -result[keys.VIRIAL][i] / torch.det(datum[keys.CELL]).abs()
+                    stress = full_3x3_to_voigt_6_stress(stress.detach().cpu().numpy())
+                    table = [["Stress"] + [f"{x:.6f}" for x in stress]]
+                    f.write(tabulate(table, headers=header, tablefmt="plain"))
+                    f.write("\n")
+
+                # write the dipole
+                if keys.DIPOLE in result:
+                    header = ["", "x", "y", "z", ""]
+                    dipole = result[keys.DIPOLE][i]
+                    magnitude = torch.linalg.norm(dipole)
+                    table = [
+                        ["Dipole"]
+                        + [f"{x.item():.6f}" for x in dipole]
+                        + [f"{magnitude.item():.6f}"]
+                    ]
+                    f.write(tabulate(table, headers=header, tablefmt="plain"))
+                    f.write("\n")
+
+                # write the polarizability
+                if keys.POLARIZABILITY in result:
+                    header = ["", "xx", "yy", "zz", "xy", "xz", "yz", "iso"]
+                    polar = result[keys.POLARIZABILITY][i]
+                    isotropic = (torch.trace(polar) / 3.0).item()
+                    polar = full_3x3_to_voigt_6_stress(polar.detach().cpu().numpy())
+                    table = [
+                        ["Polarizability"]
+                        + [f"{x:.6f}" for x in polar]
+                        + [f"{isotropic:.6f}"]
+                    ]
+                    f.write(tabulate(table, headers=header, tablefmt="plain"))
+                    f.write("\n")
+                f.write("\n")
+        # save the results if verbose > 0
+        if verbose > 0:
+            data_list.append(data)
+            results_list.append(result)
+
+    # collate the results if verbose > 0
+    if verbose > 0:
+        # collate data
+        batch_data = Batch.from_data_list(data_list)
+        # concatenate results
+        cated_results = {}
+        for prop in results_list[0].keys():
+            cated_results[prop] = torch.cat(
+                [result[prop] for result in results_list], dim=0
             )
-            wf.write(
-                f"YX{polar[1,0].item():12.6f}  YY{polar[1,1].item():12.6f}  YZ{polar[1,2].item():12.6f}\n"
-            )
-            wf.write(
-                f"ZX{polar[2,0].item():12.6f}  ZY{polar[2,1].item():12.6f}  ZZ{polar[2,2].item():12.6f}\n\n"
-            )
-            wf.flush()
-    wf.close()
+        results = {"data": batch_data, "results": cated_results}
+        return results
+
+    return None
 
 
 def run_infer(args: argparse.Namespace) -> None:
@@ -306,82 +192,78 @@ def run_infer(args: argparse.Namespace) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # load checkpoint and config
-    ckpt = torch.load(args.ckpt, map_location=device)
-    config = NetConfig.model_validate(ckpt["config"])
+    if args.ckpt.endswith(".pt"):
+        ckpt = torch.load(args.ckpt, map_location=device)
+        model_config = OmegaConf.merge(
+            OmegaConf.structured(ModelConfig),
+            ckpt["config"],
+        )
+        # these will do nothing, only for type annotation
+        model_config = cast(ModelConfig, model_config)
 
-    # set default unit
-    set_default_unit(config.default_property_unit, config.default_length_unit)
+        # set default unit
+        set_default_units(model_config.default_units)
 
-    # adjust some configurations
-    if args.force:
-        config.output_mode = "grad"
-    elif config.output_mode == "grad":
-        config.output_mode = "scalar"
+        # build model
+        model = resolve_model(
+            model_config.model_name,
+            **model_config.model_kwargs,
+        ).to(device)
+        model.load_state_dict(ckpt["model"])
+        cutoff_radius = model.cutoff_radius
 
-    # build model
-    model = resolve_model(config).to(device)
-    model.load_state_dict(ckpt["model"])
+    elif args.ckpt.endswith(".jit"):
+
+        set_default_units(
+            {
+                keys.POSITIONS: "Angstrom",
+                keys.TOTAL_ENERGY: "eV",
+            }
+        )
+        _extra_files = {"cutoff_radius": b""}
+        model = torch.jit.load(
+            args.ckpt,
+            map_location=device,
+            _extra_files=_extra_files,
+        )
+        cutoff_radius = float(_extra_files["cutoff_radius"].decode())
+
     model.eval()
 
+    # whether to compute forces and virial
+    compute_forces = args.forces
+    compute_virial = args.stress
+
     # load input data
-    dataset = TextDataset(file=args.input)
+    atoms_list = ase.io.read(args.input, ":")
+    dataset = [datapoint_from_ase(atoms) for atoms in atoms_list]
+
     dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=0)
-    outp = (
+    output_file = (
         f"{args.input.split('/')[-1].split('.')[0]}.log"
         if args.output is None
         else args.output
     )
 
-    # get atom reference
-    atom_sp = get_atomic_energy(config.atom_ref) - get_atomic_energy(config.batom_ref)
-    atom_sp = atom_sp.to(device) * unit_conversion(get_default_unit()[0], "AU")
+    transform = NeighborTransform(cutoff_radius)
 
-    with open(outp, "w") as wf:
-        wf.write("XequiNet prediction\n")
-        wf.write(f"Coordinates in Angstrom, Properties in Atomic Unit\n\n")
-    if config.output_mode == "scalar":
-        predict_scalar(
-            model=model,
-            cutoff=config.cutoff,
-            max_edges=config.max_edges,
-            dataloader=dataloader,
-            device=device,
-            output_file=outp,
-            atom_sp=atom_sp,
-            base_method=args.delta,
-            verbose=args.verbose,
-        )
-    elif config.output_mode == "grad":
-        predict_grad(
-            model=model,
-            cutoff=config.cutoff,
-            max_edges=config.max_edges,
-            dataloader=dataloader,
-            device=device,
-            output_file=outp,
-            atom_sp=atom_sp,
-            base_method=args.delta,
-            verbose=args.verbose,
-        )
-    elif config.output_mode == "vector":
-        predict_vector(
-            model=model,
-            cutoff=config.cutoff,
-            max_edges=config.max_edges,
-            dataloader=dataloader,
-            device=device,
-            output_file=outp,
-            verbose=args.verbose,
-        )
-    elif config.output_mode == "polar":
-        predict_polar(
-            model=model,
-            cutoff=config.cutoff,
-            max_edges=config.max_edges,
-            dataloader=dataloader,
-            device=device,
-            output_file=outp,
-            verbose=args.verbose,
-        )
-    else:
-        raise ValueError(f"Unknown output mode: {config.output_mode}")
+    with open(output_file, "w") as f:
+        f.write(" --- XequiNet Inference\n")
+        for prop, unit in get_default_units().items():
+            f.write(f" --- Property: {prop} ---- Unit: {unit})\n")
+        f.write("\n")
+
+    results = inference(
+        model=model,
+        transform=transform,
+        dataloader=dataloader,
+        device=device,
+        output_file=output_file,
+        compute_forces=compute_forces,
+        compute_virial=compute_virial,
+        verbose=args.verbose,
+    )
+
+    if args.verbose > 0:
+        results_file = f"{args.input.split('/')[-1].split('.')[0]}.pt"
+        torch.save(results, results_file)

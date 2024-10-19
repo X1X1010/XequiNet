@@ -57,6 +57,14 @@ BASE_PROPERTIES: Final[Dict[str, str]] = {  # properties that are base propertie
     BASE_CHARGES: ATOMIC_CHARGES,
     BASE_DIPOLE: DIPOLE,
 }
+STANDARD_PROPERTIES: Final[set] = {  # properties that can be printed when inference
+    TOTAL_ENERGY,
+    FORCES,
+    VIRIAL,
+    DIPOLE,
+    POLARIZABILITY,
+}
+
 
 SPATIAL_EXTENT: Final[str] = "spatial_extent"
 

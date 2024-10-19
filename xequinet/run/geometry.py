@@ -3,29 +3,35 @@ from typing import Dict, Tuple
 
 import ase.io
 import numpy as np
-import tblite.interface as xtb
 import torch
 from pyscf import gto
 from pyscf.geomopt import as_pyscf_method, geometric_solver
 from pyscf.hessian import thermo
 
 from xequinet.data import (
+    NeighborTransform,
+    Transform,
     datapoint_from_ase,
     datapoint_from_pyscf,
     datapoint_to_pyscf,
     datapoint_to_xtb,
 )
-from xequinet.utils import keys
+from xequinet.utils import keys, set_default_units, unit_conversion
 
 
 def xequi_method(
     mole: gto.Mole,
+    transform: Transform,
     model: torch.jit.ScriptModule,
     device: torch.device,
     base_method: str = None,
 ) -> Tuple[float, np.ndarray]:
-    """Xequinet method for energy and gradient calculation."""
+    """
+    Xequinet method for energy and gradient calculation.
+    `energy` in Hartree and `gradient` in a.u.
+    """
     data = datapoint_from_pyscf(mole).to(device)
+    data = transform(data)
     result: Dict[str, torch.Tensor] = model(
         data.to_dict(),
         compute_forces=True,
@@ -33,6 +39,9 @@ def xequi_method(
     )
     energy = result[keys.TOTAL_ENERGY].item()
     nuc_grad = -result[keys.FORCES].detach().cpu().numpy()
+    # unit conversion
+    energy *= unit_conversion("eV", "Hartree")
+    nuc_grad *= unit_conversion("eV/Angstrom", "a.u.")
     if base_method is not None:
         xtb_calc = datapoint_to_xtb(data, method=base_method)
         xtb_res = xtb_calc.singlepoint()
@@ -42,11 +51,18 @@ def xequi_method(
 
 
 def calc_analytical_hessian(
-    mole: gto.Mole, model: torch.jit.ScriptModule, device: torch.device
+    mole: gto.Mole,
+    transform: Transform,
+    model: torch.jit.ScriptModule,
+    device: torch.device,
 ) -> tuple:
-    """Calculate the hessian with analytical second derivative."""
+    """
+    Calculate the hessian with analytical second derivative.
+    `energy` in Hartree and `Hessian` in a.u.
+    """
 
     data = datapoint_from_pyscf(mole).to(device)
+    data = transform(data)
     # In order to get the second derivative,
     # we need to set `retain_graph=True` and `create_graph=True`,
     # so we do this hack to set the model to training mode.
@@ -70,20 +86,24 @@ def calc_analytical_hessian(
                 nuc_grad[i, j], pos, retain_graph=True
             )[0]
     hessian = hessian.cpu().numpy()
+    # unit conversion
+    energy *= unit_conversion("eV", "Hartree")
+    hessian *= unit_conversion("eV/Angstrom^2", "a.u.")
     return energy, hessian
 
 
 def calc_numerical_hessian(
     mole: gto.Mole,
+    transform: Transform,
     model: torch.nn.Module,
     device: torch.device,
     base_method: str = None,
 ) -> Tuple[float, np.ndarray]:
     """Calculate the hessian with numerical second derivative."""
-    energy, _ = xequi_method(mole, model, device, base_method)
+    energy, _ = xequi_method(mole, transform, model, device, base_method)
     hessian = np.zeros((mole.natm, mole.natm, 3, 3))
     atomic_numbers = mole.atom_charges()
-    pos = mole.atom_coords()
+    pos = mole.atom_coords(unit="Bohr")
     h = 1e-5
     for i in range(mole.natm):
         for j in range(3):
@@ -93,14 +113,14 @@ def calc_numerical_hessian(
                 unit="Bohr",
                 charge=mole.charge,
             )
-            _, gfwd = xequi_method(d_mol, model, device, base_method)
+            _, gfwd = xequi_method(d_mol, transform, model, device, base_method)
             pos[i, j] -= 2 * h
             d_mol = gto.M(
                 atom=[(a, c) for a, c in zip(atomic_numbers, pos)],
                 unit="Bohr",
                 charge=mole.charge,
             )
-            _, gbak = xequi_method(d_mol, model, device, base_method)
+            _, gbak = xequi_method(d_mol, transform, model, device, base_method)
             pos[i, j] += h
             hessian[i, :, j, :] = (gfwd - gbak) / (2 * h)
     return energy, hessian
@@ -136,11 +156,21 @@ def run_opt(args: argparse.Namespace) -> None:
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # set default units, Angstrom for positions and eV for energy
+    set_default_units(
+        {
+            keys.POSITIONS: "Angstrom",
+            keys.TOTAL_ENERGY: "eV",
+        }
+    )
+
     # load jit model
-    _extra_file = {"cutoff_radius": b""}
+    _extra_files = {"cutoff_radius": b""}
     model = torch.jit.load(
-        args.ckpt, map_location=device, _extra_files=_extra_file
+        args.ckpt, map_location=device, _extra_files=_extra_files
     ).eval()
+    cutoff_radius = float(_extra_files["cutoff_radius"].decode())
+    transform = NeighborTransform(cutoff_radius)
 
     atoms_list = ase.io.read(args.input, index=":")
     # loop over molecules
@@ -149,7 +179,7 @@ def run_opt(args: argparse.Namespace) -> None:
         mole = datapoint_to_pyscf(data)
         # create a fake method as pyscf method, which returns energy and gradient
         fake_method = as_pyscf_method(
-            mole, lambda m: xequi_method(m, model, device, args.delta)
+            mole, lambda m: xequi_method(m, transform, model, device, args.delta)
         )
         if args.no_opt:  # given a optimized geometry, so copy the molecule
             conv = True
@@ -191,7 +221,9 @@ def run_opt(args: argparse.Namespace) -> None:
             with open(opt_out, "a") as f:
                 f.write(f"{new_mole.natm}\n")
                 if conv:
-                    energy, _ = xequi_method(new_mole, model, device, args.delta)
+                    energy, _ = xequi_method(
+                        new_mole, transform, model, device, args.delta
+                    )
                     f.write(f"Energy: {energy:10.10f}\n")
                 else:
                     f.write(f"Warning!! Optimization not converged!!\n")

@@ -1,19 +1,19 @@
+import json
 import os.path as osp
-from typing import TypeVar, Optional, Union, Literal, Tuple, List
+import pickle
+from typing import Dict, List, Literal, Optional, Tuple, TypeVar, Union
 
 import lmdb
-import pickle
-import json
 import torch
 import torch.utils.data as torch_data
 
 from .transform import (
-    Transform,
-    NeighborTransform,
-    UnitTransform,
     DataTypeTransform,
     DeltaTransform,
+    NeighborTransform,
     SequentialTransform,
+    Transform,
+    UnitTransform,
 )
 
 T = TypeVar("T")
@@ -138,16 +138,16 @@ def create_lmdb_dataset(
     # load the split and return the dataset(s)
     if mode == "train":
         with open(split_path, "r") as f:
-            split = json.load(f)
-            train_indices = split["train"]
-            valid_indices = split["valid"]
+            split_dict: Dict[str, List[int]] = json.load(f)
+            train_indices = split_dict["train"]
+            valid_indices = split_dict["valid"]
         train_dataset = torch_data.Subset(dataset, train_indices)
         valid_dataset = torch_data.Subset(dataset, valid_indices)
         return train_dataset, valid_dataset
     elif mode == "test":
         with open(split_path, "r") as f:
-            split = json.load(f)
-            test_indices = split["test"]
+            split_dict: Dict[str, List[int]] = json.load(f)
+            test_indices = split_dict["test"]
         test_dataset = torch_data.Subset(dataset, test_indices)
         return test_dataset
     else:

@@ -54,6 +54,16 @@ def main() -> None:
     )
     # inference
     parser.add_argument(
+        "--forces",
+        action="store_true",
+        help="Whether to compute forces.",
+    )
+    parser.add_argument(
+        "--stress",
+        action="store_true",
+        help="Whether to compute stress.",
+    )
+    parser.add_argument(
         "--delta",
         "-d",
         type=str,

@@ -1,4 +1,5 @@
-from typing import Tuple, List
+from typing import List, Tuple
+
 import torch
 
 
@@ -120,7 +121,7 @@ def radius_graph_pbc(
         B: torch.Tensor,
         cutoff: float,
     ) -> torch.Tensor:
-        D = torch.cdist(A, B)
+        D = torch.cdist(A, B, compute_mode="donot_use_mm_for_euclid_dist")
         idx = torch.nonzero(torch.logical_and(D < cutoff, D > 0.01), as_tuple=False)
         return idx
 
