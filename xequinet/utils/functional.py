@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
 from torch_geometric.loader import DataLoader
 
-from . import keys
+from .. import keys
 from .lr_scheduler import SmoothReduceLROnPlateau, get_polynomial_decay_schedule
 from .qc import ELEMENTS_LIST
 
@@ -172,4 +172,3 @@ def resolve_warmup_scheduler(
         )
     else:
         raise NotImplementedError(f"Unsupported warmup scheduler {warm_type}")
-

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from pyscf import gto
 
-from xequinet.utils import keys
+from xequinet import keys
 
 
 def gen_units_dict():

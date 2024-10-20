@@ -1,4 +1,4 @@
-from typing import Dict, Final
+from typing import Dict, Final, List, Set
 
 # basic keys in datapoints
 POSITIONS: Final[str] = "pos"
@@ -10,6 +10,8 @@ PBC: Final[str] = "pbc"
 # keys for collated batches
 BATCH: Final[str] = "batch"
 BATCH_PTR: Final[str] = "ptr"
+NUM_GRAPHS: Final[str] = "num_graphs"
+# MULTI_GRAPH_KEYS: Final[List[str]] = [BATCH, BATCH_PTR, NUM_GRAPHS]
 # keys for long-range interactions
 LONG_EDGE_INDEX: Final[str] = "long_edge_index"
 LONG_EDGE_LENGTH: Final[str] = "long_edge_length"
@@ -46,7 +48,7 @@ DIPOLE_MAGNITUDE: Final[str] = "dipole_magnitude"
 POLARIZABILITY: Final[str] = "polarizability"
 ISO_POLARIZABILITY: Final[str] = "iso_polarizability"
 
-GRAD_PROPERTIES: Final[set] = {  # properties that are gradients got by autograd
+GRAD_PROPERTIES: Final[Set[str]] = {  # properties that are gradients got by autograd
     FORCES,
     BASE_FORCES,
     VIRIAL,
@@ -57,7 +59,9 @@ BASE_PROPERTIES: Final[Dict[str, str]] = {  # properties that are base propertie
     BASE_CHARGES: ATOMIC_CHARGES,
     BASE_DIPOLE: DIPOLE,
 }
-STANDARD_PROPERTIES: Final[set] = {  # properties that can be printed when inference
+STANDARD_PROPERTIES: Final[
+    Set[str]
+] = {  # properties that can be printed when inference
     TOTAL_ENERGY,
     FORCES,
     VIRIAL,

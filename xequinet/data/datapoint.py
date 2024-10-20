@@ -3,13 +3,26 @@ from typing import Optional
 import torch
 from torch_geometric.data import Data
 
+from xequinet import keys
+
 
 class XequiData(Data):
+
+    # mandatory_keys = [keys.ATOMIC_NUMBERS, keys.POSITIONS]
+
     # for type annotation
     atomic_numbers: torch.Tensor
     pos: torch.Tensor
     edge_index: torch.Tensor
     batch: torch.Tensor
+
+    # additional_keys = [
+    #     keys.PBC, keys.CELL, keys.EDGE_INDEX, keys.CELL_OFFSETS,
+    #     keys.TOTAL_CHARGE, keys.TOTAL_ENERGY, keys.FORCES,
+    #     keys.VIRIAL, keys.ATOMIC_CHARGES, keys.DIPOLE,
+    #     keys.BASE_ENERGY, keys.BASE_FORCES, keys.BASE_CHARGES, keys.BASE_DIPOLE,
+    # ]
+    # recognized_keys = mandatory_keys + additional_keys + keys.MULTI_GRAPH_KEYS
 
     def __init__(
         self,
@@ -40,18 +53,18 @@ class XequiData(Data):
                 and self.edge_index.shape[0] == 2
                 and self.edge_index.dtype == torch.long
             )
-        # positions
-        assert (
-            isinstance(self.pos, torch.Tensor)
-            and self.pos.dim() == 2
-            and self.pos.shape[1] == 3
-        )
-        n_atoms = self.pos.shape[0]
-        dtype = self.pos.dtype
+        # positions and atomic numbers
+        n_atoms: Optional[int] = None
+        dtype: Optional[torch.dtype] = None
+        if self.pos is not None or atomic_numbers is not None:
+            assert self.pos.dim() == 2 and self.pos.shape[1] == 3
+            n_atoms = self.pos.shape[0]
+            dtype = self.pos.dtype
 
-        # atomic_numbers
-        assert atomic_numbers.shape == (n_atoms,) and atomic_numbers.dtype == torch.int
-        self.atomic_numbers = atomic_numbers
+            assert (
+                atomic_numbers.shape == (n_atoms,) and atomic_numbers.dtype == torch.int
+            )
+            self.atomic_numbers = atomic_numbers
 
         # pbc and cell
         if pbc is not None or cell is not None:

@@ -8,6 +8,7 @@ from pyscf import gto
 from pyscf.geomopt import as_pyscf_method, geometric_solver
 from pyscf.hessian import thermo
 
+from xequinet import keys
 from xequinet.data import (
     NeighborTransform,
     Transform,
@@ -16,7 +17,7 @@ from xequinet.data import (
     datapoint_to_pyscf,
     datapoint_to_xtb,
 )
-from xequinet.utils import keys, set_default_units, unit_conversion
+from xequinet.utils import set_default_units, unit_conversion
 
 
 def xequi_method(

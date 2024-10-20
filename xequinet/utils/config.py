@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -45,9 +45,9 @@ class TrainerConfig:
     losses_weight: Dict[str, float] = field(default_factory=lambda: dict(energy=1.0))
     grad_clip: Optional[float] = None
     optimizer: str = "adamW"
-    optim_kwargs: Dict[str, Any] = field(default_factory=dict)
+    optimizer_kwargs: Dict[str, Any] = field(default_factory=dict)
     lr_scheduler: str = "cosine_annealing"
-    lr_sche_kwargs: Dict[str, Any] = field(default_factory=dict)
+    lr_scheduler_kwargs: Dict[str, Any] = field(default_factory=dict)
     early_stop: Optional[int] = None
     ema_decay: Optional[float] = None
     seed: Optional[int] = None
@@ -56,8 +56,8 @@ class TrainerConfig:
     save_dir: str = "./"
     best_k: int = 1
     log_file: str = "loss.log"
-    log_step: int = 50
-    log_epoch: int = 1
+    log_steps: int = 50
+    log_epochs: int = 1
 
 
 @dataclass
@@ -69,11 +69,11 @@ class DataConfig:
     split: str = "split"
     # Note: the default values for the following fields are not the values of the dataset,
     #       but the default values you want to use in the training.
-    targets: Union[str, List[str]] = "energy"
-    base_targets: Optional[Union[str, List[str]]] = None
+    targets: List[str] = field(default_factory=lambda: ["energy"])
+    base_targets: Optional[List[str]] = None
     default_dtype: str = "float32"
-    node_shift: Union[float, bool] = False
-    node_scale: Union[float, bool] = False
+    node_shift: Any = False
+    node_scale: Any = False
     max_num_samples: int = 1000000
     batch_size: int = 64
     valid_batch_size: int = 64

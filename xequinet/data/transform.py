@@ -1,11 +1,12 @@
 import abc
 import functools
-from typing import Dict, Iterable, List, Union
+from typing import Dict, Iterable, Union
 
 import torch
 from torch_cluster import radius_graph
 
-from xequinet.utils import keys, qc
+from xequinet import keys
+from xequinet.utils import qc
 
 from .datapoint import XequiData
 from .radius_graph import radius_graph_pbc
@@ -25,7 +26,7 @@ class NeighborTransform(Transform):
 
     def __call__(self, data: XequiData) -> XequiData:
         device = data.pos.device
-        num_graphs = data.num_graphs if hasattr(data, "num_graphs") else 1
+        num_graphs = data[keys.NUM_GRAPHS] if hasattr(data, keys.NUM_GRAPHS) else 1
         if num_graphs > 1:
             assert hasattr(data, keys.BATCH)
             n_nodes_per_graph = data.ptr[1:] - data.ptr[:-1]  # [num_graphs]
@@ -115,9 +116,9 @@ class UnitTransform(Transform):
 
 
 class DeltaTransform(Transform):
-    def __init__(self, base_targets: Union[str, List[str]]) -> None:
+    def __init__(self, base_targets: Union[str, Iterable[str]]) -> None:
         self.base_targets = (
-            base_targets if isinstance(base_targets, list) else [base_targets]
+            base_targets if isinstance(base_targets, Iterable) else [base_targets]
         )
         self.targets = [keys.BASE_PROPERTIES[t] for t in self.base_targets]
 

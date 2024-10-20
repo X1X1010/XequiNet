@@ -3,7 +3,8 @@ import tblite.interface as xtb
 import torch
 from pyscf import gto, pbc
 
-from xequinet.utils import get_default_units, keys, unit_conversion
+from xequinet import keys
+from xequinet.utils import get_default_units, unit_conversion
 
 from .datapoint import XequiData
 
@@ -117,7 +118,7 @@ def datapoint_to_xtb(datapoint: XequiData, method: str = "GFN1-xTB"):
     pos = datapoint.pos.numpy() * pos_factor
     charge = datapoint.charge.item()
     if hasattr(datapoint, keys.CELL) and datapoint.cell is not None:
-        cell = datapoint.cell.view(3, 3).numpy()
+        cell = datapoint.cell.view(3, 3).numpy() * pos_factor
     else:
         cell = None
     if hasattr(datapoint, keys.PBC) and datapoint.pbc is not None:

@@ -10,8 +10,9 @@ from torch.optim.swa_utils import AveragedModel
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
+from xequinet import keys
 from xequinet.data import XequiData
-from xequinet.utils import get_default_units, keys
+from xequinet.utils import get_default_units
 
 from .config import XequiConfig
 from .functional import (
@@ -142,7 +143,7 @@ class Trainer:
             optim_type=self.trainer_conf.optimizer,
             params=filter(lambda p: p.requires_grad, model.parameters()),
             lr=self.trainer_conf.max_lr,
-            **self.trainer_conf.optim_kwargs,
+            **self.trainer_conf.optimizer_kwargs,
         )
         # set lr scheduler
         self.lr_scheduler = resolve_lr_scheduler(
@@ -152,7 +153,7 @@ class Trainer:
             min_lr=self.trainer_conf.min_lr,
             max_epochs=self.trainer_conf.max_epochs,
             steps_per_epoch=len(train_loader),
-            **self.trainer_conf.lr_sche_kwargs,
+            **self.trainer_conf.lr_scheduler_kwargs,
         )
         # set warmup scheduler
         if self.trainer_conf.lr_scheduler == "plateau":
@@ -273,8 +274,9 @@ class Trainer:
                 self.meter.update(prop, l1, n)
 
             # logging
-            if self.epoch % self.trainer_conf.log_epoch == 0 and (
-                step % self.trainer_conf.log_step == 0 or step == len(self.train_loader)
+            if self.epoch % self.trainer_conf.log_epochs == 0 and (
+                step % self.trainer_conf.log_steps == 0
+                or step == len(self.train_loader)
             ):
                 reduced_l1 = self.meter.reduce()
                 header = ["", "Epoch", "Step", "LR"]
@@ -288,9 +290,11 @@ class Trainer:
                 tabulate_data.extend(
                     list(map(lambda x: f"{x:.7f}", reduced_l1.values()))
                 )
-                self.log.f.info(
-                    tabulate([tabulate_data], headers=header, tablefmt="plain")
-                )
+                lines = tabulate(
+                    [tabulate_data], headers=header, tablefmt="plain"
+                ).split("\n")
+                for line in lines:
+                    self.log.f.info(line)
 
     def validate(self) -> None:
         valid_model = self.model.module if self.ema_model is None else self.ema_model
@@ -319,14 +323,18 @@ class Trainer:
             valid_model.module,
             f"{self.trainer_conf.save_dir}/{self.trainer_conf.run_name}_last.pt",
         )
-        if self.epoch % self.trainer_conf.log_epoch == 0:
+        if self.epoch % self.trainer_conf.log_epochs == 0:
             header = [""]
             tabulate_data = (
                 ["Validation MAE"] if self.ema_model is None else ["EMA Valid MAE"]
             )
             header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
             tabulate_data.extend(list(map(lambda x: f"{x:.7f}", reduced_l1.values())))
-            self.log.f.info(tabulate([tabulate_data], headers=header, tablefmt="plain"))
+            lines = tabulate([tabulate_data], headers=header, tablefmt="plain").split(
+                "\n"
+            )
+            for line in lines:
+                self.log.f.info(line)
 
     def start(self) -> None:
         self.log.f.info(" --- Start training")

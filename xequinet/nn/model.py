@@ -1,9 +1,9 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, Iterable, Optional, Union
 
 import torch
 import torch.nn as nn
 
-from xequinet.utils import keys
+from xequinet import keys
 
 from .electronic import HierarchicalCutoff
 from .output import resolve_output
@@ -94,7 +94,7 @@ def compute_edge_data(
 
 
 class BaseModel(nn.Module):
-    
+
     cutoff_radius: float
 
     def forward(
@@ -166,8 +166,8 @@ class XPaiNN(BaseModel):
             )
             self.body_blocks.extend([message, update])
 
-        output_modes: Union[str, List[str]] = kwargs.get("output_modes", ["scalar"])
-        if not isinstance(output_modes, list):
+        output_modes: Union[str, Iterable[str]] = kwargs.get("output_modes", ["scalar"])
+        if not isinstance(output_modes, Iterable):
             output_modes = [output_modes]
         self.output_blocks = nn.ModuleList()
         for mode in output_modes:

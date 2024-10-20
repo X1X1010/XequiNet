@@ -4,10 +4,9 @@ from typing import Dict, Iterable
 import torch
 import torch.nn as nn
 from e3nn import o3
-from scipy import constants
 from torch_geometric.utils import softmax
 
-from xequinet.utils import get_default_units, keys, unit_conversion
+from xequinet import keys
 
 from .o3layer import (
     EquivariantDot,
@@ -74,7 +73,8 @@ class XEmbedding(nn.Module):
         data[keys.ENVELOPE_FUNCTION] = fcut
         # calculate spherical harmonics  [x, y, z] -> [y, z, x]
         rsh = self.sph_harm(
-            vectors[:, [1, 2, 0]]
+            # i.e. vectors[:, [1, 2, 0]]
+            vectors.index_select(1, torch.tensor([1, 2, 0], device=vectors.device))
         )  # unit vector, normalized by component
         data[keys.SPHERICAL_HARMONICS] = rsh
 
@@ -138,23 +138,29 @@ class XPainnMessage(nn.Module):
         center_idx = edge_index[keys.CENTER_IDX]
         neighbor_idx = edge_index[keys.NEIGHBOR_IDX]
 
-        inv_out = self.scalar_mlp(node_scalar)
+        scalar_out = self.scalar_mlp(node_scalar)
         filter_weight = self.rbf_lin(rbf) * fcut
-        filter_out = inv_out[neighbor_idx] * filter_weight
+        # i.e. scalar_out[neighbor_idx]
+        filter_out = scalar_out.index_select(0, neighbor_idx) * filter_weight
 
-        gate_state_equi, gate_edge_equi, message_invt = torch.split(
+        gate_state_equi, gate_edge_equi, message_scalar = torch.split(
             filter_out,
             [self.node_num_irreps, self.node_num_irreps, self.node_dim],
             dim=-1,
         )
-        message_equi = self.rsh_conv(node_equi[neighbor_idx], gate_state_equi)
+        # i.e. node_equi[neighbor_idx]
+        message_equi = self.rsh_conv(
+            node_equi.index_select(0, neighbor_idx), gate_state_equi
+        )
         edge_equi = self.rsh_conv(rsh, gate_edge_equi)
         message_equi = message_equi + edge_equi
 
-        ori_invt = data[keys.NODE_INVARIANT]
+        ori_scalar = data[keys.NODE_INVARIANT]
         ori_equi = data[keys.NODE_EQUIVARIANT]
-        data[keys.NODE_INVARIANT] = ori_invt.index_add(0, center_idx, message_invt)
+        data[keys.NODE_INVARIANT] = ori_scalar.index_add(0, center_idx, message_scalar)
         data[keys.NODE_EQUIVARIANT] = ori_equi.index_add(0, center_idx, message_equi)
+        # data[keys.NODE_INVARIANT].index_add_(0, center_idx, message_scalar)
+        # data[keys.NODE_EQUIVARIANT].index_add_(0, center_idx, message_equi)
 
         return data
 
@@ -207,8 +213,8 @@ class XPainnUpdate(nn.Module):
         U_equi = self.update_U(node_equi)
         V_equi = self.update_V(node_equi)
 
-        V_invt = self.invariant(V_equi)
-        mlp_in = torch.cat([node_scalar, V_invt], dim=-1)
+        V_scalar = self.invariant(V_equi)
+        mlp_in = torch.cat([node_scalar, V_scalar], dim=-1)
         mlp_out = self.update_mlp(mlp_in)
 
         a_vv, a_sv, a_ss = torch.split(
@@ -217,12 +223,15 @@ class XPainnUpdate(nn.Module):
         d_equi = self.rsh_conv(U_equi, a_vv)
         inner_prod = self.equidot(U_equi, V_equi)
         inner_prod = self.dot_lin(inner_prod)
-        d_invt = a_sv * inner_prod + a_ss
+        d_scalar = a_sv * inner_prod + a_ss
 
-        ori_invt = data[keys.NODE_INVARIANT]
+        ori_scalar = data[keys.NODE_INVARIANT]
         ori_equi = data[keys.NODE_EQUIVARIANT]
-        data[keys.NODE_INVARIANT] = ori_invt + d_invt
+        data[keys.NODE_INVARIANT] = ori_scalar + d_scalar
         data[keys.NODE_EQUIVARIANT] = ori_equi + d_equi
+        # data[keys.NODE_INVARIANT].add_(d_scalar)
+        # data[keys.NODE_EQUIVARIANT].add_(d_equi)
+
         return data
 
 

@@ -11,6 +11,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
+from xequinet import keys
 from xequinet.data import create_lmdb_dataset
 from xequinet.nn import resolve_model
 from xequinet.utils import (
@@ -19,7 +20,6 @@ from xequinet.utils import (
     ZeroLogger,
     calculate_stats,
     distributed_zero_first,
-    keys,
     set_default_units,
 )
 

@@ -5,7 +5,8 @@ import torch
 import torch.nn as nn
 from scipy import constants
 
-from xequinet.utils import get_default_units, keys, unit_conversion
+from xequinet import keys
+from xequinet.utils import get_default_units, unit_conversion
 
 from .rbf import resolve_cutoff
 
@@ -25,9 +26,11 @@ class HierarchicalCutoff(nn.Module):
 
         ori_edge_index = data[keys.EDGE_INDEX]
         ori_edge_length = data[keys.EDGE_LENGTH]
+        ori_edge_vector = data[keys.EDGE_VECTOR]
         edge_mask = ori_edge_length < self.cutoff
         data[keys.EDGE_INDEX] = ori_edge_index[:, edge_mask]
         data[keys.EDGE_LENGTH] = ori_edge_length[edge_mask]
+        data[keys.EDGE_VECTOR] = ori_edge_vector[edge_mask]
         data[keys.LONG_EDGE_INDEX] = ori_edge_index
         data[keys.LONG_EDGE_LENGTH] = ori_edge_length
 
@@ -64,9 +67,7 @@ class CoulombWithCutoff(nn.Module):
             atomic_energies = data[keys.ATOMIC_ENERGIES]
         else:
             atomic_energies = torch.zeros_like(atomic_charges)
-        atomic_energies = atomic_energies.index_add(
-            0, center_idx, pair_energies
-        )
+        atomic_energies = atomic_energies.index_add(0, center_idx, pair_energies)
         data[keys.ATOMIC_ENERGIES] = atomic_energies
 
         return data

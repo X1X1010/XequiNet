@@ -6,7 +6,8 @@ import torch.nn as nn
 from e3nn import o3
 from torch_scatter import scatter, scatter_sum
 
-from xequinet.utils import keys, qc
+from xequinet import keys
+from xequinet.utils import qc
 
 from .electronic import CoulombWithCutoff
 from .o3layer import Gate, resolve_activation
@@ -52,7 +53,10 @@ class ScalarOut(nn.Module):
         self.output_field = output_field
 
     def forward(
-        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+        self,
+        data: Dict[str, torch.Tensor],
+        f: bool = False,
+        v: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
 
         batch = data[keys.BATCH]
@@ -232,26 +236,30 @@ class AtomicChargesOut(nn.Module):
             self.coulomb = CoulombWithCutoff(coulomb_cutoff)
 
     def forward(
-        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+        self,
+        data: Dict[str, torch.Tensor],
+        f: bool = False,
+        v: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
 
         node_scalar = data[keys.NODE_INVARIANT]
         batch = data[keys.BATCH]
-        raw_charges = self.out_mlp(node_scalar).reshape(-1)
+        atomic_charges = self.out_mlp(node_scalar).reshape(-1)
         if self.conservation:
-            raw_total_charge = scatter_sum(raw_charges, batch, dim=0)
+            raw_total_charge = scatter_sum(atomic_charges, batch, dim=0)
             num_atoms = scatter_sum(
-                src=torch.ones_like(raw_charges),
+                src=torch.ones_like(atomic_charges),
                 index=batch,
                 dim=0,
             )
             if keys.TOTAL_CHARGE in data:
                 total_charge = data[keys.TOTAL_CHARGE]
             else:
-                total_charge = torch.zeros((num_atoms,), dtype=torch.int, device=batch.device)
-            atomic_charges = raw_charges + (total_charge - raw_total_charge) / num_atoms
-        else:
-            atomic_charges = raw_charges
+                total_charge = torch.zeros(
+                    (num_atoms,), dtype=torch.int, device=batch.device
+                )
+            delta_charge = (total_charge - raw_total_charge) / num_atoms
+            atomic_charges += delta_charge.index_select(0, batch)
 
         data[keys.ATOMIC_CHARGES] = atomic_charges
         result = {keys.ATOMIC_CHARGES: atomic_charges}
@@ -301,16 +309,17 @@ class DipoleOut(nn.Module):
         self.magnitude = magnitude
 
     def forward(
-        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+        self,
+        data: Dict[str, torch.Tensor],
+        f: bool = False,
+        v: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-        
+
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
         node_equi = data[keys.NODE_EQUIVARIANT]
 
-        equi_out = self.equi_out_mlp(node_equi)[
-            :, [2, 0, 1]
-        ]  # [y, z, x] -> [x, y, z]
+        equi_out = self.equi_out_mlp(node_equi)[:, [2, 0, 1]]  # [y, z, x] -> [x, y, z]
         scalar_out = self.scalar_out_mlp(node_scalar)
         dipole = scatter_sum(
             src=equi_out * scalar_out,
@@ -366,7 +375,10 @@ class PolarOut(nn.Module):
         self.isotropic = isotropic
 
     def forward(
-        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+        self,
+        data: Dict[str, torch.Tensor],
+        f: bool = False,
+        v: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
 
         batch = data[keys.BATCH]
@@ -409,6 +421,7 @@ class PolarOut(nn.Module):
 
 class SpatialOut(nn.Module):
     masses: torch.Tensor
+
     def __init__(
         self,
         node_dim: int = 128,
@@ -435,16 +448,17 @@ class SpatialOut(nn.Module):
         self.register_buffer("masses", torch.Tensor(qc.ATOM_MASS))
 
     def forward(
-        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+        self,
+        data: Dict[str, torch.Tensor],
+        f: bool = False,
+        v: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-        
+
         batch = data[keys.BATCH]
         pos = data[keys.POSITIONS]
         atomic_numbers = data[keys.ATOMIC_NUMBERS]
         masses = self.masses[atomic_numbers]
-        centroids = scatter(masses * pos, batch, dim=0) / scatter(
-            masses, batch, dim=0
-        )
+        centroids = scatter(masses * pos, batch, dim=0) / scatter(masses, batch, dim=0)
         pos -= centroids[batch]
 
         node_scalar = data[keys.NODE_INVARIANT]
@@ -515,9 +529,12 @@ class CartTensorOut(nn.Module):
         self.output_field = output_field
 
     def forward(
-        self, data: Dict[str, torch.Tensor], f: bool = False, v: bool = False,
+        self,
+        data: Dict[str, torch.Tensor],
+        f: bool = False,
+        v: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-        
+
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
         node_equi = data[keys.NODE_EQUIVARIANT]
@@ -534,12 +551,10 @@ class CartTensorOut(nn.Module):
         out_cart = self.sph2cart(out_equi)
         if self.reduce_op is not None:
             out_cart = scatter(out_cart, batch, dim=0, reduce=self.reduce_op)
-        
+
         if self.isotropic:
             assert out_cart.dim() == 3
-            cart_tensor = (
-                torch.diagonal(out_cart, dim1=-2, dim2=-1).mean(dim=-1)
-            )
+            cart_tensor = torch.diagonal(out_cart, dim1=-2, dim2=-1).mean(dim=-1)
         else:
             # [y, z, x] -> [x, y, z]
             for i_dim in range(1, out_cart.dim()):

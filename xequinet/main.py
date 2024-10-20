@@ -1,16 +1,6 @@
 import argparse
-import warnings
 
-from xequinet.run import (
-    compile_model,
-    run_infer,
-    run_md,
-    run_opt,
-    run_pimd,
-    run_std_from_fock,
-    run_test,
-    run_train,
-)
+from xequinet.run import compile_model, run_infer, run_md, run_opt, run_test, run_train
 
 
 def main() -> None:
@@ -30,12 +20,6 @@ def main() -> None:
         type=str,
         default="config.json",
         help="Configuration file of json format (default: config.json).",
-    )
-    parser.add_argument(
-        "--warning",
-        "-w",
-        action="store_true",
-        help="Whether to show warning messages",
     )
     parser.add_argument(
         "--verbose",
@@ -148,9 +132,6 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.warning:
-        warnings.filterwarnings("once")
-
     if args.task == "train":
         run_train(args)
     elif args.task == "test":
@@ -163,10 +144,6 @@ def main() -> None:
         run_opt(args)
     elif args.task == "md":
         run_md(args)
-    elif args.task == "ipi":
-        run_pimd(args)
-    elif args.task == "stda":
-        run_std_from_fock(args)
     else:
         raise NotImplementedError(f"Unknown task: {args.task}")
 

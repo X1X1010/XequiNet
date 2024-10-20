@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from xequinet.utils import keys
+from xequinet import keys
 
 
 class MatCriterion(nn.Module):

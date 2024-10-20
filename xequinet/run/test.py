@@ -7,15 +7,10 @@ from tabulate import tabulate
 from torch_geometric.data import Batch
 from torch_geometric.loader import DataLoader
 
+from xequinet import keys
 from xequinet.data import XequiData, create_lmdb_dataset
 from xequinet.nn import resolve_model
-from xequinet.utils import (
-    DataConfig,
-    ModelConfig,
-    get_default_units,
-    keys,
-    set_default_units,
-)
+from xequinet.utils import DataConfig, ModelConfig, get_default_units, set_default_units
 from xequinet.utils.loss import L1Metric
 
 

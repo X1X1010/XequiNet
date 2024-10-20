@@ -1,7 +1,7 @@
 import json
 import os.path as osp
 import pickle
-from typing import Dict, List, Literal, Optional, Tuple, TypeVar, Union
+from typing import Dict, Iterable, List, Literal, Optional, Tuple, TypeVar, Union
 
 import lmdb
 import torch
@@ -86,8 +86,8 @@ def create_lmdb_dataset(
     db_path: str,
     cutoff: float,
     split: str,
-    targets: Union[str, List[str]] = "energy",
-    base_targets: Optional[Union[str, List[str]]] = None,
+    targets: Union[str, Iterable[str]] = "energy",
+    base_targets: Optional[Union[str, Iterable[str]]] = None,
     dtype: Optional[Union[str, torch.dtype]] = None,
     mode: Literal["train", "test"] = "train",
 ) -> Union[Tuple[torch_data.Dataset[T], torch_data.Dataset[T]], torch_data.Dataset[T]]:
@@ -107,24 +107,26 @@ def create_lmdb_dataset(
     # set transforms
     transform_list = []
 
-    # delta transform
-    if base_targets is not None:
-        base_targets = (
-            base_targets if isinstance(base_targets, list) else [base_targets]
-        )
-        transform_list.append(DeltaTransform(base_targets=base_targets))
-
     # data type transform
     if dtype is None:
         dtype = torch.get_default_dtype()
-    targets = targets if isinstance(targets, list) else [targets]
-    transform_list.append(DataTypeTransform(dtype=dtype, targets=targets))
+    transform_list.append(DataTypeTransform(dtype=dtype))
 
     # unit transform
+    targets = targets if isinstance(targets, Iterable) else [targets]
     with open(info_path, "r") as f:
         info = json.load(f)
-        data_units = info["data_units"]
+        data_units = {k: info["units"][k] for k in targets}
+        if base_targets is not None:
+            data_units.update({k: info["units"][k] for k in base_targets})
     transform_list.append(UnitTransform(data_units=data_units))
+
+    # delta transform
+    if base_targets is not None:
+        base_targets = (
+            base_targets if isinstance(base_targets, Iterable) else [base_targets]
+        )
+        transform_list.append(DeltaTransform(base_targets=base_targets))
 
     # neighbor transform
     neighbor_transform = NeighborTransform(cutoff=cutoff)

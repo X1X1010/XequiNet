@@ -2,8 +2,9 @@ from typing import Dict, List, Union
 
 import torch
 
+from xequinet import keys
 from xequinet.nn.model import BaseModel, XPaiNN
-from xequinet.utils import get_default_units, keys, unit_conversion
+from xequinet.utils import get_default_units, unit_conversion
 
 
 class XPaiNNFF(XPaiNN):
@@ -21,8 +22,12 @@ class XPaiNNFF(XPaiNN):
 
         self.pos_unit_factor = unit_conversion("Angstrom", pos_unit)
         self.energy_unit_factor = unit_conversion(energy_unit, "eV")
-        self.forces_unit_factor = unit_conversion(f"{energy_unit}/{pos_unit}", "eV/Angstrom")
-        self.virial_unit_factor = unit_conversion(f"{energy_unit}/{pos_unit}^3", "eV/Angstrom^3")
+        self.forces_unit_factor = unit_conversion(
+            f"{energy_unit}/{pos_unit}", "eV/Angstrom"
+        )
+        self.virial_unit_factor = unit_conversion(
+            f"{energy_unit}/{pos_unit}^3", "eV/Angstrom^3"
+        )
 
     def forward(
         self,
@@ -57,9 +62,7 @@ class XPaiNNFF(XPaiNN):
 
 
 def resolve_jit_model(model_name: str, **kwargs) -> BaseModel:
-    models_factory = {
-        "xpainn": XPaiNNFF
-    }
+    models_factory = {"xpainn": XPaiNNFF}
     if model_name.lower() not in models_factory:
         raise NotImplementedError(f"Unsupported model {model_name}")
     return models_factory[model_name.lower()](**kwargs)

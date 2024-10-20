@@ -9,6 +9,7 @@ from tabulate import tabulate
 from torch_geometric.data import Batch
 from torch_geometric.loader import DataLoader
 
+from xequinet import keys
 from xequinet.data import (
     NeighborTransform,
     Transform,
@@ -20,7 +21,6 @@ from xequinet.nn import resolve_model
 from xequinet.utils import (
     ModelConfig,
     get_default_units,
-    keys,
     qc,
     set_default_units,
     unit_conversion,
