@@ -68,7 +68,6 @@ STANDARD_PROPERTIES: Final[
     POLARIZABILITY,
 }
 
-
 SPATIAL_EXTENT: Final[str] = "spatial_extent"
 
 # general-purpose properties
@@ -85,3 +84,9 @@ xTB_METHODS: Final[Dict[str, str]] = {
 TRAIN: Final[str] = "train"
 VALID: Final[str] = "valid"
 TEST: Final[str] = "test"
+
+# for lammps interface
+CUTOFF_RADIUS: Final[str] = "cutoff_radius"
+JIT_FUSION_STRATEGY: Final[str] = "jit_fusion_strategy"
+N_SPECIES: Final[str] = "n_species"
+PERIODIC_TABLE: Final[str] = "periodic_table"

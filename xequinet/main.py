@@ -61,6 +61,12 @@ def main() -> None:
         default=None,
         help="Output file name.",
     )
+    # jit compile
+    parser.add_argument(
+        "--fusion-strategy",
+        type=str,
+        default="DYNAMICS,3",
+    )
     # geometry
     parser.add_argument(
         "--max-steps",
