@@ -128,7 +128,7 @@ class L1Metric:
             energy_per_atom_l1 = F.l1_loss(
                 result[keys.TOTAL_ENERGY] / n_atoms,
                 target[keys.TOTAL_ENERGY] / n_atoms,
-                reduce="sum",
+                reduction="sum",
             )
             metrics_dict[keys.ENERGY_PER_ATOM] = (
                 energy_per_atom_l1.item(),
@@ -141,7 +141,7 @@ class L1Metric:
             stress_l1 = F.l1_loss(
                 -result[keys.VIRIAL] / volume,
                 -target[keys.VIRIAL] / volume,
-                reduce="sum",
+                reduction="sum",
             )
             metrics_dict[keys.STRESS] = (
                 stress_l1.item(),
@@ -153,7 +153,7 @@ class L1Metric:
             if prop in {keys.ENERGY_PER_ATOM, keys.STRESS}:
                 continue
             assert result[prop].shape == target[prop].shape
-            l1 = F.l1_loss(result[prop], target[prop], reduce="sum")
+            l1 = F.l1_loss(result[prop], target[prop], reduction="sum")
             metrics_dict[prop] = (l1.item(), target[prop].numel())
 
         return metrics_dict

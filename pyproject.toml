@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "XequiNet"
+version = "0.4.3"
+description = "A description of your project"
+authors = [
+    { name = "Yicheng CHEN", email = "yichengchen22@m.fudan.edu.cn" }
+]
+
+[project.scripts]
+xeq = "xequinet.main:main"

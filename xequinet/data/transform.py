@@ -26,7 +26,7 @@ class NeighborTransform(Transform):
 
     def __call__(self, data: XequiData) -> XequiData:
         device = data.pos.device
-        num_graphs = data[keys.NUM_GRAPHS] if hasattr(data, keys.NUM_GRAPHS) else 1
+        num_graphs = data.num_graphs if hasattr(data, keys.NUM_GRAPHS) else 1
         if num_graphs > 1:
             assert hasattr(data, keys.BATCH)
             n_nodes_per_graph = data.ptr[1:] - data.ptr[:-1]  # [num_graphs]

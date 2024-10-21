@@ -1,8 +1,7 @@
 import re
-import warnings
 from math import pi
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional
 
 import numpy as np
 import torch
@@ -215,70 +214,6 @@ def gen_int2c1e(embed_basis: str = "gfn2-xtb", aux_basis: str = "aux56") -> None
     torch.save(int2c1e_dict, savefile)
 
 
-def gen_atom_sp(atom_ref: str) -> None:
-    """
-    Calculate the shift of the atomic energies for each element.
-    """
-    atom_sp_dict = {}
-    if "xtb" in atom_ref:
-        from tblite.interface import Calculator
-        m_dict = {"gfn2-xtb": "GFN2-xTB", "gfn1-xtb": "GFN1-xTB", "ipea1-xtb": "IPEA1-xTB"}
-        for at_no, mult in enumerate(ATOM_MULT, start=1):
-            calc = Calculator(
-                method=m_dict[atom_ref.lower()],
-                positions=np.array([[0.0, 0.0, 0.0]]),
-                numbers=np.array([at_no]),
-                uhf=mult - 1,
-            )
-            print(f"Calculating single point of atom {atom}")
-            energy = calc.singlepoint().get("energy")
-            atom_sp_dict[ELEMENTS_LIST[at_no]] = energy
-    else:
-        from pyscf import cc, dft, scf
-        if "xyg" in atom_ref or "xdh" in atom_ref:
-            from pyscf import dh
-        method, basis = atom_ref.split("/")
-        if "def2" in basis:
-            ecp = basis
-        elif "cc-pv" in basis:
-            ecp = basis + "-pp"
-        else:
-            ecp = None
-        for atom, mult in zip(ELEMENTS_LIST[1:], ATOM_MULT[1:]):
-            try:
-                mol = gto.Mole(atom=f"{atom} 0 0 0", basis=basis, spin=mult - 1)
-                if ecp is not None:
-                    mol.ecp = ecp
-                mol.build()
-            except:
-                warnings.warn(f"Unsupported atom {atom} for basis {basis}")
-                continue
-            print(f"Calculating single point of atom {atom}")
-            if "xyg" in method or "xdh" in method:
-                mf = dh.DH(mol, xc=method).set(max_cycle=150).build_scf().run()
-                if not mf.converged:
-                    continue
-                energy = mf.e_tot
-            elif "cc" in method:
-                mf = scf.HF(mol).set(max_cycle=150).run()
-                mycc = cc.CCSD(mf).set(max_cycle=150).run()
-                if not mycc.converged:
-                    continue
-                if method == "ccsd":
-                    energy = mycc.e_tot
-                elif method == "ccsd(t)":
-                    energy = mycc.e_tot + mycc.ccsd_t()
-                else:
-                    raise ValueError(f"Unsupported method: {method}")
-            else:
-                mf = dft.KS(mol, xc=method).set(max_cycle=150).build().run()
-                if not mf.converged:
-                    continue
-                energy = mf.e_tot
-            atom_sp_dict[atom] = energy
-    torch.save(atom_sp_dict, PRE_FOLDER / f"{method}_{basis}_sp.pt")
-
-
 def get_embedding_tensor(embed_basis: str = "gfn2-xtb", aux_basis: str = "aux28") -> torch.Tensor:
     """
     Get embedding of atoms in a basis.
@@ -295,52 +230,6 @@ def get_embedding_tensor(embed_basis: str = "gfn2-xtb", aux_basis: str = "aux28"
     embed_tenor = torch.stack([embed_dict[atom] for atom in ELEMENTS_LIST[1:]])
     embed_tenor = torch.cat([torch.zeros(1, embed_tenor.shape[-1]), embed_tenor])
     return embed_tenor.to(torch.get_default_dtype())
-
-
-def get_atomic_energy(atom_ref: Union[str, dict] = None) -> torch.Tensor:
-    """
-    Get the shift of the atomic energies for each element. Unit: Hartree
-
-    Args:
-        `atom_ref`: type of element shifts
-    Returns:
-        a tensor of shape ``(n_atoms,)``
-    """
-    if atom_ref is None:
-        return torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-    elif isinstance(atom_ref, dict):
-        atomic_energy = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-        at_no = list(atom_ref.keys())
-        if isinstance(at_no[0], str):
-            at_no = [ELEMENTS_DICT[atom] for atom in at_no]
-        atomic_energy[at_no] = torch.DoubleTensor(list(atom_ref.values()))
-    else:
-        atom_ref = atom_ref.lower()
-        sp_file_name = f"{atom_ref.replace('/', '_')}_sp.pt"
-        if not (PRE_FOLDER / sp_file_name).exists():
-            gen_atom_sp(atom_ref)
-        atom_sp_dict = torch.load(PRE_FOLDER / sp_file_name)
-        atomic_energy = torch.zeros(len(ELEMENTS_LIST), dtype=torch.float64)
-        periodic_table = """
-H                                                  He
-Li Be                               B  C  N  O  F  Ne
-Na Mg                               Al Si P  S  Cl Ar
-K  Ca Sc Ti V  Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr
-Rb Sr Y  Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I  Xe
-Cs Ba    Hf Ta W  Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn
-
-      La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu
-"""
-        for atom, energy in atom_sp_dict.items():
-            atomic_energy[ELEMENTS_DICT[atom]] = energy
-            periodic_table = periodic_table.replace(f"{atom: <2}", "  ")
-        if periodic_table.strip():  # if not all the elements are included
-            warning_msg = f"The file {sp_file_name} does not contain single point energy for following atoms:\n"
-            warning_msg += f"{periodic_table.strip()}\n"
-            warning_msg += "If you need these atoms, please regenerate the file or add them manually."
-            warnings.warn(warning_msg)
-
-    return atomic_energy
 
 
 if __name__ == "__main__":

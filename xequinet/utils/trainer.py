@@ -44,6 +44,8 @@ class DistAverageMetric:
         self.counts = {
             prop: torch.zeros((1,), device=self.device) for prop in properties
         }
+        # sort properties
+        self.properties = dict(sorted(self.properties.items()))
         self.reset()
 
     def reset(self) -> None:
@@ -284,14 +286,16 @@ class Trainer:
                     "Train MAE",
                     self.epoch,
                     f"{step}/{len(self.train_loader)}",
-                    f"{self.optimizer.param_groups[0]['lr']:3e}",
+                    self.optimizer.param_groups[0]["lr"],
                 ]
                 header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
-                tabulate_data.extend(
-                    list(map(lambda x: f"{x:.7f}", reduced_l1.values()))
-                )
+                floatfmt = ["", "", "", ".3e"] + [".7f"] * len(reduced_l1)
+                tabulate_data.extend(list(reduced_l1.values()))
                 lines = tabulate(
-                    [tabulate_data], headers=header, tablefmt="plain"
+                    [tabulate_data],
+                    headers=header,
+                    tablefmt="plain",
+                    floatfmt=floatfmt,
                 ).split("\n")
                 for line in lines:
                     self.log.f.info(line)
@@ -329,10 +333,10 @@ class Trainer:
                 ["Validation MAE"] if self.ema_model is None else ["EMA Valid MAE"]
             )
             header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
-            tabulate_data.extend(list(map(lambda x: f"{x:.7f}", reduced_l1.values())))
-            lines = tabulate([tabulate_data], headers=header, tablefmt="plain").split(
-                "\n"
-            )
+            tabulate_data.extend(list(reduced_l1.values()))
+            lines = tabulate(
+                [tabulate_data], headers=header, tablefmt="plain", floatfmt=".7f"
+            ).split("\n")
             for line in lines:
                 self.log.f.info(line)
 

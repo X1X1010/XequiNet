@@ -1,4 +1,4 @@
-from typing import Dict, Final, List, Set
+from typing import Dict, Final, Set
 
 # basic keys in datapoints
 POSITIONS: Final[str] = "pos"
@@ -11,7 +11,6 @@ PBC: Final[str] = "pbc"
 BATCH: Final[str] = "batch"
 BATCH_PTR: Final[str] = "ptr"
 NUM_GRAPHS: Final[str] = "num_graphs"
-# MULTI_GRAPH_KEYS: Final[List[str]] = [BATCH, BATCH_PTR, NUM_GRAPHS]
 # keys for long-range interactions
 LONG_EDGE_INDEX: Final[str] = "long_edge_index"
 LONG_EDGE_LENGTH: Final[str] = "long_edge_length"

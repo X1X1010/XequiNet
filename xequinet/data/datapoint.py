@@ -3,26 +3,14 @@ from typing import Optional
 import torch
 from torch_geometric.data import Data
 
-from xequinet import keys
-
 
 class XequiData(Data):
-
-    # mandatory_keys = [keys.ATOMIC_NUMBERS, keys.POSITIONS]
 
     # for type annotation
     atomic_numbers: torch.Tensor
     pos: torch.Tensor
     edge_index: torch.Tensor
     batch: torch.Tensor
-
-    # additional_keys = [
-    #     keys.PBC, keys.CELL, keys.EDGE_INDEX, keys.CELL_OFFSETS,
-    #     keys.TOTAL_CHARGE, keys.TOTAL_ENERGY, keys.FORCES,
-    #     keys.VIRIAL, keys.ATOMIC_CHARGES, keys.DIPOLE,
-    #     keys.BASE_ENERGY, keys.BASE_FORCES, keys.BASE_CHARGES, keys.BASE_DIPOLE,
-    # ]
-    # recognized_keys = mandatory_keys + additional_keys + keys.MULTI_GRAPH_KEYS
 
     def __init__(
         self,

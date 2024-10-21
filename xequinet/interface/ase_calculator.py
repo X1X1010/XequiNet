@@ -49,15 +49,12 @@ class XequiCalculator(Calculator):
             torch.set_default_dtype(self.dtype)
         if "ckpt_file" in changed_parameters or self.model is None:
             _extra_files = {"cutoff_radius": b""}
-            self.model = (
-                torch.jit.load(
-                    self.parameters.ckpt_file,
-                    map_location=self.device,
-                    _extra_files=_extra_files,
-                )
-                .to(device=self.device)
-                .eval()
+            self.model = torch.jit.load(
+                self.parameters.ckpt_file,
+                map_location=self.device,
+                _extra_files=_extra_files,
             )
+            self.model.to(device=self.device).eval()
             cutoff_radius = float(_extra_files["cutoff_radius"].decode("ascii"))
             self.transform = SequentialTransform(
                 [
