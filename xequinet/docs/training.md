@@ -1,84 +1,109 @@
 ## Prepare dataset
-Dataset for Xequinet is storing with HDF5 in the following structure:
-```
-MyDataset.hdf5
-├── train
-│   ├── group1 (molecule)
-|   |   ├── atomic_numbers
-|   |   ├── coordinates_A / coordinates_bohr
-|   |   ├── property1
-|   |   ├── property2
-|   |   └── ...
-│   ├── group2 (pbc)
-|   |   ├── atomic_numbers
-|   |   ├── pbc
-|   |   ├── lattice_A / lattice_bohr
-|   |   ├── coordinates_A / coordinates_bohr / coordinates_frac
-|   |   ├── property1
-|   |   ├── property2
-|   |   └── ...
-|   |
-|   ├── ...
-|   |
-|   └── groupX
-|       └── ...
-|
-├── valid
-|   └── ...
-|
-└── test
-      └── ...
-```
-The dataset is divided into `train`, `valid` and `test`, and each containing their respective molecule or pbc groups. During the training process, `test` group is not necessarily required.
+A complete dataset for Xequinet is consists of three parts: `data.lmdb`, `info.json`, `<split>.json`
 
-Each group contain following datasets, while the names of the groups are not important. `N` is the number of atoms in the system and `M` is the number of conformations.
+### `data.lmdb`
+Each key in `data.lmdb` is corresponded to an `XequiData`. Here is an example to generate an LMDB data file.
+```python
+import lmdb
+import pickle
+from xequinet.data import XequiData
 
-**The following key names are fixed**
-- `"atomic_numbers"`: `(N,)`, `uint8`. Atomic number of each atom.
-- `"coordinates_A" | "coordinates_bohr" | "coordinates_frac"`: `(M, N, 3)`, `float | double`. Cartesian coordinates for every conformation. `A` is for Ångstrom, `bohr` is for Bohr and `frac` means fractional coordinates of crystals.
-- `"pbc"`: `(3,) | ()`, `bool`. Periodic boundary conditions. Whether there is a periodicity (in the three directions).
-- `"lattice_A" | "lattice_bohr"`: `(3, 3)`, `float | double`. Lattice vectors. `A` is for Ångstrom and `bohr` is for Bohr.
+lmdb_data = lmdb.open(
+    path="data.lmdb",
+    map_size=2**40,  # Here is 1 TB. You can set any thing suitable for your dataset
+    subdir=False,
+    sync=False,
+    writemap=False,
+    meminit=False,
+    map_async=True,
+    create=True,
+    readonly=False,
+    lock=True,
+)
 
-Note that `"coordinates_frac"`, `"pbc"` and `"lattice_A" | "lattice_bohr"` are only used when training periodic systems.
+for i in range(<dataset_len>):
+    # all the components are torch.Tensor
+    # components of float points must be consistent (dtype should be the same)
+    datapoint = XequiData(
+        atomic_numbers=...  # [n_atoms,] int
+        pos=...  # [n_atoms, 3] float/double
+        pbc=...  # [1, 3]  bool (optional)
+        cell=...  # [1, 3, 3]  float/double (optional)
+        energy=...  # [1,]  float/double
+        forces=...  # [n_atoms, 3]  float/double
+        virial=...  # [1, 3, 3]  float/double
+        xxx=...  # any other property is OK
+    )
 
-**The property key names can be costumed**<br>
-e.g.
-- `"E_wb97x_def2tzvp_Ha"`: `(M,)`, `double`. Electron energies calculated under ωB97X/def2-TZVP in Hartree.
-- `"F_gfn2-xtb_AU"`: `(M, N, 3)`, `double`. Nuclear forces calculated under GFN2-xTB in a.u.
-
-Due to the additional files may generated during data processing by `torch_geometric`, you may set your dataset directory like this as well:
-```
-mydata
-├── raw
-│   └── mydata.hdf5
-└── processed
-    └── ...
-```
-
-### Training
-Firstly, set the training configuration file `config.json` in working directory as follows. Details can be viewed in the file `xequinet/utils/config.py`.
-```
-{
-    "run_name": "qm9"
-
-    "node_dim": 128,
-    "edge_irreps": "128x0e + 64x1o + 32x2e",
-    "num_basis": 20,
-    "action_blocks": 3,
-    "output_mode": "scalar",
+    with data.begin(write=True) as txn:
+        key = i.to_byte(8, byteorder="little")
+        txn.put(key, pickle.dumps(datapoint))
     ...
+```
+
+### `info.json`
+This is used to store some necessary infomation. especially the unit and name of the properties in the `data.lmdb`. Here is an example:
+```json
+{
+  "method": "<functional>/<basis>",
+  "units": {
+    "energy": "Hartree",
+      "pos": "Angstron",
+      "forces": "a.u."
+      ...
+  },
+  "atomic_energies": {
+    "H": -0.5,
+    "C": ...
+  }
 }
+```
+The most important part is "units", because the unit conversions in the model are based on this json file. Detailed infomation for valid unit type and format can be check in `xequinet/utils/qc`. In general, combinations of commonly used units are available.
+
+### `<split>.json`
+This file can be named whatever you want. It contained the indices of the train, validation and test set. For example:
+```json
+{
+  "trian": [0, 1, 2, ...],
+  "valid": [3, 4, 5, ...],
+  "test": [6, 7, 8, ...]
+}
+```
+You can use this to divide the dataset, or just use a small subset of it to train.
+
+## Training
+Firstly, set the training configuration file `config.yaml` in working directory as follows. Details can be viewed in the file `xequinet/utils/config.py`.
+```yaml
+model:
+  model_name: xpainn
+  model_kwargs:
+    node_dim: 128
+    node_irreps: 128x0e+64x1o+32x2e
+    ...
+  default_units:
+    energy: eV
+    pos: Angstrom
+data:
+  db_path: /xxxx/dataset/
+  cutoff: 5.0
+  split: <split>
+  targets: [energy, forces]
+  ...
+trainer:
+  run_name: xxx
+  lossfn: smoothl1
+  ...
 ```
 Then simply run the following command according to your GPUs and port.
 ```
-torchrun --nproc_per_node=${n_gpu} --master_port=${port} --no-python xeq train --config config.json
+torchrun --nproc_per_node=<n_gpu> --master_port=<port> --no-python xeq train --config config.yaml
 ```
-`--config` can be abbreviated to `-C`. If you don't specify it, it will read `config.json` by default.
+`--config` can be abbreviated to `-C`. If you don't specify it, it will read `config.yaml` by default.
 
 During training, `loss.log` , `run_name_k.pt` and `run_name_last.pt` will be automatically generated, which records loss information and net parameters respectively.
 
 ### Test
-Similarily, prepare the dataset and configuration file `config.json`. Run
+Similarily, prepare the dataset and configuration file `config.yaml`. Run
 ```
 xeq test --config config.json --ckpt run_name_0.pt
 ```
@@ -86,4 +111,3 @@ You can obtain the detailed arguments by
 ```
 xeq -h
 ```
-Test result will be recorded in `run_name_test.log`.

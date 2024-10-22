@@ -24,6 +24,7 @@ dependencies:
   - cuda-driver-dev=12.4.127=0
   - cuda-libraries=11.7.1=0
   - cuda-libraries-dev=11.7.1=0
+  - cuda-nvcc=11.7.99=0
   - cuda-nvrtc=11.7.99=0
   - cuda-nvrtc-dev=11.7.99=0
   - cuda-nvtx=11.7.91=0
