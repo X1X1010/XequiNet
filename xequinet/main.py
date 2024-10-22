@@ -10,7 +10,7 @@ def main() -> None:
     parser.add_argument(
         "task",
         type=str,
-        choices=["train", "test", "infer", "opt", "jit", "md", "ipi", "stda"],
+        choices=["train", "test", "infer", "opt", "jit", "md"],
         help="Task selection.",
     )
     # common arguments
@@ -18,8 +18,8 @@ def main() -> None:
         "--config",
         "-C",
         type=str,
-        default="config.json",
-        help="Configuration file of json format (default: config.json).",
+        default="config.yaml",
+        help="Configuration file of yaml format (default: config.yaml).",
     )
     parser.add_argument(
         "--verbose",
