@@ -3,7 +3,7 @@ from typing import Dict, List, Union
 import torch
 
 from xequinet import keys
-from xequinet.nn.model import BaseModel, XPaiNN
+from xequinet.nn.model import BaseModel, XPaiNN, compute_edge_data
 from xequinet.utils import get_default_units, unit_conversion
 
 
@@ -52,7 +52,21 @@ class XPaiNNFF(XPaiNN):
             - `virial` (Optional): Virial tensor.
         """
         data[keys.POSITIONS] *= self.pos_unit_factor
-        result = super().forward(data, compute_forces, compute_virial)
+
+        # we cannot use `super().forward` because it is nor supported by TorchScript
+        # so we manually call the forward method of the parent class
+        data = compute_edge_data(
+            data=data,
+            compute_forces=compute_forces,
+            compute_virial=compute_virial,
+        )
+        for body_block in self.body_blocks:
+            data = body_block(data)
+        result = {}
+        for output_block in self.output_blocks:
+            data, output = output_block(data, compute_forces, compute_virial)
+            result.update(output)
+
         result[keys.TOTAL_ENERGY] *= self.energy_unit_factor
         if compute_forces:
             result[keys.FORCES] *= self.forces_unit_factor

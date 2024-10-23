@@ -44,6 +44,9 @@ def gen_units_dict():
     u["Angstrom"] = u["Ang"] = u['m'] * 1e-10
     u["cm"] = u["m"] * 1e-2
     u["nm"] = u["Angstrom"] * 10
+    # mass
+    u["kg"] = 1 / _amu
+    u["g"] = u["kg"] * 1e-3
     # energy
     u["Hartree"] = u["Ha"] = u["Eh"] = 1.0
     u["Joule"] = u['J'] = (4 * pi * _eps0 * _hbar)**2 / (_me * _e**4)

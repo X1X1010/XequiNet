@@ -35,7 +35,6 @@ def compile_model(args: argparse.Namespace) -> None:
 
     # load checkpoint and config
     ckpt = torch.load(args.ckpt, map_location=device)
-    print(ckpt["config"])
     config = OmegaConf.merge(
         OmegaConf.structured(ModelConfig),
         ckpt["config"],
@@ -55,12 +54,12 @@ def compile_model(args: argparse.Namespace) -> None:
     model_script = torch.jit.script(model)
 
     # save model
-    n_species = qc.ELEMENTS_DICT["Xe"] + 1  # currently support up to Xe
+    n_species = qc.ELEMENTS_DICT["Rn"] + 1  # currently support up to Xe
     extra_files = {
         keys.CUTOFF_RADIUS: model.cutoff_radius,
         keys.JIT_FUSION_STRATEGY: args.fusion_strategy,
         keys.N_SPECIES: n_species,
-        keys.PERIODIC_TABLE: " ".join(qc.ELEMENTS_LIST[n_species]),
+        keys.PERIODIC_TABLE: " ".join(qc.ELEMENTS_LIST[:n_species]),
     }
     _extra_files = {k: str(v).encode("ascii") for k, v in extra_files.items()}
 

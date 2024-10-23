@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -107,7 +107,7 @@ class ForceFieldOut(nn.Module):
         energy: torch.Tensor,
         pos: torch.Tensor,
     ) -> torch.Tensor:
-        grad_outputs = [torch.ones_like(energy)]
+        grad_outputs: Optional[List[Optional[torch.Tensor]]] = [torch.ones_like(energy)]
         pos_grad = torch.autograd.grad(
             outputs=[energy],
             inputs=[pos],
@@ -124,7 +124,7 @@ class ForceFieldOut(nn.Module):
         energy: torch.Tensor,
         strain: torch.Tensor,
     ) -> torch.Tensor:
-        grad_outputs = [torch.ones_like(energy)]
+        grad_outputs: Optional[List[Optional[torch.Tensor]]] = [torch.ones_like(energy)]
         strain_grad = torch.autograd.grad(
             outputs=[energy],
             inputs=[strain],
@@ -142,7 +142,7 @@ class ForceFieldOut(nn.Module):
         pos: torch.Tensor,
         strain: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        grad_outputs = torch.ones_like(energy)
+        grad_outputs: Optional[List[Optional[torch.Tensor]]] = [torch.ones_like(energy)]
         pos_grad, strain_grad = torch.autograd.grad(
             outputs=[energy],
             inputs=[pos, strain],
