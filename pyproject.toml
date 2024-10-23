@@ -1,0 +1,14 @@
+[project]
+name = "XequiNet"
+version = "1.0"
+requires-python = ">=3.9"
+authors = [
+    { name = "Yicheng Chen", email = "yichengchen22@m.fudan.edu.cn" }
+]
+readme = "README.md"
+
+[tool.setuptools]
+packages = ["xequinet"]
+
+[project.scripts]
+xeq = "xequinet.main:main"
