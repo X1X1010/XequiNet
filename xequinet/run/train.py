@@ -47,6 +47,7 @@ def run_train(args: argparse.Namespace) -> None:
         is_rank0=(local_rank == 0),
         output_dir=config.trainer.save_dir,
         log_file=config.trainer.log_file,
+        resume=config.trainer.resume,
     )
 
     # set random seed

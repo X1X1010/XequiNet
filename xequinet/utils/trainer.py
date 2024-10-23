@@ -129,7 +129,7 @@ class Trainer:
         self.dist_sampler = dist_sampler
         self.log = log
 
-        self.model_conf = config.model.model_kwargs
+        self.model_conf = config.model
 
         # set loss function
         self.lossfn = WeightedLoss(
@@ -341,13 +341,14 @@ class Trainer:
                 self.log.f.info(line)
 
     def start(self) -> None:
-        self.log.f.info(" --- Start training")
-        self.log.f.info(f" --- Task Name: {self.trainer_conf.run_name}")
-        default_units = get_default_units()
-        for prop, unit in default_units.items():
-            if prop in keys.BASE_PROPERTIES:
-                continue
-            self.log.f.info(f" --- Property: {prop} --- Unit: {unit}")
+        if not self.trainer_conf.resume:
+            self.log.f.info(" --- Start training")
+            self.log.f.info(f" --- Task Name: {self.trainer_conf.run_name}")
+            default_units = get_default_units()
+            for prop, unit in default_units.items():
+                if prop in keys.BASE_PROPERTIES:
+                    continue
+                self.log.f.info(f" --- Property: {prop} --- Unit: {unit}")
 
         # training loop
         for iepoch in range(self.start_epoch, self.trainer_conf.max_epochs + 1):

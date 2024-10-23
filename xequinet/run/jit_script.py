@@ -35,9 +35,10 @@ def compile_model(args: argparse.Namespace) -> None:
 
     # load checkpoint and config
     ckpt = torch.load(args.ckpt, map_location=device)
+    print(ckpt["config"])
     config = OmegaConf.merge(
         OmegaConf.structured(ModelConfig),
-        OmegaConf.load(ckpt["config"]),
+        ckpt["config"],
     )
     # this will do nothing, only for type annotation
     config = cast(ModelConfig, config)
