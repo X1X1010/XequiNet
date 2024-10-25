@@ -7,25 +7,8 @@ class ModelConfig:
     """Config for the model"""
 
     model_name: str = "xpainn"
-    model_kwargs: Dict[str, Any] = field(
-        default_factory=lambda: dict(
-            embed_basis="gfn2-xtb",
-            aux_basis="aux56",
-            node_dim=128,
-            node_irreps="128x0e + 64x1o + 32x2e",
-            hidden_dim=64,
-            hidden_irreps="64x0e + 32x1o + 16x2e",
-            rbf_kernel="bessel",
-            num_basis=20,
-            cutoff=5.0,
-            cutoff_fn="cosine",
-            action_blocks=3,
-            acitvation="silu",
-            norm_type="nonorm",
-            output_mode="scalar",
-        )
-    )
-    default_units: Dict[str, str] = field(default_factory=lambda: dict(pos="Angstrom"))
+    model_kwargs: Dict[str, Any] = field(default_factory=dict)
+    default_units: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -42,7 +25,7 @@ class TrainerConfig:
     max_lr: float = 5e-4
     min_lr: float = 0.0
     lossfn: str = "smoothl1"
-    losses_weight: Dict[str, float] = field(default_factory=lambda: dict(energy=1.0))
+    losses_weight: Dict[str, float] = field(default_factory=dict)
     grad_clip: Optional[float] = None
     optimizer: str = "adamW"
     optimizer_kwargs: Dict[str, Any] = field(default_factory=dict)
@@ -69,7 +52,7 @@ class DataConfig:
     split: str = "split"
     # Note: the default values for the following fields are not the values of the dataset,
     #       but the default values you want to use in the training.
-    targets: List[str] = field(default_factory=lambda: ["energy"])
+    targets: List[str] = field(default_factory=list)
     base_targets: Optional[List[str]] = None
     default_dtype: str = "float32"
     node_shift: Any = False

@@ -569,7 +569,7 @@ def resolve_output(mode: str, **kwargs) -> nn.Module:
         "scalar": ScalarOut,
         "forcefield": ForceFieldOut,
         "charges": AtomicChargesOut,
-        "vector": DipoleOut,
+        "dipole": DipoleOut,
         "polar": PolarOut,
         "spatial": SpatialOut,
         "cartesian": CartTensorOut,
