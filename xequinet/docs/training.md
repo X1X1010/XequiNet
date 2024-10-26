@@ -49,7 +49,7 @@ This is used to store some necessary infomation. especially the unit and name of
   "units": {
     "energy": "Hartree",
       "pos": "Angstron",
-      "forces": "a.u."
+      "forces": "au"
       ...
   },
   "atomic_energies": {
@@ -105,7 +105,7 @@ During training, `loss.log` , `run_name_k.pt` and `run_name_last.pt` will be aut
 ### Test
 Similarily, prepare the dataset and configuration file `config.yaml`. Run
 ```
-xeq test --config config.json --ckpt run_name_0.pt
+xeq test --config config.yaml --ckpt run_name_0.pt
 ```
 You can obtain the detailed arguments by
 ```

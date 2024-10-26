@@ -29,7 +29,7 @@ def xequi_method(
 ) -> Tuple[float, np.ndarray]:
     """
     Xequinet method for energy and gradient calculation.
-    `energy` in Hartree and `gradient` in a.u.
+    `energy` in Hartree and `gradient` in au
     """
     data = datapoint_from_pyscf(mole).to(device)
     data = transform(data)
@@ -42,7 +42,7 @@ def xequi_method(
     nuc_grad = -result[keys.FORCES].detach().cpu().numpy()
     # unit conversion
     energy *= unit_conversion("eV", "Hartree")
-    nuc_grad *= unit_conversion("eV/Angstrom", "a.u.")
+    nuc_grad *= unit_conversion("eV/Angstrom", "au")
     if base_method is not None:
         xtb_calc = datapoint_to_xtb(data, method=base_method)
         xtb_res = xtb_calc.singlepoint()
@@ -59,7 +59,7 @@ def calc_analytical_hessian(
 ) -> tuple:
     """
     Calculate the hessian with analytical second derivative.
-    `energy` in Hartree and `Hessian` in a.u.
+    `energy` in Hartree and `Hessian` in au
     """
 
     data = datapoint_from_pyscf(mole).to(device)
@@ -89,7 +89,7 @@ def calc_analytical_hessian(
     hessian = hessian.cpu().numpy()
     # unit conversion
     energy *= unit_conversion("eV", "Hartree")
-    hessian *= unit_conversion("eV/Angstrom^2", "a.u.")
+    hessian *= unit_conversion("eV/Angstrom^2", "au")
     return energy, hessian
 
 

@@ -32,7 +32,7 @@ def gen_units_dict():
 
     u = {}
     # Atomic Units
-    u["AU"] = u["a.u."] = 1.0
+    u["AU"] = u["au"] = 1.0
     # amount of substance
     u["mol"] = _NA
     # charge

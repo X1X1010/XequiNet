@@ -74,12 +74,12 @@ def inference(
                     result[keys.TOTAL_ENERGY][i] += xtb_energy
                 if keys.FORCES in result:
                     xtb_forces = -xtb_res.get("gradient") * unit_conversion(
-                        "a.u.", default_units[keys.FORCES]
+                        "au", default_units[keys.FORCES]
                     )
                     result[keys.FORCES][batch == i] += xtb_forces
                 if keys.VIRIAL in result:
                     xtb_virial = xtb_res.get("virial") * unit_conversion(
-                        "a.u.", default_units[keys.VIRIAL]
+                        "au", default_units[keys.VIRIAL]
                     )
                     result[keys.VIRIAL][i] += xtb_virial
                 if keys.ATOMIC_CHARGES in result:
@@ -89,7 +89,7 @@ def inference(
                     result[keys.ATOMIC_CHARGES][batch == i] += xtb_charges
                 if keys.DIPOLE in result:
                     xtb_dipole = xtb_res.get("dipole") * unit_conversion(
-                        "a.u.", default_units[keys.DIPOLE]
+                        "au", default_units[keys.DIPOLE]
                     )
                     result[keys.DIPOLE][i] += xtb_dipole
 
