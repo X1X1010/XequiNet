@@ -75,6 +75,12 @@ def main() -> None:
         help="Maximum number of optimization steps.",
     )
     parser.add_argument(
+        "--opt-params",
+        type=str,
+        default=None,
+        help="Optimization parameters files.",
+    )
+    parser.add_argument(
         "--constraints",
         type=str,
         default=None,
@@ -106,11 +112,6 @@ def main() -> None:
         type=float,
         default=298.15,
         help="Temperature for vibrational frequencies.",
-    )
-    parser.add_argument(
-        "--as-init-guess",
-        action="store_true",
-        help="Use Fock matrix as initial guess for SCF, then run sTDA.",
     )
     # input
     parser.add_argument(

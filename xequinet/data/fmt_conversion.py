@@ -4,7 +4,7 @@ import torch
 from pyscf import gto, pbc
 
 from xequinet import keys
-from xequinet.utils import get_default_units, unit_conversion
+from xequinet.utils import get_default_units, qc, unit_conversion
 
 from .datapoint import XequiData
 
@@ -101,8 +101,8 @@ def datapoint_to_pyscf(datapoint: XequiData) -> gto.MoleBase:
             a=cell,
         )
     else:
-        mole = gto.Mole(
-            atom=[(a, c) for a, c in zip(atomic_numbers, pos)],
+        mole = gto.M(
+            atom=[(qc.ELEMENTS_LIST[a], c) for a, c in zip(atomic_numbers, pos)],
             charge=charge,
         )
     return mole

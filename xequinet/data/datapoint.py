@@ -54,12 +54,17 @@ class XequiData(Data):
             )
             self.atomic_numbers = atomic_numbers
 
-        # pbc and cell
-        if pbc is not None or cell is not None:
+        # pbc
+        if pbc is not None:
             assert pbc.shape == (1, 3) and pbc.dtype == torch.bool
-            assert cell.shape == (1, 3, 3) and cell.dtype == dtype
             self.pbc = pbc
+        else:
+            self.pbc = torch.zeros(1, 3, dtype=torch.bool)
+        # cell
+        if cell is not None and self.pbc.any():
+            assert cell.shape == (1, 3, 3) and cell.dtype == dtype
             self.cell = cell
+
         # cell offsets
         if cell_offsets is not None:
             assert self.edge_index is not None

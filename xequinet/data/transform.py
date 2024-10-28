@@ -11,8 +11,6 @@ from xequinet.utils import qc
 from .datapoint import XequiData
 from .radius_graph import radius_graph_pbc
 
-INT_MAX = 2**31 - 1
-
 
 class Transform(abc.ABC):
     @abc.abstractmethod
@@ -56,11 +54,12 @@ class NeighborTransform(Transform):
 
             if data.edge_index is not None:
                 return data
+            max_possible_neighbors = torch.sum(n_nodes_per_graph**2).item()
             edge_index = radius_graph(
                 x=data.pos,
                 r=self.cutoff,
                 batch=batch,
-                max_num_neighbors=INT_MAX,
+                max_num_neighbors=max_possible_neighbors,
                 batch_size=num_graphs,
             )
             data.edge_index = edge_index

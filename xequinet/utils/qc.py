@@ -66,6 +66,8 @@ def gen_units_dict():
     u["GPa"] = u["Pa"] * 1e9
     u["bar"] = u["Pa"] * 1e5
     u["kbar"] = u["bar"] * 1e3
+    # magnetic moment
+    u["Bohr_magneton"] = u["muB"] = 0.5
     return u
 
 units = gen_units_dict()

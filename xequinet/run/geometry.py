@@ -1,4 +1,5 @@
 import argparse
+import json
 from typing import Dict, Tuple
 
 import ase.io
@@ -20,6 +21,7 @@ from xequinet.data import (
 from xequinet.utils import set_default_units, unit_conversion
 
 
+@torch.no_grad()
 def xequi_method(
     mole: gto.Mole,
     transform: Transform,
@@ -33,11 +35,12 @@ def xequi_method(
     """
     data = datapoint_from_pyscf(mole).to(device)
     data = transform(data)
-    result: Dict[str, torch.Tensor] = model(
-        data.to_dict(),
-        compute_forces=True,
-        compute_virial=False,
-    )
+    with torch.enable_grad():
+        result: Dict[str, torch.Tensor] = model(
+            data.to_dict(),
+            compute_forces=True,
+            compute_virial=False,
+        )
     energy = result[keys.TOTAL_ENERGY].item()
     nuc_grad = -result[keys.FORCES].detach().cpu().numpy()
     # unit conversion
@@ -165,6 +168,13 @@ def run_opt(args: argparse.Namespace) -> None:
         }
     )
 
+    # set params for optimization
+    if args.opt_params:
+        with open(args.opt_params, "r") as f:
+            opt_params = json.load(f)
+    else:
+        opt_params = {}
+
     # load jit model
     _extra_files = {"cutoff_radius": b""}
     model = torch.jit.load(
@@ -187,7 +197,10 @@ def run_opt(args: argparse.Namespace) -> None:
             new_mole = mole.copy()
         else:  # optimize geometry and return a new molecule
             conv, new_mole = geometric_solver.kernel(
-                fake_method, constraints=args.constraints, maxsteps=args.max_steps
+                fake_method,
+                constraints=args.constraints,
+                maxsteps=args.max_steps,
+                **opt_params,
             )
 
         if args.freq:
