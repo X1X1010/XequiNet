@@ -159,8 +159,6 @@ class XPainnMessage(nn.Module):
         ori_equi = data[keys.NODE_EQUIVARIANT]
         data[keys.NODE_INVARIANT] = ori_scalar.index_add(0, center_idx, message_scalar)
         data[keys.NODE_EQUIVARIANT] = ori_equi.index_add(0, center_idx, message_equi)
-        # data[keys.NODE_INVARIANT].index_add_(0, center_idx, message_scalar)
-        # data[keys.NODE_EQUIVARIANT].index_add_(0, center_idx, message_equi)
 
         return data
 
@@ -229,8 +227,6 @@ class XPainnUpdate(nn.Module):
         ori_equi = data[keys.NODE_EQUIVARIANT]
         data[keys.NODE_INVARIANT] = ori_scalar + d_scalar
         data[keys.NODE_EQUIVARIANT] = ori_equi + d_equi
-        # data[keys.NODE_INVARIANT].add_(d_scalar)
-        # data[keys.NODE_EQUIVARIANT].add_(d_equi)
 
         return data
 

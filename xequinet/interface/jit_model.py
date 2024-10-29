@@ -7,6 +7,21 @@ from xequinet.nn.model import BaseModel, XPaiNN, compute_edge_data
 from xequinet.utils import get_default_units, unit_conversion
 
 
+@torch.jit.script
+def pos_svd_frame(pos: torch.Tensor) -> torch.Tensor:
+    """
+    Args:
+        `pos`: Atomic positions.
+    Returns:
+        Atomic positions in the SVD frame.
+    """
+    pos = pos - pos.mean(dim=0, keepdim=True)
+    if pos.shape[0] <= 2:
+        return pos
+    u, s, v = torch.svd(pos, some=True)
+    return pos @ v
+
+
 class XPaiNNFF(XPaiNN):
     """
     XPaiNN model for JIT script. This model does not consider batch.

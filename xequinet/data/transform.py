@@ -131,6 +131,32 @@ class DeltaTransform(Transform):
         return new_data
 
 
+class PositionSVDTransform(Transform):
+    def __call__(self, data: XequiData) -> XequiData:
+        num_graphs = data.num_graphs if hasattr(data, keys.NUM_GRAPHS) else 1
+        batch = (
+            data.batch
+            if hasattr(data, keys.BATCH)
+            else torch.zeros(data.pos.shape[0], device=data.pos.device)
+        )
+        new_pos = []
+        for i in range(num_graphs):
+            pos_batch = data.pos[batch == i]
+            # centering
+            pos_batch -= pos_batch.mean(dim=0)
+            # rotate the structure into its SVD frame
+            # only can do this for > 2 atoms
+            if pos_batch.shape[0] > 2:
+                u, s, v = torch.svd(pos_batch)
+                rotated_pos_batch = pos_batch @ v
+            else:
+                rotated_pos_batch = pos_batch
+            new_pos.append(rotated_pos_batch)
+        new_pos = torch.cat(new_pos, dim=0)
+        data.pos = new_pos
+        return data
+
+
 class SequentialTransform(Transform):
     def __init__(self, transforms: Iterable[Transform]) -> None:
         self.transforms = transforms

@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 from e3nn import o3
 
-from .tp import get_feasible_tp
 from .o3layer import resolve_o3norm
+from .tp import get_feasible_tp
 from .xpainn import XEmbedding
 
 

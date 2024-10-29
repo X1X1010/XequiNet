@@ -1,4 +1,5 @@
 from typing import Tuple, Union
+
 import numpy as np
 import torch
 from ase.neighborlist import primitive_neighbor_list

@@ -1,12 +1,11 @@
-from typing import List, Tuple, Union, Dict
 from pathlib import Path
+from typing import Dict, List, Tuple, Union
 
 import torch
 from e3nn import o3
 from pyscf import gto
 
-from .qc import ELEMENTS_LIST, ELEMENTS_DICT
-
+from .qc import ELEMENTS_DICT, ELEMENTS_LIST
 
 M_IDX_MAP = {
     0: [0],

@@ -55,8 +55,8 @@ def resolve_ensemble(
     if "pressure" in ensemble:
         ensemble["pressure"] *= units.GPa
     if "pfactor" in ensemble:
-        ensemble["pfactor"] *= (units.GPa * units.fs**2)
-    
+        ensemble["pfactor"] *= units.GPa * units.fs**2
+
     steps = ensemble.pop("steps", None)
     fmax = ensemble.pop("fmax", None)
     dyn = ensemble_cls(

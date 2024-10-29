@@ -28,6 +28,11 @@ SPHERICAL_HARMONICS: Final[str] = "spherical_harmonics"
 NODE_INVARIANT: Final[str] = "node_invariant"
 NODE_EQUIVARIANT: Final[str] = "node_equivariant"
 
+# Ewald message passing
+K_DOT_R: Final[str] = "k_dot_r"
+SINC_DAMPING: Final[str] = "sinc_damping"
+DOWN_PROJECTION: Final[str] = "down_projection"
+
 # Properties
 ATOMIC_ENERGIES: Final[str] = "atomic_energies"
 TOTAL_ENERGY: Final[str] = "energy"

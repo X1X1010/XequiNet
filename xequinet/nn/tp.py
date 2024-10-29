@@ -1,7 +1,8 @@
 # Utility for cutomizing e3nn.TensorProduct
-from typing import Tuple, List
-from e3nn.o3 import Irreps
 import math
+from typing import List, Tuple
+
+from e3nn.o3 import Irreps
 
 
 # from QHNet https://github.com/divelab/AIRS/OpenDFT/QHBench
