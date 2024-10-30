@@ -45,7 +45,6 @@ class XEmbedding(nn.Module):
         self.node_dim = node_dim
         self.node_irreps = o3.Irreps(node_irreps)
         self.node_num_irreps = self.node_irreps.num_irreps
-        # self.embedding = nn.Embedding(100, self.node_dim)
         self.int2c1e = Int2c1eEmbedding(embed_basis, aux_basis)
         self.node_lin = nn.Linear(self.int2c1e.embed_dim, self.node_dim)
         nn.init.zeros_(self.node_lin.bias)

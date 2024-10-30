@@ -76,6 +76,14 @@ def run_train(args: argparse.Namespace) -> None:
     torch.cuda.set_device(device)
 
     # ------------------- load dataset ------------------- #
+    # for non-pbc Ewald model, we should use SVD frame to rotate the atomic positions
+    if (
+        config.model.model_name.lower() == "xpainn-ewald"
+        and not config.model.model_kwargs["use_pbc"]
+    ):
+        svd_frame = True
+    else:
+        svd_frame = False
     train_dataset, valid_dataset = create_lmdb_dataset(
         db_path=config.data.db_path,
         cutoff=config.data.cutoff,
@@ -84,8 +92,8 @@ def run_train(args: argparse.Namespace) -> None:
         targets=config.data.targets,
         base_targets=config.data.base_targets,
         mode="train",
+        svd_frame=svd_frame,
     )
-
     # set dataloader
     sampler_seed = config.trainer.seed if config.trainer.seed is not None else 0
     train_sampler = DistributedSampler(

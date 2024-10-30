@@ -93,7 +93,7 @@ def pos_svd_frame(pos: torch.Tensor) -> torch.Tensor:
     pos = pos - pos.mean(dim=0, keepdim=True)
     if pos.shape[0] <= 2:
         return pos
-    u, s, v = torch.svd(pos, some=True)
+    u, s, v = torch.linalg.svd(pos, full_matrices=True)
     return pos @ v
 
 

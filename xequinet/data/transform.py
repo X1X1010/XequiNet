@@ -153,11 +153,10 @@ class SVDFrameTransform(Transform):
 
     def __call__(self, data: XequiData) -> XequiData:
         num_graphs = data.num_graphs if hasattr(data, keys.NUM_GRAPHS) else 1
-        batch = (
-            data.batch
-            if hasattr(data, keys.BATCH)
-            else torch.zeros(data.pos.shape[0], device=data.pos.device)
-        )
+        if hasattr(data, keys.BATCH) and data.batch is not None:
+            batch = data.batch
+        else:
+            batch = torch.zeros(data.pos.shape[0], device=data.pos.device)
         new_pos = []
         new_vec = {k: [] for k in self.vector_targets}
         new_atom_vec = {k: [] for k in self.atomic_vector_targets}
@@ -168,7 +167,7 @@ class SVDFrameTransform(Transform):
             # rotate the structure into its SVD frame
             # only can do this for > 2 atoms
             if pos_batch.shape[0] > 2:
-                u, s, v = torch.svd(pos_batch)
+                u, s, v = torch.linalg.svd(pos_batch, full_matrices=True)
                 rotated_pos_batch = pos_batch @ v
             else:
                 rotated_pos_batch = pos_batch

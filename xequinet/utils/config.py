@@ -60,7 +60,6 @@ class DataConfig:
     max_num_samples: int = 1000000
     batch_size: int = 64
     valid_batch_size: int = 64
-    svd_frame: bool = False  # SVD frame for the atomic positions and related properties
 
 
 @dataclass

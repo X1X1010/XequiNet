@@ -117,6 +117,14 @@ def run_test(args: argparse.Namespace) -> None:
     model.load_state_dict(ckpt["model"], strict=False)
     model.eval()
 
+    # for non-pbc Ewald model, we should use SVD frame to rotate the atomic positions
+    if (
+        model_config.model_name.lower() == "xpainn-ewald"
+        and not model_config.model_kwargs["use_pbc"]
+    ):
+        svd_frame = True
+    else:
+        svd_frame = False
     # load test dataset
     test_dataset = create_lmdb_dataset(
         db_path=data_config.db_path,
@@ -126,6 +134,7 @@ def run_test(args: argparse.Namespace) -> None:
         base_targets=data_config.base_targets,
         dtype=data_config.default_dtype,
         mode="test",
+        svd_frame=svd_frame,
     )
     test_loader = DataLoader(
         dataset=test_dataset,

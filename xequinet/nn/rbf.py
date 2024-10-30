@@ -102,6 +102,7 @@ class GaussianSmearing(nn.Module):
         self.eps = eps
         self.mean = torch.nn.Parameter(torch.empty((1, num_basis)))
         self.std = torch.nn.Parameter(torch.empty((1, num_basis)))
+        self.sqrt2pi = math.sqrt(2 * math.pi)
         self._init_parameters()
 
     def _init_parameters(self) -> None:
@@ -111,7 +112,7 @@ class GaussianSmearing(nn.Module):
     def forward(self, dist: torch.Tensor) -> torch.Tensor:
         # dist: [nedge, 1]
         std = self.std.abs() + self.eps
-        coeff = 1 / (std * math.sqrt(2 * math.pi))
+        coeff = 1 / (std * self.sqrt2pi)
         rbf = coeff * torch.exp(-0.5 * ((dist - self.mean) / std) ** 2)
         return rbf
 

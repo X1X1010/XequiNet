@@ -166,13 +166,11 @@ class AtomicChargesOut(OutputModule):
                 src=torch.ones_like(atomic_charges),
                 index=batch,
                 dim=0,
-            ).item()
+            )
             if keys.TOTAL_CHARGE in data:
                 total_charge = data[keys.TOTAL_CHARGE]
             else:
-                total_charge = torch.zeros(
-                    num_atoms, dtype=torch.int, device=batch.device
-                )
+                total_charge = torch.zeros_like(raw_total_charge)
             delta_charge = (total_charge - raw_total_charge) / num_atoms
             atomic_charges += delta_charge.index_select(0, batch)
         data[keys.ATOMIC_CHARGES] = atomic_charges

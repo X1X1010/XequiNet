@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -43,23 +43,21 @@ class XPaiNN(BaseModel):
     eXtended PaiNN.
     """
 
-    def __init__(
-        self,
-        node_dim: int = 128,
-        node_irreps: str = "128x0e + 64x1o + 32x2e",
-        embed_basis: str = "gfn2-xtb",
-        aux_basis: str = "aux56",
-        num_basis: int = 20,
-        rbf_kernel: str = "bessel",
-        cutoff: float = 5.0,
-        cutoff_fn: str = "cosine",
-        action_blocks: int = 3,
-        activation: str = "silu",
-        norm_type: str = "layer",
-        output_modes: Optional[Union[str, List[str]]] = None,
-        **kwargs,
-    ) -> None:
+    def __init__(self, **kwargs) -> None:
         super().__init__()
+        # solve hyperparameters
+        node_dim: int = kwargs.get("node_dim", 128)
+        node_irreps: str = kwargs.get("node_irreps", "128x0e + 64x1o + 32x2e")
+        embed_basis: str = kwargs.get("embed_basis", "gfn2-xtb")
+        aux_basis: str = kwargs.get("aux_basis", "aux56")
+        num_basis: int = kwargs.get("num_basis", 20)
+        rbf_kernel: str = kwargs.get("rbf_kernel", "bessel")
+        cutoff: float = kwargs.get("cutoff", 5.0)
+        cutoff_fn: str = kwargs.get("cutoff_fn", "cosine")
+        action_blocks: int = kwargs.get("action_blocks", 3)
+        activation: str = kwargs.get("activation", "silu")
+        norm_type: str = kwargs.get("norm_type", "layer")
+        output_modes: Union[str, List[str]] = kwargs.get("output_modes", ["energy"])
 
         self.cutoff_radius = cutoff
         self.module_list = nn.ModuleList()
@@ -106,54 +104,29 @@ class XPaiNNEwald(XPaiNN):
     XPaiNN with Ewald message passing.
     """
 
-    def __init__(
-        self,
-        # original XPaiNN parameters
-        node_dim: int = 128,
-        node_irreps: str = "128x0e + 64x1o + 32x2e",
-        embed_basis: str = "gfn2-xtb",
-        aux_basis: str = "aux56",
-        num_basis: int = 20,
-        rbf_kernel: str = "bessel",
-        cutoff: float = 5.0,
-        cutoff_fn: str = "cosine",
-        action_blocks: int = 3,
-        activation: str = "silu",
-        norm_type: str = "layer",
-        output_modes: Optional[Union[str, List[str]]] = None,
-        # Ewald parameters
-        use_pbc: bool = True,
-        num_k_points: Optional[Tuple[int, int, int]] = None,  # pbc
-        k_cutoff: Optional[float] = None,  # non-pbc
-        delta_k: Optional[float] = None,  # non-pbc
-        num_k_basis: Optional[int] = None,  # non-pbc
-        k_offset: Optional[float] = None,  # non-pbc
-        projection_dim: int = 8,
-        ewald_blocks: int = 3,
-        ewald_output_modes: Optional[Union[str, List[str]]] = None,
-        **kwargs,
-    ) -> None:
-        super().__init__(
-            node_dim=node_dim,
-            node_irreps=node_irreps,
-            embed_basis=embed_basis,
-            aux_basis=aux_basis,
-            num_basis=num_basis,
-            rbf_kernel=rbf_kernel,
-            cutoff=cutoff,
-            cutoff_fn=cutoff_fn,
-            action_blocks=action_blocks,
-            activation=activation,
-            norm_type=norm_type,
-            output_modes=output_modes,
-            **kwargs,
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        node_dim: int = kwargs.get("node_dim", 128)
+        activation: str = kwargs.get("activation", "silu")
+        norm_type: str = kwargs.get("norm_type", "layer")
+        use_pbc: bool = kwargs.get("use_pbc", True)
+        projection_dim: int = kwargs.get("projection_dim", 8)
+        ewald_blocks: int = kwargs.get("ewald_blocks", 3)
+        ewald_output_modes: Union[str, List[str]] = kwargs.get(
+            "ewald_output_modes", ["energy"]
         )
+
         if use_pbc:
+            num_k_points: List[int] = kwargs.get("num_k_points", [3, 3, 3])
             ewald_initial = EwaldInitialPBC(
                 num_k_points=num_k_points,
                 projection_dim=projection_dim,
             )
         else:
+            k_cutoff: float = kwargs.get("k_cutoff", 0.4)
+            delta_k: float = kwargs.get("delta_k", 0.2)
+            num_k_basis: int = kwargs.get("num_k_basis", 20)
+            k_offset: Optional[float] = kwargs.get("k_offset", None)
             ewald_initial = EwaldInitialNonPBC(
                 k_cutoff=k_cutoff,
                 delta_k=delta_k,

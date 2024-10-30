@@ -141,7 +141,7 @@ def create_lmdb_dataset(
             if t in keys.ATOMIC_VECTOR_PROPERTIES:
                 atom_vec_.append(t)
         transform_list.append(
-            SVDFrameTransform(vec_targets=vec_, atomic_vec_targets=atom_vec_)
+            SVDFrameTransform(vector_targets=vec_, atomic_vector_targets=atom_vec_)
         )
 
     # neighbor transform
