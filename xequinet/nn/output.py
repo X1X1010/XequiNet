@@ -9,13 +9,22 @@ from torch_scatter import scatter, scatter_sum
 from xequinet import keys
 from xequinet.utils import qc
 
-from .electronic import CoulombWithCutoff
 from .o3layer import Gate, resolve_activation
 from .tp import get_feasible_tp
 from .xe3net import SelfMixTP, Sph2Cart
 
 
-class ScalarOut(nn.Module):
+class OutputModule(nn.Module):
+    extra_properties: List[str]
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        raise NotImplementedError
+
+
+class ScalarOut(OutputModule):
     def __init__(
         self,
         node_dim: int = 128,
@@ -51,13 +60,9 @@ class ScalarOut(nn.Module):
         )
         self.reduce_op = reduce_op
         self.output_field = output_field
+        self.extra_properties = [output_field]
 
-    def forward(
-        self,
-        data: Dict[str, torch.Tensor],
-        f: bool = False,
-        v: bool = False,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
@@ -65,11 +70,13 @@ class ScalarOut(nn.Module):
 
         if self.reduce_op is not None:
             res = scatter(res, batch, dim=0, reduce=self.reduce_op)
+        data[self.output_field] = res
 
-        return data, {self.output_field: res}
+        return data
 
 
-class ForceFieldOut(nn.Module):
+class EnergyOut(OutputModule):
+    # almost the same as ScalarOut, but ensure jitable.
     def __init__(
         self,
         node_dim: int = 128,
@@ -83,11 +90,11 @@ class ForceFieldOut(nn.Module):
         Args:
             `node_dim`: Node dimension.
             `hidden_dim`: Dimension of hidden layer.
+            `out_dim`: Output dimension.
             `activation`: Activation function type.
             `node_shift`: Shift for atomic wise output.
             `node_scale`: Scale for atomic wise output.
-            `compute_forces`: Whether to compute forces.
-            `compute_virial`: Whether to compute virial.
+            `reduce_op`: Reduce operation for the output.
         """
         super().__init__()
         self.node_dim = node_dim
@@ -101,67 +108,9 @@ class ForceFieldOut(nn.Module):
             resolve_activation(activation),
             final_linear,
         )
+        self.extra_properties = [keys.TOTAL_ENERGY, keys.ATOMIC_ENERGIES]
 
-    def _compute_forces(
-        self,
-        energy: torch.Tensor,
-        pos: torch.Tensor,
-    ) -> torch.Tensor:
-        grad_outputs: Optional[List[Optional[torch.Tensor]]] = [torch.ones_like(energy)]
-        pos_grad = torch.autograd.grad(
-            outputs=[energy],
-            inputs=[pos],
-            grad_outputs=grad_outputs,
-            retain_graph=self.training,
-            create_graph=self.training,
-        )[0]
-        if pos_grad is None:
-            pos_grad = torch.zeros_like(pos)
-        return -1.0 * pos_grad
-
-    def _compute_virial(
-        self,
-        energy: torch.Tensor,
-        strain: torch.Tensor,
-    ) -> torch.Tensor:
-        grad_outputs: Optional[List[Optional[torch.Tensor]]] = [torch.ones_like(energy)]
-        strain_grad = torch.autograd.grad(
-            outputs=[energy],
-            inputs=[strain],
-            grad_outputs=grad_outputs,
-            retain_graph=self.training,
-            create_graph=self.training,
-        )[0]
-        if strain_grad is None:
-            strain_grad = torch.zeros_like(strain)
-        return -1.0 * strain_grad
-
-    def _compute_forces_and_virial(
-        self,
-        energy: torch.Tensor,
-        pos: torch.Tensor,
-        strain: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        grad_outputs: Optional[List[Optional[torch.Tensor]]] = [torch.ones_like(energy)]
-        pos_grad, strain_grad = torch.autograd.grad(
-            outputs=[energy],
-            inputs=[pos, strain],
-            grad_outputs=grad_outputs,
-            retain_graph=self.training,
-            create_graph=self.training,
-        )
-        if pos_grad is None:
-            pos_grad = torch.zeros_like(pos)
-        if strain_grad is None:
-            strain_grad = torch.zeros_like(strain)
-        return -1.0 * pos_grad, -1.0 * strain_grad
-
-    def forward(
-        self,
-        data: Dict[str, torch.Tensor],
-        compute_forces: bool = True,
-        compute_virial: bool = False,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
@@ -171,46 +120,20 @@ class ForceFieldOut(nn.Module):
             atomic_energies = data[keys.ATOMIC_ENERGIES] + atom_eng_out
         else:
             atomic_energies = atom_eng_out
-        data[keys.ATOMIC_ENERGIES] = atomic_energies
-
         total_energy = scatter_sum(atomic_energies, batch, dim=0)
+        data[keys.ATOMIC_ENERGIES] = atomic_energies
+        data[keys.TOTAL_ENERGY] = total_energy
 
-        result = {
-            keys.TOTAL_ENERGY: total_energy,
-            keys.ATOMIC_ENERGIES: atomic_energies,
-        }
-        if compute_forces and compute_virial:
-            forces, virial = self._compute_forces_and_virial(
-                energy=total_energy,
-                pos=data[keys.POSITIONS],
-                strain=data[keys.STRAIN],
-            )
-            result[keys.FORCES] = forces
-            result[keys.VIRIAL] = virial
-        elif compute_forces:
-            forces = self._compute_forces(
-                energy=total_energy,
-                pos=data[keys.POSITIONS],
-            )
-            result[keys.FORCES] = forces
-        elif compute_virial:
-            virial = self._compute_virial(
-                energy=total_energy,
-                strain=data[keys.STRAIN],
-            )
-            result[keys.VIRIAL] = virial
-        return data, result
+        return data
 
 
-class AtomicChargesOut(nn.Module):
+class AtomicChargesOut(OutputModule):
     def __init__(
         self,
         node_dim: int = 128,
         hidden_dim: int = 64,
         activation: str = "silu",
         conservation: bool = True,
-        coulomb_interaction: bool = False,
-        coulomb_cutoff: Optional[float] = 10.0,
         **kwargs,
     ) -> None:
         """
@@ -230,17 +153,9 @@ class AtomicChargesOut(nn.Module):
         nn.init.zeros_(self.out_mlp[0].bias)
         nn.init.zeros_(self.out_mlp[2].bias)
         self.conservation = conservation
-        self.coulomb_interaction = coulomb_interaction
-        if self.coulomb_interaction:
-            assert coulomb_cutoff is not None
-            self.coulomb = CoulombWithCutoff(coulomb_cutoff)
+        self.extra_properties = [keys.ATOMIC_CHARGES]
 
-    def forward(
-        self,
-        data: Dict[str, torch.Tensor],
-        f: bool = False,
-        v: bool = False,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
         node_scalar = data[keys.NODE_INVARIANT]
         batch = data[keys.BATCH]
@@ -260,16 +175,12 @@ class AtomicChargesOut(nn.Module):
                 )
             delta_charge = (total_charge - raw_total_charge) / num_atoms
             atomic_charges += delta_charge.index_select(0, batch)
-
         data[keys.ATOMIC_CHARGES] = atomic_charges
-        result = {keys.ATOMIC_CHARGES: atomic_charges}
-        if self.coulomb_interaction:
-            data = self.coulomb(data)
 
-        return data, result
+        return data
 
 
-class DipoleOut(nn.Module):
+class DipoleOut(OutputModule):
     def __init__(
         self,
         node_dim: int = 128,
@@ -307,13 +218,11 @@ class DipoleOut(nn.Module):
             o3.Linear(self.hidden_irreps, "1x1o"),
         )
         self.magnitude = magnitude
+        self.extra_properties = [
+            keys.DIPOLE if not magnitude else keys.DIPOLE_MAGNITUDE
+        ]
 
-    def forward(
-        self,
-        data: Dict[str, torch.Tensor],
-        f: bool = False,
-        v: bool = False,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
@@ -326,15 +235,15 @@ class DipoleOut(nn.Module):
             index=batch,
             dim=0,
         )
-        result = {keys.DIPOLE: dipole}
+        data[keys.DIPOLE] = dipole
 
         if self.magnitude:
             dipole_norm = torch.linalg.norm(dipole, dim=-1)
-            result[keys.DIPOLE_MAGNITUDE] = dipole_norm
-        return data, result
+            data[keys.DIPOLE_MAGNITUDE] = dipole_norm
+        return data
 
 
-class PolarOut(nn.Module):
+class PolarOut(OutputModule):
     def __init__(
         self,
         node_dim: int = 128,
@@ -373,13 +282,11 @@ class PolarOut(nn.Module):
         )
         self.rsh_conv = o3.ElementwiseTensorProduct("1x0e + 1x2e", "2x0e")
         self.isotropic = isotropic
+        self.extra_properties = [
+            keys.POLARIZABILITY if not isotropic else keys.ISO_POLARIZABILITY
+        ]
 
-    def forward(
-        self,
-        data: Dict[str, torch.Tensor],
-        f: bool = False,
-        v: bool = False,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
@@ -412,14 +319,15 @@ class PolarOut(nn.Module):
         second_out[:, 0, 2] = second_out[:, 2, 0] = dzx
         # add together
         polarizability = zero_out + second_out
-        result = {keys.POLARIZABILITY: polarizability}
+        data[keys.POLARIZABILITY] = polarizability
         if self.isotropic:
             iso_polar = torch.diagonal(polarizability, dim1=-2, dim2=-1).mean(dim=-1)
-            result[keys.ISO_POLARIZABILITY] = iso_polar
-        return data, result
+            data[keys.ISO_POLARIZABILITY] = iso_polar
+
+        return data
 
 
-class SpatialOut(nn.Module):
+class SpatialOut(OutputModule):
     masses: torch.Tensor
 
     def __init__(
@@ -446,13 +354,9 @@ class SpatialOut(nn.Module):
         nn.init.zeros_(self.scalar_out_mlp[0].bias)
         nn.init.zeros_(self.scalar_out_mlp[2].bias)
         self.register_buffer("masses", torch.Tensor(qc.ATOM_MASS))
+        self.extra_properties = [keys.SPATIAL_EXTENT]
 
-    def forward(
-        self,
-        data: Dict[str, torch.Tensor],
-        f: bool = False,
-        v: bool = False,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
         batch = data[keys.BATCH]
         pos = data[keys.POSITIONS]
@@ -465,10 +369,11 @@ class SpatialOut(nn.Module):
         scalar_out = self.scalar_out_mlp(node_scalar)
         spatial = torch.square(pos).sum(dim=1, keepdim=True)
         spatial_extent = scatter_sum(scalar_out * spatial, batch, dim=0)
-        return data, {keys.SPATIAL_EXTENT: spatial_extent}
+        data[keys.SPATIAL_EXTENT] = spatial_extent
+        return data
 
 
-class CartTensorOut(nn.Module):
+class CartTensorOut(OutputModule):
     """
     Output Module for order n tensor via tensor product of input hidden irreps and cartesian transform.
     """
@@ -527,13 +432,9 @@ class CartTensorOut(nn.Module):
 
         self.reduce_op = reduce_op
         self.output_field = output_field
+        self.extra_properties = [output_field]
 
-    def forward(
-        self,
-        data: Dict[str, torch.Tensor],
-        f: bool = False,
-        v: bool = False,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
@@ -560,14 +461,16 @@ class CartTensorOut(nn.Module):
             for i_dim in range(1, out_cart.dim()):
                 out_cart = out_cart.roll(shifts=1, dims=i_dim)
             cart_tensor = out_cart
-        return data, {self.output_field: cart_tensor}
+        data[self.output_field] = cart_tensor
+
+        return data
 
 
-def resolve_output(mode: str, **kwargs) -> nn.Module:
+def resolve_output(mode: str, **kwargs) -> OutputModule:
 
     output_factory = {
         "scalar": ScalarOut,
-        "forcefield": ForceFieldOut,
+        "energy": EnergyOut,
         "charges": AtomicChargesOut,
         "dipole": DipoleOut,
         "polar": PolarOut,

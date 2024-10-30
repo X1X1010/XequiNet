@@ -174,13 +174,18 @@ class EwaldBlock(nn.Module):
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
         x_scalar = data[keys.NODE_INVARIANT]
-        atomic_charges = data[keys.ATOMIC_CHARGES]
         k_dot_r = data[keys.K_DOT_R]  # [n_atoms, n_k_points]
         sinc_damping = data[keys.SINC_DAMPING]  # [n_atoms, 1]
         batch = data[keys.BATCH]
 
         # residual connection [n_atoms, node_dim]
-        x_residual = x_scalar + self.pre_mlp(x_scalar * atomic_charges.unsqueeze(-1))
+        if keys.ATOMIC_CHARGES in data:
+            atomic_charges = data[keys.ATOMIC_CHARGES]
+            x_residual = x_scalar + self.pre_mlp(
+                x_scalar * atomic_charges.unsqueeze(-1)
+            )
+        else:
+            x_residual = x_scalar + self.pre_mlp(x_scalar)
 
         x_residual = self.norm(x_residual)
         # compute real and imaginary parts of structure factor

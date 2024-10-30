@@ -177,7 +177,7 @@ class EquivariantLayerNorm(nn.Module):
             ix += ir.dim * mul
         self.register_buffer("scalar_index", torch.LongTensor(scalar_index))
 
-        self.invariant = Invariant(self.irreps)
+        self.invariant = Invariant(self.irreps, squared=True)
         self.scalar_mul = o3.ElementwiseTensorProduct(
             self.irreps, f"{self.num_features}x0e"
         )
@@ -206,9 +206,9 @@ class EquivariantLayerNorm(nn.Module):
             source=-scalar_input.mean(dim=1, keepdim=True).repeat(1, self.num_scalar),
         )
 
-        input_norm = self.invariant(node_input)
+        input_square = self.invariant(node_input)
         input_inv_rms = torch.reciprocal(
-            torch.sqrt(torch.square(input_norm).mean(dim=1, keepdim=True) + self.eps)
+            torch.sqrt(torch.mean(input_square, dim=1, keepdim=True) + self.eps)
         )
         node_input = node_input * input_inv_rms
 

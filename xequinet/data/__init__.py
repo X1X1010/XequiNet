@@ -11,6 +11,7 @@ from .transform import (
     DataTypeTransform,
     NeighborTransform,
     SequentialTransform,
+    SVDFrameTransform,
     Transform,
 )
 
@@ -24,6 +25,7 @@ __all__ = [
     "datapoint_to_xtb",
     "Transform",
     "NeighborTransform",
+    "SVDFrameTransform",
     "DataTypeTransform",
     "SequentialTransform",
 ]

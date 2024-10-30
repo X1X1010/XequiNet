@@ -11,9 +11,6 @@ PBC: Final[str] = "pbc"
 BATCH: Final[str] = "batch"
 BATCH_PTR: Final[str] = "ptr"
 NUM_GRAPHS: Final[str] = "num_graphs"
-# keys for long-range interactions
-LONG_EDGE_INDEX: Final[str] = "long_edge_index"
-LONG_EDGE_LENGTH: Final[str] = "long_edge_length"
 
 # intermediate variable
 CENTER_IDX: Final[int] = 0
@@ -52,26 +49,31 @@ DIPOLE_MAGNITUDE: Final[str] = "dipole_magnitude"
 POLARIZABILITY: Final[str] = "polarizability"
 ISO_POLARIZABILITY: Final[str] = "iso_polarizability"
 
-GRAD_PROPERTIES: Final[Set[str]] = {  # properties that are gradients got by autograd
+# properties that are gradients got by autograd
+GRAD_PROPERTIES: Final[Set[str]] = {
     FORCES,
     BASE_FORCES,
     VIRIAL,
 }
-BASE_PROPERTIES: Final[Dict[str, str]] = {  # properties that are base properties
+# properties that are base properties
+BASE_PROPERTIES: Final[Dict[str, str]] = {
     BASE_ENERGY: TOTAL_ENERGY,
     BASE_FORCES: FORCES,
     BASE_CHARGES: ATOMIC_CHARGES,
     BASE_DIPOLE: DIPOLE,
 }
-STANDARD_PROPERTIES: Final[
-    Set[str]
-] = {  # properties that can be printed when inference
+# properties that can be printed when inference
+STANDARD_PROPERTIES: Final[Set[str]] = {
     TOTAL_ENERGY,
     FORCES,
     VIRIAL,
     DIPOLE,
     POLARIZABILITY,
 }
+# vector properties
+VECTOR_PROPERTIES: Final[Set[str]] = {DIPOLE}
+# atomic vector properties
+ATOMIC_VECTOR_PROPERTIES: Final[Set[str]] = {FORCES}
 
 SPATIAL_EXTENT: Final[str] = "spatial_extent"
 

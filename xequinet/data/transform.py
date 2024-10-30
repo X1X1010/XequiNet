@@ -131,7 +131,26 @@ class DeltaTransform(Transform):
         return new_data
 
 
-class PositionSVDTransform(Transform):
+class SVDFrameTransform(Transform):
+    """
+    Currently only works for vector and atomic vector properties. (e.g. forces, dipoles, etc.)
+    For tensorial properties, it may be a little more complicated, and we will add if we need it.
+    """
+
+    def __init__(
+        self,
+        vector_targets: Union[str, Iterable[str]],
+        atomic_vector_targets: Union[str, Iterable[str]],
+    ) -> None:
+        self.vector_targets = (
+            vector_targets if isinstance(vector_targets, Iterable) else [vector_targets]
+        )
+        self.atomic_vector_targets = (
+            atomic_vector_targets
+            if isinstance(atomic_vector_targets, Iterable)
+            else [atomic_vector_targets]
+        )
+
     def __call__(self, data: XequiData) -> XequiData:
         num_graphs = data.num_graphs if hasattr(data, keys.NUM_GRAPHS) else 1
         batch = (
@@ -140,6 +159,8 @@ class PositionSVDTransform(Transform):
             else torch.zeros(data.pos.shape[0], device=data.pos.device)
         )
         new_pos = []
+        new_vec = {k: [] for k in self.vector_targets}
+        new_atom_vec = {k: [] for k in self.atomic_vector_targets}
         for i in range(num_graphs):
             pos_batch = data.pos[batch == i]
             # centering
@@ -151,9 +172,15 @@ class PositionSVDTransform(Transform):
                 rotated_pos_batch = pos_batch @ v
             else:
                 rotated_pos_batch = pos_batch
+                v = torch.eye(3, device=pos_batch.device)
             new_pos.append(rotated_pos_batch)
-        new_pos = torch.cat(new_pos, dim=0)
-        data.pos = new_pos
+            for k in self.vector_targets:
+                new_vec[k].append(data[k][i] @ v)
+            for k in self.atomic_vector_targets:
+                new_atom_vec[k].append(data[k][batch == i] @ v)
+        data.pos = torch.cat(new_pos, dim=0)
+        for k, v in (new_vec | new_atom_vec).items():
+            data[k] = torch.cat(v, dim=0)
         return data
 
 

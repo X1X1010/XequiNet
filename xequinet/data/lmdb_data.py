@@ -7,11 +7,14 @@ import lmdb
 import torch
 import torch.utils.data as torch_data
 
+from xequinet import keys
+
 from .transform import (
     DataTypeTransform,
     DeltaTransform,
     NeighborTransform,
     SequentialTransform,
+    SVDFrameTransform,
     Transform,
     UnitTransform,
 )
@@ -90,6 +93,7 @@ def create_lmdb_dataset(
     base_targets: Optional[Union[str, Iterable[str]]] = None,
     dtype: Optional[Union[str, torch.dtype]] = None,
     mode: Literal["train", "test"] = "train",
+    svd_frame: bool = False,
 ) -> Union[Tuple[torch_data.Dataset[T], torch_data.Dataset[T]], torch_data.Dataset[T]]:
     """
     Create the dataset from an LMDB database
@@ -127,6 +131,18 @@ def create_lmdb_dataset(
             base_targets if isinstance(base_targets, Iterable) else [base_targets]
         )
         transform_list.append(DeltaTransform(base_targets=base_targets))
+
+    # SVD frame transform
+    if svd_frame:
+        vec_, atom_vec_ = [], []
+        for t in targets:
+            if t in keys.VECTOR_PROPERTIES:
+                vec_.append(t)
+            if t in keys.ATOMIC_VECTOR_PROPERTIES:
+                atom_vec_.append(t)
+        transform_list.append(
+            SVDFrameTransform(vec_targets=vec_, atomic_vec_targets=atom_vec_)
+        )
 
     # neighbor transform
     neighbor_transform = NeighborTransform(cutoff=cutoff)

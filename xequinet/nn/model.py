@@ -1,101 +1,19 @@
-from typing import Dict, Iterable, Optional, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 
-from xequinet import keys
-
-from .electronic import HierarchicalCutoff
+from .basic import compute_edge_data, compute_properties
+from .ewald import EwaldBlock, EwaldInitialNonPBC, EwaldInitialPBC
 from .output import resolve_output
 from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
-
-
-def compute_edge_data(
-    data: Dict[str, torch.Tensor],
-    compute_forces: bool = True,
-    compute_virial: bool = False,
-) -> Dict[str, torch.Tensor]:
-    """Preprocess edge data"""
-    pos = data[keys.POSITIONS]
-    edge_index = data[keys.EDGE_INDEX]
-
-    single_graph = False
-    if keys.BATCH not in data:
-        data[keys.BATCH] = torch.zeros(
-            pos.shape[0], dtype=torch.long, device=pos.device
-        )
-        data[keys.BATCH_PTR] = torch.tensor(
-            [0, pos.shape[0]], dtype=torch.long, device=pos.device
-        )
-        single_graph = True
-    elif data[keys.BATCH].max() == 0:
-        single_graph = True
-
-    batch = data[keys.BATCH]
-    n_graphs = data[keys.BATCH_PTR].numel() - 1
-
-    has_cell = keys.CELL in data
-    if has_cell:
-        cell = data[keys.CELL]
-    else:
-        cell = torch.empty((0, 3, 3), device=pos.device)
-
-    if compute_forces:
-        pos.requires_grad_()
-
-    strain = torch.zeros(
-        (n_graphs, 3, 3),
-        dtype=pos.dtype,
-        device=pos.device,
-    )
-
-    if compute_virial:
-        strain.requires_grad_()
-        symm_strain = 0.5 * (strain + strain.transpose(1, 2))
-        # position
-        expanded_strain = torch.index_select(symm_strain, 0, batch)
-        pos = pos + torch.bmm(pos.unsqueeze(1), expanded_strain).squeeze(1)
-        # cell
-        if has_cell:
-            cell = cell + torch.bmm(cell, symm_strain)
-
-    # vectors are pointing from center to neighbor
-    center_idx, neighbor_idx = (
-        edge_index[keys.CENTER_IDX],
-        edge_index[keys.NEIGHBOR_IDX],
-    )
-    vectors = torch.index_select(pos, 0, center_idx) - torch.index_select(
-        pos, 0, neighbor_idx
-    )
-
-    # offsets for periodic boundary conditions
-    if has_cell:
-        cell_offsets = data[keys.CELL_OFFSETS]
-        if single_graph:
-            shifts = torch.einsum("ni, ij -> nj", cell_offsets, cell.squeeze(0))
-            vectors = vectors - shifts
-        else:
-            batch_neighbor = torch.index_select(batch, 0, neighbor_idx)
-            cell_batch = torch.index_select(cell, 0, batch_neighbor)
-            shifts = torch.einsum("ni, nij -> nj", cell_offsets, cell_batch)
-            vectors = vectors - shifts
-
-    # compute distances
-    dist = torch.linalg.norm(vectors, dim=-1)
-
-    data.update(
-        {
-            keys.EDGE_LENGTH: dist,
-            keys.EDGE_VECTOR: vectors,
-            keys.STRAIN: strain,
-        }
-    )
-    return data
 
 
 class BaseModel(nn.Module):
 
     cutoff_radius: float
+    module_list: nn.ModuleList
+    extra_properties: List[str]
 
     def forward(
         self,
@@ -103,7 +21,21 @@ class BaseModel(nn.Module):
         compute_forces: bool = True,
         compute_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
-        raise NotImplementedError
+        data = compute_edge_data(
+            data=data,
+            compute_forces=compute_forces,
+            compute_virial=compute_virial,
+        )
+        for module in self.module_list:
+            data = module(data)
+        result = compute_properties(
+            data=data,
+            compute_forces=compute_forces,
+            compute_virial=compute_virial,
+            training=self.training,
+            extra_properties=self.extra_properties,
+        )
+        return result
 
 
 class XPaiNN(BaseModel):
@@ -111,34 +43,26 @@ class XPaiNN(BaseModel):
     eXtended PaiNN.
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        node_dim: int = 128,
+        node_irreps: str = "128x0e + 64x1o + 32x2e",
+        embed_basis: str = "gfn2-xtb",
+        aux_basis: str = "aux56",
+        num_basis: int = 20,
+        rbf_kernel: str = "bessel",
+        cutoff: float = 5.0,
+        cutoff_fn: str = "cosine",
+        action_blocks: int = 3,
+        activation: str = "silu",
+        norm_type: str = "layer",
+        output_modes: Optional[Union[str, List[str]]] = None,
+        **kwargs,
+    ) -> None:
         super().__init__()
-        node_dim: int = kwargs.get("node_dim", 128)
-        node_irreps: str = kwargs.get("node_irreps", "128x0e + 64x1o + 32x2e")
-        embed_basis: str = kwargs.get("embed_basis", "gfn2-xtb")
-        aux_basis: str = kwargs.get("aux_basis", "aux56")
-        num_basis: int = kwargs.get("num_basis", 20)
-        rbf_kernel: str = kwargs.get("rbf_kernel", "bessel")
-        cutoff: float = kwargs.get("cutoff", 5.0)
-        cutoff_fn: str = kwargs.get("cutoff_fn", "cosine")
-        action_blocks: int = kwargs.get("action_blocks", 3)
-        activation: str = kwargs.get("activation", "silu")
-        norm_type: str = kwargs.get("norm_type", "nonorm")
 
-        self.body_blocks = nn.ModuleList()
-
-        # charge
-        coulomb_interaction: bool = kwargs.get("coulomb_interaction", False)
-        coulomb_cutoff: Optional[float] = None
-        if coulomb_interaction:
-            coulomb_cutoff: Optional[float] = kwargs.get("coulomb_cutoff", 10.0)
-            assert cutoff <= coulomb_cutoff
-            hierarchical_cutoff = HierarchicalCutoff(
-                long_cutoff=coulomb_cutoff,
-                cutoff=cutoff,
-            )
-            self.body_blocks.append(hierarchical_cutoff)
-
+        self.cutoff_radius = cutoff
+        self.module_list = nn.ModuleList()
         embed = XEmbedding(
             node_dim=node_dim,
             node_irreps=node_irreps,
@@ -149,7 +73,7 @@ class XPaiNN(BaseModel):
             cutoff=cutoff,
             cutoff_fn=cutoff_fn,
         )
-        self.body_blocks.append(embed)
+        self.module_list.append(embed)
         for _ in range(action_blocks):
             message = XPainnMessage(
                 node_dim=node_dim,
@@ -164,42 +88,102 @@ class XPaiNN(BaseModel):
                 activation=activation,
                 norm_type=norm_type,
             )
-            self.body_blocks.extend([message, update])
+            self.module_list.extend([message, update])
 
-        output_modes: Union[str, Iterable[str]] = kwargs.get("output_modes", ["scalar"])
-        if not isinstance(output_modes, Iterable):
+        self.extra_properties = []
+        if output_modes is None:
+            output_modes = ["energy"]
+        elif not isinstance(output_modes, Iterable):
             output_modes = [output_modes]
-        self.output_blocks = nn.ModuleList()
         for mode in output_modes:
-            self.output_blocks.append(resolve_output(mode, **kwargs))
+            output = resolve_output(mode, **kwargs)
+            self.module_list.append(output)
+            self.extra_properties.extend(output.extra_properties)
 
-        self.cutoff_radius = coulomb_cutoff if coulomb_interaction else cutoff
 
-    def forward(
+class XPaiNNEwald(XPaiNN):
+    """
+    XPaiNN with Ewald message passing.
+    """
+
+    def __init__(
         self,
-        data: Dict[str, torch.Tensor],
-        compute_forces: bool = True,
-        compute_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
-
-        data = compute_edge_data(
-            data=data,
-            compute_forces=compute_forces,
-            compute_virial=compute_virial,
+        # original XPaiNN parameters
+        node_dim: int = 128,
+        node_irreps: str = "128x0e + 64x1o + 32x2e",
+        embed_basis: str = "gfn2-xtb",
+        aux_basis: str = "aux56",
+        num_basis: int = 20,
+        rbf_kernel: str = "bessel",
+        cutoff: float = 5.0,
+        cutoff_fn: str = "cosine",
+        action_blocks: int = 3,
+        activation: str = "silu",
+        norm_type: str = "layer",
+        output_modes: Optional[Union[str, List[str]]] = None,
+        # Ewald parameters
+        use_pbc: bool = True,
+        num_k_points: Optional[Tuple[int, int, int]] = None,  # pbc
+        k_cutoff: Optional[float] = None,  # non-pbc
+        delta_k: Optional[float] = None,  # non-pbc
+        num_k_basis: Optional[int] = None,  # non-pbc
+        k_offset: Optional[float] = None,  # non-pbc
+        projection_dim: int = 8,
+        ewald_blocks: int = 3,
+        ewald_output_modes: Optional[Union[str, List[str]]] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            node_dim=node_dim,
+            node_irreps=node_irreps,
+            embed_basis=embed_basis,
+            aux_basis=aux_basis,
+            num_basis=num_basis,
+            rbf_kernel=rbf_kernel,
+            cutoff=cutoff,
+            cutoff_fn=cutoff_fn,
+            action_blocks=action_blocks,
+            activation=activation,
+            norm_type=norm_type,
+            output_modes=output_modes,
+            **kwargs,
         )
-        for body_block in self.body_blocks:
-            data = body_block(data)
-        result = {}
-        for output_block in self.output_blocks:
-            data, output = output_block(data, compute_forces, compute_virial)
-            result.update(output)
-
-        return result
+        if use_pbc:
+            ewald_initial = EwaldInitialPBC(
+                num_k_points=num_k_points,
+                projection_dim=projection_dim,
+            )
+        else:
+            ewald_initial = EwaldInitialNonPBC(
+                k_cutoff=k_cutoff,
+                delta_k=delta_k,
+                num_k_basis=num_k_basis,
+                k_offset=k_offset,
+                projection_dim=projection_dim,
+            )
+        self.module_list.append(ewald_initial)
+        for _ in range(ewald_blocks):
+            ewald_block = EwaldBlock(
+                node_dim=node_dim,
+                projection_dim=projection_dim,
+                activation=activation,
+                norm_type=norm_type,
+            )
+            self.module_list.append(ewald_block)
+        if ewald_output_modes is None:
+            ewald_output_modes = ["energy"]
+        elif not isinstance(ewald_output_modes, Iterable):
+            ewald_output_modes = [ewald_output_modes]
+        for mode in ewald_output_modes:
+            output = resolve_output(mode, **kwargs)
+            self.module_list.append(output)
+            self.extra_properties.extend(output.extra_properties)
 
 
 def resolve_model(model_name: str, **kwargs) -> BaseModel:
     models_factory = {
         "xpainn": XPaiNN,
+        "xpainn-ewald": XPaiNNEwald,
     }
     if model_name.lower() not in models_factory:
         raise NotImplementedError(f"Unsupported model {model_name}")
