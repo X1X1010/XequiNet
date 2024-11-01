@@ -16,7 +16,7 @@ def get_ff_unit_factor() -> float:
     pf = unit_conversion("Angstrom", pos_unit)
     ef = unit_conversion(energy_unit, "eV")
     ff = unit_conversion(f"{energy_unit}/{pos_unit}", "eV/Angstrom")
-    vf = unit_conversion(f"{energy_unit}/{pos_unit}^3", "eV/Angstrom^3")
+    vf = unit_conversion(f"{energy_unit}/{pos_unit}", "eV")
     return pf, ef, ff, vf
 
 

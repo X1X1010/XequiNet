@@ -95,7 +95,7 @@ class FlatCutoff(nn.Module):
 
 
 class GaussianSmearing(nn.Module):
-    def __init__(self, num_basis: int, cutoff: float, eps=1e-8) -> None:
+    def __init__(self, num_basis: int, cutoff: float, eps: float = 1e-5) -> None:
         super().__init__()
         self.num_basis = num_basis
         self.cutoff = cutoff
@@ -122,20 +122,19 @@ class SphericalBesselj0(nn.Module):
     spherical Bessel function of the first kind.
     """
 
-    def __init__(self, num_basis: int, cutoff: float) -> None:
+    def __init__(self, num_basis: int, cutoff: float, eps: float = 1e-5) -> None:
         super().__init__()
         self.num_basis = num_basis
         self.cutoff = cutoff
         freq = math.pi * torch.arange(1, num_basis + 1) / cutoff
         self.freq = torch.nn.Parameter(freq.view(1, -1))
+        self.eps = eps
 
     def forward(self, dist: torch.Tensor) -> torch.Tensor:
         # dist: [nedge, 1]
         coeff = math.sqrt(2 / self.cutoff)
-        rbf = (
-            torch.where(dist == 0, self.freq, torch.sin(self.freq * dist) / dist)
-            * coeff
-        )
+        rbf = coeff * torch.sin(self.freq * dist) / (dist + self.eps)
+
         return rbf
 
 

@@ -107,6 +107,7 @@ class EwaldInitialNonPBC(nn.Module):
         num_k_basis: int,
         k_offset: Optional[float] = None,
         projection_dim: int = 8,
+        eps: float = 1e-5,
     ) -> None:
         super().__init__()
         k_grid, k_rbf_values = get_k_voxel_grid(
@@ -119,6 +120,7 @@ class EwaldInitialNonPBC(nn.Module):
         self.register_buffer("k_rbf_values", k_rbf_values)
         self.delta_k = delta_k
         self.down = nn.Linear(k_rbf_values.shape[-1], projection_dim, bias=False)
+        self.eps = eps
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         pos = data[keys.POSITIONS]
@@ -128,7 +130,9 @@ class EwaldInitialNonPBC(nn.Module):
         data[keys.K_DOT_R] = k_dot_r
 
         # [n_atoms, 1]
-        sinc_damping = torch.sinc(0.5 * self.delta_k * pos).prod(dim=-1, keepdim=True)
+        sinc_damping = torch.sinc(0.5 * self.delta_k * pos + self.eps).prod(
+            dim=-1, keepdim=True
+        )
         data[keys.SINC_DAMPING] = sinc_damping
         # [n_k_points, down_dim]
         data[keys.DOWN_PROJECTION] = self.down(self.k_rbf_values)
