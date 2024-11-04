@@ -178,8 +178,10 @@ class SVDFrameTransform(Transform):
             for k in self.atomic_vector_targets:
                 new_atom_vec[k].append(data[k][batch == i] @ v)
         data.pos = torch.cat(new_pos, dim=0)
-        for k, v in (new_vec | new_atom_vec).items():
+        for k, v in new_atom_vec.items():
             data[k] = torch.cat(v, dim=0)
+        for k, v in new_vec.items():
+            data[k] = torch.stack(v, dim=0)
         return data
 
 

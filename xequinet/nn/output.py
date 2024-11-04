@@ -470,6 +470,7 @@ def resolve_output(mode: str, **kwargs) -> OutputModule:
         "scalar": ScalarOut,
         "energy": EnergyOut,
         "charges": AtomicChargesOut,
+        "atomic_charges": AtomicChargesOut,
         "dipole": DipoleOut,
         "polar": PolarOut,
         "spatial": SpatialOut,
