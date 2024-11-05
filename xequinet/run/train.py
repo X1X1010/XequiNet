@@ -135,7 +135,7 @@ def run_train(args: argparse.Namespace) -> None:
     elif config.data.node_shift is True or config.data.node_scale is True:
         with distributed_zero_first(local_rank):
             mean, std = calculate_stats(
-                data_loader=train_loader,
+                dataloader=train_loader,
                 divided_by_atoms=True,
                 target_property=keys.TOTAL_ENERGY,
                 base_property=keys.BASE_ENERGY,

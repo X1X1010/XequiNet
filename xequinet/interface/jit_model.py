@@ -91,10 +91,8 @@ def pos_svd_frame(pos: torch.Tensor) -> torch.Tensor:
         Atomic positions in the SVD frame.
     """
     pos = pos - pos.mean(dim=0, keepdim=True)
-    if pos.shape[0] <= 2:
-        return pos
-    u, s, v = torch.linalg.svd(pos, full_matrices=True)
-    return pos @ v
+    u, s, vh = torch.linalg.svd(pos, full_matrices=True)
+    return pos @ vh.T
 
 
 class XPaiNNEwaldFF(XPaiNNEwald):

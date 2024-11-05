@@ -164,19 +164,13 @@ class SVDFrameTransform(Transform):
             pos_batch = data.pos[batch == i]
             # centering
             pos_batch -= pos_batch.mean(dim=0)
-            # rotate the structure into its SVD frame
-            # only can do this for > 2 atoms
-            if pos_batch.shape[0] > 2:
-                u, s, v = torch.linalg.svd(pos_batch, full_matrices=True)
-                rotated_pos_batch = pos_batch @ v
-            else:
-                rotated_pos_batch = pos_batch
-                v = torch.eye(3, device=pos_batch.device)
+            u, s, vh = torch.linalg.svd(pos_batch, full_matrices=True)
+            rotated_pos_batch = pos_batch @ vh.T
             new_pos.append(rotated_pos_batch)
             for k in self.vector_targets:
-                new_vec[k].append(data[k][i] @ v)
+                new_vec[k].append(data[k][i] @ vh.T)
             for k in self.atomic_vector_targets:
-                new_atom_vec[k].append(data[k][batch == i] @ v)
+                new_atom_vec[k].append(data[k][batch == i] @ vh.T)
         data.pos = torch.cat(new_pos, dim=0)
         for k, v in new_atom_vec.items():
             data[k] = torch.cat(v, dim=0)

@@ -85,7 +85,6 @@ class EwaldInitialPBC(nn.Module):
         k_grid = k_grid.index_select(0, batch)
         pos = data[keys.POSITIONS]
         # [n_atoms, n_k_points]
-        # k_dot_r = torch.sum(k_grid * pos.unsqueeze(1), dim=-1)
         k_dot_r = torch.einsum("aki, ai -> ak", k_grid, pos)
         data[keys.K_DOT_R] = k_dot_r
 
@@ -125,7 +124,6 @@ class EwaldInitialNonPBC(nn.Module):
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         pos = data[keys.POSITIONS]
         # [n_atoms, n_k_points]
-        # k_dot_r = torch.sum(self.k_grid.unsqueeze(0) * pos.unsqueeze(1), dim=-1)
         k_dot_r = torch.einsum("ki, ai -> ak", self.k_grid, pos)
         data[keys.K_DOT_R] = k_dot_r
 

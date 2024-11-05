@@ -59,9 +59,9 @@ def calculate_stats(
                 num_atoms = torch.tensor(
                     [data[keys.ATOMIC_NUMBERS].size(0)], device=sample_y.device
                 )
-            sample_y /= num_atoms.view(-1, 1)
+            sample_y /= num_atoms
         sample_mean = torch.mean(sample_y, dim=0)
-        sample_m2 = torch.sum((sample_y - sample_mean[:, None]) ** 2, dim=0)
+        sample_m2 = torch.sum((sample_y - sample_mean) ** 2, dim=0)
 
         delta = sample_mean - mean
         mean += delta * batch_size / new_count
