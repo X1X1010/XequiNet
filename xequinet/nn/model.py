@@ -10,10 +10,10 @@ from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
 
 
 class BaseModel(nn.Module):
-
-    cutoff_radius: float
-    module_list: nn.ModuleList
-    extra_properties: List[str]
+    def __init__(self) -> None:
+        super().__init__()
+        self.module_list = nn.ModuleList()
+        self.extra_properties = []
 
     def forward(
         self,
@@ -60,7 +60,6 @@ class XPaiNN(BaseModel):
         output_modes: Union[str, List[str]] = kwargs.get("output_modes", ["energy"])
 
         self.cutoff_radius = cutoff
-        self.module_list = nn.ModuleList()
         embed = XEmbedding(
             node_dim=node_dim,
             node_irreps=node_irreps,
@@ -88,7 +87,6 @@ class XPaiNN(BaseModel):
             )
             self.module_list.extend([message, update])
 
-        self.extra_properties = []
         if output_modes is None:
             output_modes = ["energy"]
         elif not isinstance(output_modes, Iterable):

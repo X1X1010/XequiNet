@@ -100,14 +100,11 @@ class GaussianSmearing(nn.Module):
         self.num_basis = num_basis
         self.cutoff = cutoff
         self.eps = eps
-        self.mean = torch.nn.Parameter(torch.empty((1, num_basis)))
-        self.std = torch.nn.Parameter(torch.empty((1, num_basis)))
+        self.mean = torch.nn.Parameter(torch.linspace(0, cutoff, num_basis).view(1, -1))
+        self.std = torch.nn.Parameter(
+            torch.linspace(1, 1 / num_basis, num_basis).view(1, -1)
+        )
         self.sqrt2pi = math.sqrt(2 * math.pi)
-        self._init_parameters()
-
-    def _init_parameters(self) -> None:
-        torch.nn.init.uniform_(self.mean, 0, self.cutoff)
-        torch.nn.init.uniform_(self.std, 1.0 / self.num_basis, 1)
 
     def forward(self, dist: torch.Tensor) -> torch.Tensor:
         # dist: [nedge, 1]

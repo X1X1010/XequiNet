@@ -164,7 +164,10 @@ class XPaiNNEwaldFF(XPaiNNEwald):
 
 
 def resolve_jit_model(model_name: str, **kwargs) -> BaseModel:
-    models_factory = {"xpainn": XPaiNNFF}
+    models_factory = {
+        "xpainn": XPaiNNFF,
+        "xpainn-ewald": XPaiNNEwaldFF,
+    }
     if model_name.lower() not in models_factory:
         raise NotImplementedError(f"Unsupported model {model_name}")
     return models_factory[model_name.lower()](**kwargs)

@@ -28,7 +28,7 @@ def generate_lmdb_key(index: int) -> bytes:
 
 class LMDBDataset(torch_data.Dataset[T]):
 
-    data: lmdb.Environment
+    lmdb_env: lmdb.Environment
     entries: int  # Number of datapoints in the LMDB
 
     def __init__(
@@ -42,7 +42,7 @@ class LMDBDataset(torch_data.Dataset[T]):
         # There are only readers, so we can set map_size to file size
         file_size = osp.getsize(self.db_path)  # bytes
 
-        self.data = lmdb.open(
+        self.lmdb_env: lmdb.Environment = lmdb.open(
             path=self.db_path,
             map_size=file_size,
             subdir=False,
@@ -54,7 +54,7 @@ class LMDBDataset(torch_data.Dataset[T]):
             readonly=True,
             lock=False,
         )
-        self.entries = self.data.stat()["entries"]
+        self.entries = self.lmdb_env.stat()["entries"]
         self.is_open = True
         self.transform = transform
 
@@ -62,7 +62,7 @@ class LMDBDataset(torch_data.Dataset[T]):
         assert self.is_open
         if not isinstance(index, int):
             raise IndexError(f"Index must be an integer, not {type(index)}")
-        with self.data.begin(write=False) as txn:
+        with self.lmdb_env.begin(write=False) as txn:
             key = generate_lmdb_key(index)
             buf = txn.get(key)
             if not buf:
@@ -78,7 +78,7 @@ class LMDBDataset(torch_data.Dataset[T]):
     def close(self) -> None:
         if not self.is_open:
             return
-        self.data.close()
+        self.lmdb_env.close()
         self.is_open = False
 
     def __del__(self) -> None:
