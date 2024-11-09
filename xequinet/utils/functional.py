@@ -1,17 +1,15 @@
 from contextlib import contextmanager
-from copy import deepcopy
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import pytorch_warmup as warmup
 import torch
 import torch.distributed as dist
-import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
 from torch_geometric.loader import DataLoader
 
-from .. import keys
+from xequinet import keys
+
 from .lr_scheduler import SmoothReduceLROnPlateau, get_polynomial_decay_schedule
-from .qc import ELEMENTS_LIST
 
 
 @contextmanager
