@@ -14,8 +14,8 @@ class XequiData(Data):
 
     def __init__(
         self,
-        atomic_numbers: torch.Tensor,  # [N_atoms]
-        pos: torch.Tensor,  # [N_atoms, 3]
+        atomic_numbers: Optional[torch.Tensor] = None,  # [N_atoms]
+        pos: Optional[torch.Tensor] = None,  # [N_atoms, 3]
         pbc: Optional[torch.Tensor] = None,  # [1, 3]
         cell: Optional[torch.Tensor] = None,  # [1, 3, 3]
         edge_index: Optional[torch.Tensor] = None,  # [2, N_edges]

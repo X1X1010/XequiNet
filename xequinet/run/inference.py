@@ -60,9 +60,8 @@ def inference(
                 )
             continue
         # loop over the batch
-        for i in len(data):
+        for i in range(len(data)):
             datum: XequiData = data[i]  # single data point
-
             # add semi-empirical results if using delta-learning
             if base_method is not None:
                 xtb_calc = datapoint_to_xtb(datum, method=base_method)
@@ -117,11 +116,9 @@ def inference(
                     row = [qc.ELEMENTS_LIST[atomic_number]]
                     row.extend([f"{x.item():.6f}" for x in datum[keys.POSITIONS][j]])
                     if keys.FORCES in result:
-                        row.extend(
-                            [f"{x.item():.6f}" for x in result[keys.FORCES][i][j]]
-                        )
+                        row.extend([f"{x.item():.6f}" for x in result[keys.FORCES][j]])
                     if keys.ATOMIC_CHARGES in result:
-                        row.append(f"{result[keys.ATOMIC_CHARGES][i][j].item():.6f}")
+                        row.append(f"{result[keys.ATOMIC_CHARGES][j].item():.6f}")
                     table.append(row)
                 f.write(tabulate(table, headers=header, tablefmt="simple"))
                 f.write("\n")
@@ -235,7 +232,7 @@ def run_infer(args: argparse.Namespace) -> None:
     compute_virial = args.stress
 
     # load input data
-    atoms_list = ase.io.read(args.input, ":")
+    atoms_list = ase.io.read(args.input, index=":")
     dataset = [datapoint_from_ase(atoms) for atoms in atoms_list]
 
     dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=0)
@@ -250,6 +247,8 @@ def run_infer(args: argparse.Namespace) -> None:
     with open(output_file, "w") as f:
         f.write(" --- XequiNet Inference\n")
         for prop, unit in get_default_units().items():
+            if prop in keys.BASE_PROPERTIES:
+                continue
             f.write(f" --- Property: {prop} ---- Unit: {unit})\n")
         f.write("\n")
 

@@ -38,6 +38,13 @@ def main() -> None:
     )
     # inference
     parser.add_argument(
+        "--batch-size",
+        "-b",
+        type=int,
+        default=1,
+        help="Batch size for inference.",
+    )
+    parser.add_argument(
         "--forces",
         action="store_true",
         help="Whether to compute forces.",
