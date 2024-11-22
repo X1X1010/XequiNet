@@ -5,6 +5,7 @@ from typing import cast
 
 import numpy as np
 import torch
+import torch.backends.cudnn
 import torch.distributed as dist
 from omegaconf import OmegaConf
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -164,7 +165,7 @@ def run_train(args: argparse.Namespace) -> None:
     model.to(device)
 
     # distributed training
-    find_unused = True if config.trainer.finetune else False
+    find_unused = False if config.trainer.finetune_modules is None else True
     ddp_model = DDP(
         module=model,
         device_ids=[local_rank],
@@ -173,15 +174,22 @@ def run_train(args: argparse.Namespace) -> None:
     )
 
     # record the number of parameters
-    # TODO: adjust the logic here
     n_params = 0
     for name, param in ddp_model.named_parameters():
-        if config.trainer.finetune and ("embed" in name or "output" in name):
-            param.requires_grad = False
-            log.s.info(f"{name}: {param.numel()} (frozen)")
-        else:
+        # train all parameters, no finetune
+        if config.trainer.finetune_modules is None:
             n_params += param.numel()
             log.s.info(f"{name}: {param.numel()}")
+        # train only the specified modules
+        elif any(
+            finetune_name in name for finetune_name in config.trainer.finetune_modules
+        ):
+            n_params += param.numel()
+            log.s.info(f"{name}: {param.numel()}")
+        # freeze the parameters
+        else:
+            param.requires_grad = False
+            log.s.info(f"{name}: {param.numel()} (frozen)")
     log.s.info(f"Total number of parameters to be optimized: {n_params}")
 
     # -------------------  train model ------------------- #

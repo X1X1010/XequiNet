@@ -82,7 +82,10 @@ def test(
 
 def run_test(args: argparse.Namespace) -> None:
     # set device
-    device = torch.device(f"cuda" if torch.cuda.is_available() else "cpu")
+    if args.device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
 
     # load checkpoint and config
     data_config = OmegaConf.merge(

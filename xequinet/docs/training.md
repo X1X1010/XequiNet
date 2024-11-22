@@ -35,8 +35,8 @@ for i in range(<dataset_len>):
         xxx=...  # any other property is OK
     )
 
-    with data.begin(write=True) as txn:
-        key = i.to_byte(8, byteorder="little")
+    with lmdb_data.begin(write=True) as txn:
+        key = i.to_bytes(8, byteorder="little")
         txn.put(key, pickle.dumps(datapoint))
     ...
 ```

@@ -27,7 +27,10 @@ def check_fusion_strategy(value: str) -> bool:
 
 def compile_model(args: argparse.Namespace) -> None:
     # set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
 
     # check if the strategy is valid
     if not check_fusion_strategy(args.fusion_strategy):

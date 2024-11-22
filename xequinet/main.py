@@ -73,6 +73,13 @@ def main() -> None:
         "--fusion-strategy",
         type=str,
         default="DYNAMICS,3",
+        help="Fusion strategy for jit model.",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Device to run the model.",
     )
     # geometry
     parser.add_argument(

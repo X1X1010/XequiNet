@@ -158,7 +158,10 @@ def run_opt(args: argparse.Namespace) -> None:
             f.write(f"XequiNet Frequency Calculation\n\n")
 
     # set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
 
     # set default units, Angstrom for positions and eV for energy
     set_default_units(

@@ -18,7 +18,7 @@ class TrainerConfig:
     run_name: str = "xequinet"
     ckpt_file: Optional[str] = None
     resume: bool = False
-    finetune: bool = False
+    finetune_modules: Optional[List[str]] = None
     warmup_scheduler: str = "linear"
     warmup_epochs: int = 10
     max_epochs: int = 300
@@ -75,7 +75,7 @@ class XequiConfig:
 class MDConfig:
     """Config for the Molecular Dynamics with ASE"""
 
-    ensembles: List[Dict[str, Any]] = field(default_factory=list)
+    ensembles: List[Any] = field(default_factory=list)
     input_file: str = "input.xyz"
     model_file: str = "model.jit"
 

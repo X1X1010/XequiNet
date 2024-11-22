@@ -20,11 +20,11 @@ class XequiCalculator(Calculator):
     ASE calculator for XequiNet models.
     """
 
-    implemented_properties = ["energy", "energies", "forces"]
-    implemented_properties += ["stress"]
+    implemented_properties = ["energy", "energies", "forces", "stress"]
     default_parameters = {
         "ckpt_file": "model.jit",
         "dtype": "float32",
+        "device": None,
     }
     atoms: Atoms
 
@@ -32,7 +32,7 @@ class XequiCalculator(Calculator):
         self.dtype = torch.float32
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model: Optional[torch.ScriptModule] = None
-        self.transform = Optional[Transform] = None
+        self.transform: Optional[Transform] = None
         Calculator.__init__(self, **kwargs)
 
     def set(self, **kwargs) -> None:
@@ -47,6 +47,8 @@ class XequiCalculator(Calculator):
             }
             self.dtype = dtype_map[self.parameters.dtype]
             torch.set_default_dtype(self.dtype)
+        if "device" in changed_parameters:
+            self.device = torch.device(self.parameters.device)
         if "ckpt_file" in changed_parameters or self.model is None:
             _extra_files = {"cutoff_radius": b""}
             self.model = torch.jit.load(

@@ -186,7 +186,10 @@ def inference(
 
 def run_infer(args: argparse.Namespace) -> None:
     # set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
 
     # load checkpoint and config
     if args.ckpt.endswith(".pt"):
@@ -249,7 +252,7 @@ def run_infer(args: argparse.Namespace) -> None:
         for prop, unit in get_default_units().items():
             if prop in keys.BASE_PROPERTIES:
                 continue
-            f.write(f" --- Property: {prop} ---- Unit: {unit})\n")
+            f.write(f" --- Property: {prop} ---- Unit: {unit}\n")
         f.write("\n")
 
     results = inference(
