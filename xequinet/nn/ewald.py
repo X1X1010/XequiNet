@@ -6,7 +6,7 @@ from torch_scatter import scatter_sum
 
 from xequinet import keys
 
-from .o3layer import resolve_activation, resolve_norm
+from .basic import ResidualLayer, resolve_activation
 from .rbf import resolve_cutoff, resolve_rbf
 
 
@@ -144,59 +144,53 @@ class EwaldBlock(nn.Module):
         node_dim: int = 128,
         projection_dim: int = 8,
         activation: str = "silu",
-        norm_type: str = "layer",
+        layer_norm: bool = True,
+        num_residuals: int = 3,
     ) -> None:
         super().__init__()
 
-        self.norm = resolve_norm(norm_type, node_dim)
+        self.norm = nn.LayerNorm(node_dim) if layer_norm else nn.Identity()
         act_fn = resolve_activation(activation)
-        self.pre_mlp = nn.Sequential(
-            nn.Linear(node_dim, node_dim, bias=False),
-            act_fn,
-            nn.Linear(node_dim, node_dim, bias=False),
-            act_fn,
+        self.pre_residual = ResidualLayer(
+            node_dim=node_dim, n_layers=2, activation=activation
         )
         self.up = nn.Linear(projection_dim, node_dim, bias=False)
         # https://github.com/arthurkosmala/EwaldMP/blob/main/ocpmodels/models/ewald_block.py#L154
         with torch.no_grad():
             self.up.weight *= 0.01
 
-        self.update_mlp = nn.Sequential(
-            nn.Linear(node_dim, node_dim, bias=False),
-            act_fn,
+        self.update_layer = nn.Sequential(
             nn.Linear(node_dim, node_dim, bias=False),
             act_fn,
         )
+        for _ in range(num_residuals):
+            self.update_layer.append(
+                ResidualLayer(node_dim=node_dim, n_layers=2, activation=activation)
+            )
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
-        x_scalar = data[keys.NODE_INVARIANT]
+        node_scalar = data[keys.NODE_INVARIANT]
         k_dot_r = data[keys.K_DOT_R]  # [n_atoms, n_k_points]
         sinc_damping = data[keys.SINC_DAMPING]  # [n_atoms, 1]
         batch = data[keys.BATCH]
 
         # residual connection [n_atoms, node_dim]
-        if keys.ATOMIC_CHARGES in data:
-            atomic_charges = data[keys.ATOMIC_CHARGES]
-            x_residual = x_scalar + self.pre_mlp(
-                x_scalar * atomic_charges.unsqueeze(-1)
-            )
-        else:
-            x_residual = x_scalar + self.pre_mlp(x_scalar)
+        node_res = self.pre_residual(node_scalar)
 
-        x_residual = self.norm(x_residual)
+        node_res = self.norm(node_res)
         # compute real and imaginary parts of structure factor
         # [n_atoms, n_k_points, 1]
         real_part = (torch.cos(k_dot_r) * sinc_damping).unsqueeze(-1)
         imag_part = (torch.sin(k_dot_r) * sinc_damping).unsqueeze(-1)
         # [n_graph, n_k_points, node_dim]
         sf_real = scatter_sum(
-            src=real_part * x_residual.unsqueeze(1),
+            src=real_part * node_res.unsqueeze(1),
             index=batch,
             dim=0,
         )
         sf_imag = scatter_sum(
-            src=imag_part * x_residual.unsqueeze(1),
+            src=imag_part * node_res.unsqueeze(1),
             index=batch,
             dim=0,
         )
@@ -211,9 +205,8 @@ class EwaldBlock(nn.Module):
             input=filter_real * real_part + filter_imag * imag_part,
             dim=1,
         )
-        x_scalar = x_scalar.add(ewald_message)
 
         # residual update
-        data[keys.NODE_INVARIANT] = x_scalar + self.update_mlp(x_scalar)
+        data[keys.NODE_INVARIANT] = node_scalar + self.update_layer(ewald_message)
 
         return data

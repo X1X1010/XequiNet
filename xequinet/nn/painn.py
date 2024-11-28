@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter
 
-from .o3layer import Int2c1eEmbedding, resolve_activation
+from .basic import Int2c1eEmbedding, resolve_activation
 from .rbf import resolve_cutoff, resolve_rbf
 
 

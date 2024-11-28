@@ -24,6 +24,14 @@ def datapoint_from_ase(atoms: ase.Atoms, dtype: torch.dtype = None) -> XequiData
     cell = atoms.get_cell().array * pos_factor if pbc.any() else None
     # if one want to set charge, please set `charge=...` in the comment line
     charge = int(atoms.info.get("charge", 0))
+    # if one want to set spin, please set `spin=...` in the comment line
+    if "spin" in atoms.info:
+        spin = int(atoms.info["spin"])
+    # or one can set mutiplicity instead of spin
+    elif "multiplicity" in atoms.info:
+        spin = int(atoms.info["multiplicity"]) - 1
+    else:
+        spin = 0
     return XequiData(
         atomic_numbers=torch.from_numpy(atomic_numbers).to(torch.int),
         pos=torch.from_numpy(pos).to(dtype),
@@ -32,6 +40,7 @@ def datapoint_from_ase(atoms: ase.Atoms, dtype: torch.dtype = None) -> XequiData
         if cell is not None
         else None,
         charge=torch.tensor([charge], dtype=torch.int),
+        spin=torch.tensor([spin], dtype=torch.int),
     )
 
 
@@ -45,10 +54,12 @@ def datapoint_from_pyscf(mole: gto.Mole, dtype: torch.dtype = None) -> XequiData
     atomic_numbers = mole.atom_charges()
     pos = mole.atom_coords() * pos_factor
     charge = mole.charge
+    spin = mole.spin
     return XequiData(
         atomic_numbers=torch.from_numpy(atomic_numbers).to(torch.int),
         pos=torch.from_numpy(pos).to(dtype),
         charge=torch.tensor([charge], dtype=torch.int),
+        spin=torch.tensor([spin], dtype=torch.int),
     )
 
 
@@ -88,7 +99,10 @@ def datapoint_to_pyscf(datapoint: XequiData) -> gto.MoleBase:
         charge = datapoint.charge.item()
     else:
         charge = 0
-
+    if hasattr(datapoint, keys.TOTAL_SPIN) and datapoint.spin is not None:
+        spin = datapoint.spin.item()
+    else:
+        spin = 0
     if (
         hasattr(datapoint, keys.PBC)
         and datapoint.pbc is not None
@@ -98,12 +112,14 @@ def datapoint_to_pyscf(datapoint: XequiData) -> gto.MoleBase:
         mole = pbc.gto.Cell(
             atom=[(a, c) for a, c in zip(atomic_numbers, pos)],
             charge=charge,
+            spin=spin,
             a=cell,
         )
     else:
         mole = gto.M(
             atom=[(qc.ELEMENTS_LIST[a], c) for a, c in zip(atomic_numbers, pos)],
             charge=charge,
+            spin=spin,
         )
     return mole
 
@@ -117,6 +133,7 @@ def datapoint_to_xtb(datapoint: XequiData, method: str = "GFN1-xTB"):
     atomic_numbers = datapoint.atomic_numbers.numpy()
     pos = datapoint.pos.numpy() * pos_factor
     charge = datapoint.charge.item()
+    spin = datapoint.spin.item()
     if hasattr(datapoint, keys.CELL) and datapoint.cell is not None:
         cell = datapoint.cell.view(3, 3).numpy() * pos_factor
     else:
@@ -130,6 +147,7 @@ def datapoint_to_xtb(datapoint: XequiData, method: str = "GFN1-xTB"):
         numbers=atomic_numbers,
         positions=pos,
         charge=charge,
+        uhf=spin,
         lattice=cell,
         periodic=pbc,
     )

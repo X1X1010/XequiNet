@@ -21,6 +21,7 @@ class XequiData(Data):
         edge_index: Optional[torch.Tensor] = None,  # [2, N_edges]
         cell_offsets: Optional[torch.Tensor] = None,  # [N_edges, 3]
         charge: Optional[torch.Tensor] = None,  # [1]
+        spin: Optional[torch.Tensor] = None,  # [1]
         energy: Optional[torch.Tensor] = None,  # [1]
         forces: Optional[torch.Tensor] = None,  # [N_atoms, 3]
         base_energy: Optional[torch.Tensor] = None,  # [1]
@@ -77,7 +78,10 @@ class XequiData(Data):
         if charge is not None:
             assert charge.shape == (1,) and charge.dtype == torch.int
             self.charge = charge
-
+        # spin
+        if spin is not None:
+            assert spin.shape == (1,) and spin.dtype == torch.int
+            self.spin = spin
         # energy
         if energy is not None:
             assert energy.shape == (1,) and energy.dtype == dtype

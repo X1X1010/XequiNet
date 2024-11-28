@@ -9,7 +9,8 @@ from torch_scatter import scatter, scatter_sum
 from xequinet import keys
 from xequinet.utils import qc
 
-from .o3layer import Gate, resolve_activation
+from .basic import resolve_activation
+from .o3layer import Gate
 from .tp import get_feasible_tp
 from .xe3net import SelfMixTP, Sph2Cart
 
@@ -386,7 +387,7 @@ class CartTensorOut(OutputModule):
         symmetry: str = "ij",
         activation: str = "silu",
         reduce_op: Optional[str] = "sum",
-        norm_type: str = "layer",
+        layer_norm: str = True,
         isotropic: bool = False,
         output_field: str = keys.CARTESIAN_TENSOR,
         **kwargs,
@@ -398,7 +399,7 @@ class CartTensorOut(OutputModule):
         self.isotropic = isotropic
 
         # self-mix tensor product layer to generize high `l`
-        self.selfmix_tp = SelfMixTP(node_irreps, hidden_channels, norm_type)
+        self.selfmix_tp = SelfMixTP(node_irreps, hidden_channels, layer_norm)
         self.mixed_irreps = self.selfmix_tp.irreps_out
 
         # spherical to cartesian transform

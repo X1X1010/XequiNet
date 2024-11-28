@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from .basic import compute_edge_data, compute_properties
+from .electronic import ChargeEmbedding, SpinEmbedding
 from .ewald import EwaldBlock, EwaldInitialNonPBC, EwaldInitialPBC
 from .output import resolve_output
 from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
@@ -56,7 +57,9 @@ class XPaiNN(BaseModel):
         cutoff_fn: str = kwargs.get("cutoff_fn", "cosine")
         action_blocks: int = kwargs.get("action_blocks", 3)
         activation: str = kwargs.get("activation", "silu")
-        norm_type: str = kwargs.get("norm_type", "layer")
+        layer_norm: bool = kwargs.get("layer_norm", True)
+        charge_embed: bool = kwargs.get("charge_embed", False)
+        spin_embed: bool = kwargs.get("spin_embed", False)
         output_modes: Union[str, List[str]] = kwargs.get("output_modes", ["energy"])
 
         self.cutoff_radius = cutoff
@@ -71,19 +74,33 @@ class XPaiNN(BaseModel):
             cutoff_fn=cutoff_fn,
         )
         self.mod_seq.add_module("embedding", embed)
+
+        if charge_embed:
+            ce = ChargeEmbedding(
+                node_dim=node_dim,
+                activation=activation,
+            )
+            self.mod_seq.add_module("charge_embedding", ce)
+        if spin_embed:
+            se = SpinEmbedding(
+                node_dim=node_dim,
+                activation=activation,
+            )
+            self.mod_seq.add_module("spin_embedding", se)
+
         for i in range(action_blocks):
             message = XPainnMessage(
                 node_dim=node_dim,
                 node_irreps=node_irreps,
                 num_basis=num_basis,
                 activation=activation,
-                norm_type=norm_type,
+                layer_norm=layer_norm,
             )
             update = XPainnUpdate(
                 node_dim=node_dim,
                 node_irreps=node_irreps,
                 activation=activation,
-                norm_type=norm_type,
+                layer_norm=layer_norm,
             )
             self.mod_seq.add_module(f"message_{i}", message)
             self.mod_seq.add_module(f"update_{i}", update)
@@ -107,10 +124,10 @@ class XPaiNNEwald(XPaiNN):
         super().__init__(**kwargs)
         node_dim: int = kwargs.get("node_dim", 128)
         activation: str = kwargs.get("activation", "silu")
-        norm_type: str = kwargs.get("norm_type", "layer")
+        layer_norm: bool = kwargs.get("layer_norm", True)
         use_pbc: bool = kwargs.get("use_pbc", True)
         projection_dim: int = kwargs.get("projection_dim", 8)
-        ewald_blocks: int = kwargs.get("ewald_blocks", 3)
+        ewald_blocks: int = kwargs.get("ewald_blocks", 1)
         ewald_output_modes: Union[str, List[str]] = kwargs.get(
             "ewald_output_modes", ["energy"]
         )
@@ -139,7 +156,7 @@ class XPaiNNEwald(XPaiNN):
                 node_dim=node_dim,
                 projection_dim=projection_dim,
                 activation=activation,
-                norm_type=norm_type,
+                layer_norm=layer_norm,
             )
             self.mod_seq.add_module(f"ewald_{i}", ewald_block)
         if ewald_output_modes is None:

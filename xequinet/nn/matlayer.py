@@ -8,7 +8,8 @@ import torch
 import torch.nn as nn
 from e3nn import o3
 
-from .o3layer import EquivariantDot, Gate, resolve_activation
+from .basic import resolve_activation
+from .o3layer import EquivariantDot, Gate
 from .tp import get_feasible_tp, prod
 
 

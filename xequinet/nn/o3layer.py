@@ -1,12 +1,11 @@
 from typing import Iterable
 
-import e3nn
 import torch
 import torch.nn as nn
 from e3nn import o3
 from e3nn.util.jit import compile_mode
 
-from ..utils import get_embedding_tensor
+from .basic import resolve_activation
 
 
 @compile_mode("trace")
@@ -45,30 +44,6 @@ class Invariant(nn.Module):
             return torch.sqrt(out + self.eps**2) - self.eps
 
 
-def resolve_activation(activation: str, devide_x: bool = False) -> nn.Module:
-    """Helper function to return activation function"""
-    activation = activation.lower()
-    activation_div_x = {"silu": "sigmoid", "relu": "identity", "leakyrelu": "identity"}
-    if devide_x and activation in activation_div_x:
-        activation = activation_div_x[activation]
-    if activation == "relu":
-        return nn.ReLU()
-    elif activation == "leakyrelu":
-        return nn.LeakyReLU()
-    elif activation == "softplus":
-        return nn.Softplus()
-    elif activation == "sigmoid":
-        return nn.Sigmoid()
-    elif activation == "silu":
-        return nn.SiLU()
-    elif activation == "tanh":
-        return nn.Tanh()
-    elif activation == "identity":
-        return nn.Identity()
-    else:
-        raise NotImplementedError(f"Unsupported activation function {activation}")
-
-
 class Gate(nn.Module):
     def __init__(
         self,
@@ -98,32 +73,6 @@ class Gate(nn.Module):
         x_activation = self.activation(x_invariant)
         x_out = self.scalar_mul(x, x_activation)
         return x_out
-
-
-class Int2c1eEmbedding(nn.Module):
-    def __init__(
-        self,
-        embed_basis: str = "gfn2-xtb",
-        aux_basis: str = "aux28",
-    ) -> None:
-        """
-        Args:
-            `embed_basis`: Type of the embedding basis.
-            `aux_basis`: Type of the auxiliary basis.
-        """
-        super().__init__()
-        embed_ten = get_embedding_tensor(embed_basis, aux_basis)
-        self.register_buffer("embed_ten", embed_ten)
-        self.embed_dim = embed_ten.shape[1]
-
-    def forward(self, at_no: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            `at_no`: Atomic numbers.
-        Returns:
-            Atomic features.
-        """
-        return self.embed_ten[at_no]
 
 
 @compile_mode("trace")
@@ -220,51 +169,3 @@ class EquivariantLayerNorm(nn.Module):
         )
 
         return node_input
-
-
-def resolve_norm(
-    norm_type: str,
-    num_features: int,
-    affine: bool = True,
-) -> nn.Module:
-    """Helper function to return normalization layer"""
-    norm_type = norm_type.lower()
-    if norm_type == "batch":
-        return nn.BatchNorm1d(
-            num_features,
-            affine=affine,
-        )
-    elif norm_type == "layer":
-        return nn.LayerNorm(
-            num_features,
-            elementwise_affine=affine,
-        )
-    elif norm_type == "nonorm":
-        return nn.Identity()
-    else:
-        raise NotImplementedError(f"Unsupported normalization layer {norm_type}")
-
-
-def resolve_o3norm(
-    norm_type: str,
-    irreps: Iterable,
-    affine: bool = True,
-) -> nn.Module:
-    """Helper function to return equivariant normalization layer"""
-    norm_type = norm_type.lower()
-    if norm_type == "batch":
-        return e3nn.nn.BatchNorm(
-            irreps,
-            affine=affine,
-        )
-    elif norm_type == "layer":
-        return EquivariantLayerNorm(
-            irreps,
-            affine=affine,
-        )
-    elif norm_type == "nonorm":
-        return nn.Identity()
-    else:
-        raise NotImplementedError(
-            f"Unsupported equivariant normalization layer {norm_type}"
-        )

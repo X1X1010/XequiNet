@@ -217,7 +217,7 @@ class Trainer:
                 if os.path.isfile(l2f.ptfile):
                     pt_state = torch.load(l2f.ptfile, map_location=self.device)
                     l2f.loss = pt_state["loss"] if "loss" in pt_state else float("inf")
-        self.log.f.info(f" --- Loaded checkpoint from {ckpt_file}")
+        self.log.f.info(f"Loaded checkpoint from {ckpt_file}")
 
     def _save_params(
         self, model: nn.Module, ckpt_file: str, loss: float = None
@@ -342,13 +342,13 @@ class Trainer:
 
     def start(self) -> None:
         if not self.trainer_conf.resume:
-            self.log.f.info(" --- Start training")
-            self.log.f.info(f" --- Task Name: {self.trainer_conf.run_name}")
+            self.log.f.info("Start training")
+            self.log.f.info(f"Task Name: {self.trainer_conf.run_name}")
             default_units = get_default_units()
             for prop, unit in default_units.items():
                 if prop in keys.BASE_PROPERTIES:
                     continue
-                self.log.f.info(f" --- Property: {prop} --- Unit: {unit}")
+                self.log.f.info(f"Property: {prop} Unit: {unit}")
 
         # training loop
         for iepoch in range(self.start_epoch, self.trainer_conf.max_epochs + 1):
@@ -356,11 +356,11 @@ class Trainer:
             self.train1epoch()
             self.validate()
             if self.early_stop.stop:
-                self.log.f.info(f" --- Early Stopping at Epoch {iepoch}")
+                self.log.f.info(f"Early Stopping at Epoch {iepoch}")
                 break
 
-        self.log.f.info(" --- Training Completed")
-        self.log.f.info(f" --- Best Valid MAE: {self.best_l2fs[-1].loss:.5f}")
+        self.log.f.info("Training Completed")
+        self.log.f.info(f"Best Valid MAE: {self.best_l2fs[-1].loss:.5f}")
         self.log.f.info(
-            f" --- Best Checkpoint: {self.best_l2fs[-1].ptfile} at Epoch {self.best_l2fs[-1].epoch}"
+            f"Best Checkpoint: {self.best_l2fs[-1].ptfile} at Epoch {self.best_l2fs[-1].epoch}"
         )

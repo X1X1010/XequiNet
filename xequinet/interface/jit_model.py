@@ -65,7 +65,7 @@ class XPaiNNFF(XPaiNN):
             compute_forces=compute_forces,
             compute_virial=compute_virial,
         )
-        for module in self.module_list:
+        for module in self.mod_seq:
             data = module(data)
         result = compute_properties(
             data=data,

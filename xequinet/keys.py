@@ -42,6 +42,7 @@ STRESS: Final[str] = "stress"
 ATOMIC_CHARGES: Final[str] = "atomic_charges"
 BASE_CHARGES: Final[str] = "base_charges"
 TOTAL_CHARGE: Final[str] = "charge"
+TOTAL_SPIN: Final[str] = "spin"
 
 DIPOLE: Final[str] = "dipole"
 BASE_DIPOLE: Final[str] = "base_dipole"

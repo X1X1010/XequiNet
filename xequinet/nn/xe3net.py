@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from e3nn import o3
 
-from .o3layer import resolve_o3norm
+from .o3layer import EquivariantLayerNorm
 from .tp import get_feasible_tp
 from .xpainn import XEmbedding
 
@@ -108,7 +108,7 @@ class SelfMixTP(nn.Module):
         self,
         irreps_in: Iterable = "128x0e + 64x1o + 32x2e",
         hidden_channel: int = 32,
-        norm_type: str = "nonorm",
+        layer_norm: bool = True,
     ) -> None:
         super().__init__()
         # initialize `Irreps`
@@ -144,7 +144,9 @@ class SelfMixTP(nn.Module):
             internal_weights=True,
             shared_weights=True,
         )
-        self.o3norm = resolve_o3norm(norm_type, self.irreps_out)
+        self.o3norm = (
+            EquivariantLayerNorm(self.irreps_out) if layer_norm else nn.Identity()
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

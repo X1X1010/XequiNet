@@ -1,21 +1,13 @@
-import math
 from typing import Dict, Iterable
 
 import torch
 import torch.nn as nn
 from e3nn import o3
-from torch_geometric.utils import softmax
 
 from xequinet import keys
 
-from .o3layer import (
-    EquivariantDot,
-    Int2c1eEmbedding,
-    Invariant,
-    resolve_activation,
-    resolve_norm,
-    resolve_o3norm,
-)
+from .basic import Int2c1eEmbedding, resolve_activation
+from .o3layer import EquivariantDot, EquivariantLayerNorm, Invariant
 from .rbf import resolve_cutoff, resolve_rbf
 
 
@@ -95,7 +87,7 @@ class XPainnMessage(nn.Module):
         node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         num_basis: int = 20,
         activation: str = "silu",
-        norm_type: str = "layer",
+        layer_norm: bool = True,
     ) -> None:
         """
         Args:
@@ -123,8 +115,10 @@ class XPainnMessage(nn.Module):
             self.node_irreps, f"{self.node_num_irreps}x0e"
         )
         # normalization
-        self.norm = resolve_norm(norm_type, self.node_dim)
-        self.o3norm = resolve_o3norm(norm_type, self.node_irreps)
+        self.norm = nn.LayerNorm(self.node_dim) if layer_norm else nn.Identity()
+        self.o3norm = (
+            EquivariantLayerNorm(self.node_irreps) if layer_norm else nn.Identity()
+        )
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
@@ -170,7 +164,7 @@ class XPainnUpdate(nn.Module):
         node_dim: int = 128,
         node_irreps: Iterable = "128x0e + 64x1o + 32x2e",
         activation: str = "silu",
-        norm_type: str = "layer",
+        layer_norm: bool = True,
     ) -> None:
         """
         Args:
@@ -199,8 +193,10 @@ class XPainnUpdate(nn.Module):
             nn.Linear(self.node_dim, self.hidden_dim),
         )
         # normalization
-        self.norm = resolve_norm(norm_type, self.node_dim)
-        self.o3norm = resolve_o3norm(norm_type, self.node_irreps)
+        self.norm = nn.LayerNorm(self.node_dim) if layer_norm else nn.Identity()
+        self.o3norm = (
+            EquivariantLayerNorm(self.node_irreps) if layer_norm else nn.Identity()
+        )
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
 
@@ -228,37 +224,3 @@ class XPainnUpdate(nn.Module):
         data[keys.NODE_EQUIVARIANT] = ori_equi + d_equi
 
         return data
-
-
-class EleEmbedding(nn.Module):
-    def __init__(
-        self,
-        node_dim: int = 128,
-    ) -> torch.Tensor:
-        super().__init__()
-        self.node_dim = node_dim
-        self.sqrt_dim = math.sqrt(node_dim)
-        self.q_linear = nn.Linear(node_dim, node_dim)
-        self.k_linear = nn.Linear(1, node_dim)
-        self.v_linear = nn.Linear(1, node_dim, bias=False)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        ele: torch.Tensor,
-        batch: torch.LongTensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            `x`: Node features.
-            `ele`: Electronic features.
-        Returns:
-            Atomic features.
-        """
-        batch_ele = ele.index_select(0, batch).unsqueeze(-1)
-        q = self.q_linear(x)
-        k = self.k_linear(batch_ele)
-        v = self.v_linear(batch_ele)
-        dot = torch.sum(q * k, dim=1, keepdim=True) / self.sqrt_dim
-        attn = softmax(dot, batch, dim=0)
-        return attn * v

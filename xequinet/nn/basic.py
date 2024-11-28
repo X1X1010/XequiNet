@@ -1,8 +1,60 @@
-from typing import Dict, List, Optional, Tuple
+import math
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
+import torch.nn as nn
 
 from xequinet import keys
+from xequinet.utils import get_embedding_tensor
+
+
+class ResidualLayer(nn.Module):
+    """
+    Residual block with output scaled by 1/sqrt(2).
+    """
+
+    def __init__(
+        self,
+        node_dim: int = 128,
+        n_layers: int = 2,
+        activation: str = "silu",
+    ):
+        super().__init__()
+        act_fn = resolve_activation(activation)
+        self.mlp = nn.Sequential()
+        for _ in range(n_layers):
+            self.mlp.append(nn.Linear(node_dim, node_dim, bias=False))
+            self.mlp.append(act_fn)
+        self.inv_sqrt_2 = 1 / math.sqrt(2)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.inv_sqrt_2 * (x + self.mlp(x))
+
+
+class Int2c1eEmbedding(nn.Module):
+    def __init__(
+        self,
+        embed_basis: str = "gfn2-xtb",
+        aux_basis: str = "aux28",
+    ) -> None:
+        """
+        Args:
+            `embed_basis`: Type of the embedding basis.
+            `aux_basis`: Type of the auxiliary basis.
+        """
+        super().__init__()
+        embed_ten = get_embedding_tensor(embed_basis, aux_basis)
+        self.register_buffer("embed_ten", embed_ten)
+        self.embed_dim = embed_ten.shape[1]
+
+    def forward(self, at_no: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            `at_no`: Atomic numbers.
+        Returns:
+            Atomic features.
+        """
+        return self.embed_ten[at_no]
 
 
 def compute_edge_data(
@@ -184,3 +236,27 @@ def compute_properties(
         results.update({k: data[k] for k in extra_properties})
 
     return results
+
+
+def resolve_activation(activation: str, devide_x: bool = False) -> nn.Module:
+    """Helper function to return activation function"""
+    activation = activation.lower()
+    activation_div_x = {"silu": "sigmoid", "relu": "identity", "leakyrelu": "identity"}
+    if devide_x and activation in activation_div_x:
+        activation = activation_div_x[activation]
+    if activation == "relu":
+        return nn.ReLU()
+    elif activation == "leakyrelu":
+        return nn.LeakyReLU()
+    elif activation == "softplus":
+        return nn.Softplus()
+    elif activation == "sigmoid":
+        return nn.Sigmoid()
+    elif activation == "silu":
+        return nn.SiLU()
+    elif activation == "tanh":
+        return nn.Tanh()
+    elif activation == "identity":
+        return nn.Identity()
+    else:
+        raise NotImplementedError(f"Unsupported activation function {activation}")
