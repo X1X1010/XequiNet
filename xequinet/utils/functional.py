@@ -97,7 +97,7 @@ def resolve_lr_scheduler(
 ) -> lr_scheduler.LRScheduler:
     """Helper function to return a learning rate scheduler"""
     sched_type = sched_type.lower()
-    if sched_type == "cosine_annealing":
+    if sched_type in {"cosine_annealing", "cosine"}:
         T_max = kwargs.pop("T_max", max_epochs) * steps_per_epoch
         return lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer,
@@ -105,13 +105,14 @@ def resolve_lr_scheduler(
             T_max=T_max,
             **kwargs,
         )
-    elif sched_type == "cyclic":
-        step_size_up = kwargs.pop("step_size_up", max_epochs // 2) * steps_per_epoch
-        return lr_scheduler.CyclicLR(
+    elif sched_type in {"cosine_annealing_warmup_restart", "cosine_warmup"}:
+        T_0 = kwargs.pop("T_0", max_epochs) * steps_per_epoch
+        T_mult = kwargs.pop("T_mult", 1)
+        return lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer=optimizer,
-            base_lr=min_lr,
-            max_lr=max_lr,
-            step_size_up=step_size_up,
+            T_0=T_0,
+            T_mult=T_mult,
+            eta_min=min_lr,
             **kwargs,
         )
     elif sched_type == "exponential":
