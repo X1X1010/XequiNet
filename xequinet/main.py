@@ -76,6 +76,12 @@ def main() -> None:
         help="Fusion strategy for jit model.",
     )
     parser.add_argument(
+        "--mode",
+        type=str,
+        default=None,
+        help="Mode for jit model.",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default=None,

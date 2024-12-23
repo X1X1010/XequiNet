@@ -13,7 +13,7 @@ from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
 class BaseModel(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.mod_seq = nn.Sequential()
+        self.mods = nn.ModuleDict()
         self.extra_properties = []
 
     def forward(
@@ -27,8 +27,8 @@ class BaseModel(nn.Module):
             compute_forces=compute_forces,
             compute_virial=compute_virial,
         )
-        for module in self.mod_seq:
-            data = module(data)
+        for mod in self.mods.values():
+            data = mod(data)
         result = compute_properties(
             data=data,
             compute_forces=compute_forces,
@@ -73,20 +73,20 @@ class XPaiNN(BaseModel):
             cutoff=cutoff,
             cutoff_fn=cutoff_fn,
         )
-        self.mod_seq.add_module("embedding", embed)
+        self.mods["embedding"] = embed
 
         if charge_embed:
             ce = ChargeEmbedding(
                 node_dim=node_dim,
                 activation=activation,
             )
-            self.mod_seq.add_module("charge_embedding", ce)
+            self.mods["charge_embedding"] = ce
         if spin_embed:
             se = SpinEmbedding(
                 node_dim=node_dim,
                 activation=activation,
             )
-            self.mod_seq.add_module("spin_embedding", se)
+            self.mods["spin_embedding"] = se
 
         for i in range(action_blocks):
             message = XPainnMessage(
@@ -102,8 +102,8 @@ class XPaiNN(BaseModel):
                 activation=activation,
                 layer_norm=layer_norm,
             )
-            self.mod_seq.add_module(f"message_{i}", message)
-            self.mod_seq.add_module(f"update_{i}", update)
+            self.mods[f"message_{i}"] = message
+            self.mods[f"update_{i}"] = update
 
         if output_modes is None:
             output_modes = ["energy"]
@@ -111,7 +111,7 @@ class XPaiNN(BaseModel):
             output_modes = [output_modes]
         for mode in output_modes:
             output = resolve_output(mode, **kwargs)
-            self.mod_seq.add_module(f"output_{mode}", output)
+            self.mods[f"output_{mode}"] = output
             self.extra_properties.extend(output.extra_properties)
 
 
@@ -150,7 +150,7 @@ class XPaiNNEwald(XPaiNN):
                 k_offset=k_offset,
                 projection_dim=projection_dim,
             )
-        self.mod_seq.add_module("ewald_initial", ewald_initial)
+        self.mods["ewald_initial"] = ewald_initial
         for i in range(ewald_blocks):
             ewald_block = EwaldBlock(
                 node_dim=node_dim,
@@ -158,14 +158,14 @@ class XPaiNNEwald(XPaiNN):
                 activation=activation,
                 layer_norm=layer_norm,
             )
-            self.mod_seq.add_module(f"ewald_{i}", ewald_block)
+            self.mods[f"ewald_{i}"] = ewald_block
         if ewald_output_modes is None:
             ewald_output_modes = ["energy"]
         elif not isinstance(ewald_output_modes, Iterable):
             ewald_output_modes = [ewald_output_modes]
         for mode in ewald_output_modes:
             output = resolve_output(mode, **kwargs)
-            self.mod_seq.add_module(f"ewald_output_{mode}", output)
+            self.mods[f"ewald_output_{mode}"] = output
             self.extra_properties.extend(output.extra_properties)
 
 

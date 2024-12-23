@@ -71,13 +71,12 @@ def calc_analytical_hessian(
     # we need to set `retain_graph=True` and `create_graph=True`,
     # so we do this hack to set the model to training mode.
     model.train()
-
+    data[keys.POSITIONS].requires_grad_()
     result: Dict[str, torch.Tensor] = model(
         data.to_dict(),
         compute_forces=True,
         compute_virial=False,
     )
-    pos = data[keys.POSITIONS]
     energy = result[keys.TOTAL_ENERGY].item()
     nuc_grad = -result[keys.FORCES]
     hessian = torch.zeros(
@@ -87,7 +86,7 @@ def calc_analytical_hessian(
     for i in range(mole.natm):
         for j in range(3):
             hessian[i, :, j, :] = torch.autograd.grad(
-                nuc_grad[i, j], pos, retain_graph=True
+                nuc_grad[i, j], data[keys.POSITIONS], retain_graph=True
             )[0]
     hessian = hessian.cpu().numpy()
     # unit conversion
@@ -212,11 +211,13 @@ def run_opt(args: argparse.Namespace) -> None:
             if args.numerical or args.delta is not None:
                 # calculate hessian with numerical second derivative
                 energy, hessian = calc_numerical_hessian(
-                    new_mole, model, device, args.delta
+                    new_mole, transform, model, device, args.delta
                 )
             else:
                 # calculate hessian with analytical second derivative
-                energy, hessian = calc_analytical_hessian(new_mole, model, device)
+                energy, hessian = calc_analytical_hessian(
+                    new_mole, transform, model, device
+                )
             # do thermo calculation
             harmonic_res = thermo.harmonic_analysis(new_mole, hessian)
             if args.verbose >= 1:

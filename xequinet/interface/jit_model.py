@@ -1,6 +1,7 @@
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
+from omegaconf.listconfig import ListConfig
 
 from xequinet import keys
 from xequinet.nn.basic import compute_edge_data, compute_properties
@@ -22,7 +23,7 @@ def get_ff_unit_factor() -> float:
 
 class XPaiNNFF(XPaiNN):
     """
-    XPaiNN model for JIT script. This model does not consider batch.
+    XPaiNN script model for force field. This model does not consider batch.
     """
 
     def __init__(self, **kwargs) -> None:
@@ -60,13 +61,13 @@ class XPaiNNFF(XPaiNN):
 
         # we cannot use `super().forward` because it is nor supported by TorchScript
         # so we manually call the forward method of the parent class
-        data = compute_edge_data(
+        data: Dict[str, torch.Tensor] = compute_edge_data(
             data=data,
             compute_forces=compute_forces,
             compute_virial=compute_virial,
         )
-        for module in self.mod_seq:
-            data = module(data)
+        for mod in self.mods.values():
+            data = mod(data)
         result = compute_properties(
             data=data,
             compute_forces=compute_forces,
@@ -80,6 +81,45 @@ class XPaiNNFF(XPaiNN):
         if compute_virial:
             result[keys.VIRIAL] *= self.virial_unit_factor
         return result
+
+
+class XPaiNNDipole(XPaiNN):
+    """
+    XPaiNN script model for dipole moment. This model does not consider batch.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        default_units = get_default_units()
+        dipole_unit = default_units[keys.DIPOLE]
+        pos_unit = default_units[keys.POSITIONS]
+        self.pos_unit_factor = unit_conversion("Angstrom", pos_unit)
+        self.dipole_unit_factor = unit_conversion(dipole_unit, "e*Angstrom")
+
+    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Args:
+            `data`: Dictionary containing the following keys,
+               - `atomic_numbers`: Atomic numbers.
+               - `positions`: Atomic positions.
+               - `pbc` (Optional): Periodic boundary conditions.
+               - `cell` (Optional): Cell parameters.
+        Returns:
+            A dictionary containing the following keys:
+            - `dipole`: Dipole moment.
+        """
+        data[keys.POSITIONS] *= self.pos_unit_factor
+        data = compute_edge_data(
+            data=data,
+            compute_forces=False,
+            compute_virial=False,
+        )
+        for mod in self.mods.values():
+            data = mod(data)
+        dipole = data[keys.DIPOLE]
+        dipole *= self.dipole_unit_factor
+
+        return {keys.DIPOLE: dipole}
 
 
 @torch.jit.script
@@ -163,11 +203,35 @@ class XPaiNNEwaldFF(XPaiNNEwald):
         return result
 
 
-def resolve_jit_model(model_name: str, **kwargs) -> BaseModel:
+def resolve_jit_model(
+    model_name: str,
+    mode: Optional[str] = None,
+    **kwargs,
+) -> BaseModel:
     models_factory = {
-        "xpainn": XPaiNNFF,
-        "xpainn-ewald": XPaiNNEwaldFF,
+        "xpainn": {"energy": XPaiNNFF, "dipole": XPaiNNDipole},
+        "xpainn-ewald": {"energy": XPaiNNEwaldFF},
     }
-    if model_name.lower() not in models_factory:
+    model_name = model_name.lower()
+    if mode is None:
+        print(
+            kwargs["output_modes"],
+            len(kwargs["output_modes"]),
+            type(kwargs["output_modes"]),
+        )
+        if isinstance(kwargs["output_modes"], str):
+            mode = kwargs["output_modes"]
+        elif (
+            isinstance(kwargs["output_modes"], (list, ListConfig))
+            and len(kwargs["output_modes"]) == 1
+        ):
+            mode = kwargs["output_modes"][0]
+        else:
+            raise ValueError("Find multi-task model, please specify the output mode.")
+
+    if model_name not in models_factory:
         raise NotImplementedError(f"Unsupported model {model_name}")
-    return models_factory[model_name.lower()](**kwargs)
+    if mode not in models_factory[model_name]:
+        raise NotImplementedError(f"Unsupported mode {mode}")
+
+    return models_factory[model_name][mode](**kwargs)

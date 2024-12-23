@@ -28,6 +28,9 @@ class ChargeEmbedding(nn.Module):
         )
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        if keys.TOTAL_CHARGE not in data:
+            return data
+
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
         charge = data[keys.TOTAL_CHARGE].to(node_scalar.dtype)
@@ -66,6 +69,8 @@ class SpinEmbedding(nn.Module):
         )
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        if keys.TOTAL_SPIN not in data:
+            return data
         batch = data[keys.BATCH]
         node_scalar = data[keys.NODE_INVARIANT]
         spin = data[keys.TOTAL_SPIN].to(node_scalar.dtype)

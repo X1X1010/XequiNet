@@ -49,7 +49,9 @@ def compile_model(args: argparse.Namespace) -> None:
     set_default_units(config.default_units)
 
     # build model
-    model = resolve_jit_model(config.model_name, **config.model_kwargs)
+    model = resolve_jit_model(
+        model_name=config.model_name, mode=args.mode, **config.model_kwargs
+    )
     model.eval().to(device)
 
     # load checkpoint
@@ -57,7 +59,7 @@ def compile_model(args: argparse.Namespace) -> None:
     model_script = torch.jit.script(model)
 
     # save model
-    n_species = qc.ELEMENTS_DICT["Rn"] + 1  # currently support up to Xe
+    n_species = qc.ELEMENTS_DICT["Rn"] + 1  # currently support up to Rn
     extra_files = {
         keys.CUTOFF_RADIUS: model.cutoff_radius,
         keys.JIT_FUSION_STRATEGY: args.fusion_strategy,

@@ -30,22 +30,38 @@ def resolve_cutoff(cutoff_fn: str, cutoff: float, **kwargs) -> nn.Module:
         raise NotImplementedError(f"cutoff function {cutoff_fn} is not implemented")
 
 
-class CosineCutoff(nn.Module):
+class CutoffFunction(nn.Module):
     def __init__(self, cutoff: float) -> None:
         super().__init__()
         self.cutoff = cutoff
 
+    def cutoff_func(self, dist: torch.Tensor) -> torch.Tensor:
+        return torch.zeros_like(dist)
+
     def forward(self, dist: torch.Tensor) -> torch.Tensor:
+        assert (
+            dist.dim() == 2 and dist.size(1) == 1
+        ), "Distance tensor must be [nedge, 1]."
+        zeros = torch.zeros_like(dist)
+        return torch.where(dist < self.cutoff, self.cutoff_func(dist), zeros)
+
+
+class CosineCutoff(CutoffFunction):
+    def __init__(self, cutoff: float) -> None:
+        super().__init__(cutoff=cutoff)
+        self.cutoff = cutoff
+
+    def cutoff_func(self, dist: torch.Tensor) -> torch.Tensor:
         return 0.5 * (torch.cos(math.pi * dist / self.cutoff) + 1.0)
 
 
-class PolynomialCutoff(nn.Module):
+class PolynomialCutoff(CutoffFunction):
     def __init__(self, cutoff: float, order: int = 3) -> None:
-        super().__init__()
+        super().__init__(cutoff=cutoff)
         self.cutoff = cutoff
         self.order = order
 
-    def forward(self, dist: torch.Tensor) -> torch.Tensor:
+    def cutoff_func(self, dist: torch.Tensor) -> torch.Tensor:
         p = self.order
         return (
             1
@@ -57,22 +73,20 @@ class PolynomialCutoff(nn.Module):
 
 class ExponentialCutoff(nn.Module):
     def __init__(self, cutoff: float) -> None:
-        super().__init__()
+        super().__init__(cutoff=cutoff)
         self.cutoff = cutoff
 
-    def forward(self, dist: torch.Tensor) -> torch.Tensor:
+    def cutoff_func(self, dist: torch.Tensor) -> torch.Tensor:
         zeros = torch.zeros_like(dist)
         dist_ = torch.where(dist < self.cutoff, dist, zeros)
-        return torch.where(
-            dist < self.cutoff,
-            torch.exp(-(dist_**2) / ((self.cutoff - dist_) * (self.cutoff + dist_))),
-            zeros,
+        return torch.exp(
+            -(dist_**2) / ((self.cutoff - dist_) * (self.cutoff + dist_))
         )
 
 
 class FlatCutoff(nn.Module):
     def __init__(self, cutoff: float, offset_factor: float = 0.1) -> None:
-        super().__init__()
+        super().__init__(cutoff=cutoff)
         assert 0.0 < offset_factor < 1.0
         self.offset_factor = offset_factor
         self.inv_offset = 1.0 / offset_factor
@@ -84,7 +98,7 @@ class FlatCutoff(nn.Module):
         steep_cutoff = (3.0 - 2.0 * d_tilde) * d_tilde**2
         return steep_cutoff
 
-    def forward(self, dist: torch.Tensor) -> torch.Tensor:
+    def cutoff_func(self, dist: torch.Tensor) -> torch.Tensor:
 
         d_prime = dist * self.inv_cutoff  # [nedge, 1] relative distance
         return torch.where(
