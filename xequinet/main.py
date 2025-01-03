@@ -78,8 +78,14 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         type=str,
-        default=None,
+        default="lmp",
         help="Mode for jit model.",
+    )
+    parser.add_argument(
+        "--net-charge",
+        type=int,
+        default=None,
+        help="Net charge for jit model.",
     )
     parser.add_argument(
         "--device",

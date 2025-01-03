@@ -190,3 +190,86 @@ def radius_graph_pbc(
     )
 
     return edge_index, cell_offsets
+
+
+@torch.jit.script
+def single_radius_graph(
+    pos: torch.Tensor,
+    pbc: torch.Tensor,
+    cell: torch.Tensor,
+    cutoff: float,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    device = pos.device
+    dtype = pos.dtype
+
+    cross_a2a3 = torch.cross(cell[1], cell[2], dim=-1)
+    cell_vol = torch.sum(cell[0] * cross_a2a3).item()
+
+    if pbc[0]:
+        inv_min_dist_a1 = torch.norm(cross_a2a3) / cell_vol
+        rep_a1 = torch.ceil(cutoff * inv_min_dist_a1).item()
+    else:
+        rep_a1 = 0
+
+    if pbc[1]:
+        cross_a3a1 = torch.cross(cell[2], cell[0], dim=-1)
+        inv_min_dist_a2 = torch.norm(cross_a3a1) / cell_vol
+        rep_a2 = torch.ceil(cutoff * inv_min_dist_a2).item()
+    else:
+        rep_a2 = 0
+
+    if pbc[2]:
+        cross_a1a2 = torch.cross(cell[0], cell[1], dim=-1)
+        inv_min_dist_a3 = torch.norm(cross_a1a2) / cell_vol
+        rep_a3 = torch.ceil(cutoff * inv_min_dist_a3).item()
+    else:
+        rep_a3 = 0
+
+    cells_a1 = torch.arange(-rep_a1, rep_a1 + 1, device=device, dtype=dtype)
+    cells_a2 = torch.arange(-rep_a2, rep_a2 + 1, device=device, dtype=dtype)
+    cells_a3 = torch.arange(-rep_a3, rep_a3 + 1, device=device, dtype=dtype)
+
+    cell_offsets = torch.cartesian_prod(cells_a1, cells_a2, cells_a3)
+    n_cells = cell_offsets.shape[0]
+    # [n_cells, 3]
+    # compute the x, y, z positional offsets for each cell in each image
+    # [n_cells, 3] = [n_cells, 3] @ [3, 3]
+    pbc_offsets = torch.bmm(cell_offsets, cell)
+
+    # TODO: Wrap positions to unit cell
+
+    pos_pbc_shift = pos.unsqueeze(1) + pbc_offsets.unsqueeze(0)
+
+    # block-wise distance computation
+    block_size = 65536
+    A = pos.reshape(-1, 3).contiguous()
+    B = pos_pbc_shift.reshape(-1, 3).contiguous()
+    n, m = A.shape[0], B.shape[0]
+    n_blocks = (n + block_size - 1) // block_size
+    m_blocks = (m + block_size - 1) // block_size
+
+    ret_idx = []
+    for i in range(n_blocks):
+        for j in range(m_blocks):
+            A_block = A[i * block_size : (i + 1) * block_size]
+            B_block = B[j * block_size : (j + 1) * block_size]
+
+            D = torch.cdist(A_block, B_block)
+            idx = torch.nonzero(torch.logical_and(D < cutoff, D > 0.01))
+            ret_idx.append(idx)
+
+    # flatten index to get 0-based indices
+    # [ [ix0, iy0], [ix1, iy1], ...]: [n_edges, 2]
+    index0 = torch.cat(ret_idx)
+    ix = index0[:, 0]
+    iy = torch.div(index0[:, 1], n_cells, rounding_mode="floor")
+    # get displacement offsets: [sum(Vi)] -> [n_edges] -> [1, n_edges]
+    edge_index = torch.stack([ix, iy])
+    # pos: [n_atoms, n_cells, 3], and reshape to [n_atoms * n_cells, 3] therefore,
+    # the indeces are arranged like:
+    # | [G0] a0c0 a0c1 ... a1c0 a1c1 ... | [G1] a0c0 a0c1 ... a1c0 a1c1 ... |
+    # hence, we can easily obtain cell index with iy % n_cells
+    cell_offsets_index = index0[:, 1] % n_cells
+    cell_offsets = cell_offsets[cell_offsets_index]
+
+    return edge_index, cell_offsets

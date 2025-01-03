@@ -50,7 +50,10 @@ def compile_model(args: argparse.Namespace) -> None:
 
     # build model
     model = resolve_jit_model(
-        model_name=config.model_name, mode=args.mode, **config.model_kwargs
+        model_name=config.model_name,
+        mode=args.mode,
+        net_charge=args.net_charge,
+        **config.model_kwargs,
     )
     model.eval().to(device)
 
@@ -68,8 +71,14 @@ def compile_model(args: argparse.Namespace) -> None:
     }
     _extra_files = {k: str(v).encode("ascii") for k, v in extra_files.items()}
 
+    if args.net_charge is None:
+        chg_mark = ""
+    elif args.net_charge > 0:
+        chg_mark = f"c+{args.net_charge}"
+    else:
+        chg_mark = f"c{args.net_charge}"
     output_file = (
-        f"{args.ckpt.split('/')[-1].split('.')[0]}.jit"
+        f"{args.ckpt.split('/')[-1].split('.')[0]}-{args.mode}-{chg_mark}.jit"
         if args.output is None
         else args.output
     )
