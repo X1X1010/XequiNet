@@ -208,7 +208,7 @@ def run_opt(args: argparse.Namespace) -> None:
         if args.freq:
             # open freq output file
             new_mole.stdout = open(freq_log, "a")
-            if args.numerical or args.delta is not None:
+            if args.delta is not None:
                 # calculate hessian with numerical second derivative
                 energy, hessian = calc_numerical_hessian(
                     new_mole, transform, model, device, args.delta
@@ -220,7 +220,7 @@ def run_opt(args: argparse.Namespace) -> None:
                 )
             # do thermo calculation
             harmonic_res = thermo.harmonic_analysis(new_mole, hessian)
-            if args.verbose >= 1:
+            if args.verbose:
                 # dump normal modes in new_mol.stdout, i.e. freq output file
                 thermo.dump_normal_mode(new_mole, harmonic_res)
             setattr(fake_method, "e_tot", energy)
@@ -232,6 +232,14 @@ def run_opt(args: argparse.Namespace) -> None:
             if args.shermo:
                 shm_file = args.input.split(".")[0] + "_freq.shm"
                 to_shermo(shm_file, new_mole, energy, harmonic_res["freq_wavenumber"])
+            if args.save_hessian:
+                hessian_file = args.input.split(".")[0] + "_h.txt"
+                np.savetxt(
+                    hessian_file,
+                    hessian.transpose(0, 2, 1, 3).reshape(
+                        new_mole.natm * 3, new_mole.natm * 3
+                    ),
+                )
 
         # write optimized geometry
         if not args.no_opt:

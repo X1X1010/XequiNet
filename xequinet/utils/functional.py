@@ -127,7 +127,7 @@ def resolve_lr_scheduler(
             step_size=step_size,
             **kwargs,
         )
-    elif sched_type == "plateau":
+    elif sched_type in {"plateau", "reduce_on_plateau"}:
         return SmoothReduceLROnPlateau(
             optimizer=optimizer,
             min_lr=min_lr,

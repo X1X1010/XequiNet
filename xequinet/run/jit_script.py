@@ -74,11 +74,11 @@ def compile_model(args: argparse.Namespace) -> None:
     if args.net_charge is None:
         chg_mark = ""
     elif args.net_charge > 0:
-        chg_mark = f"c+{args.net_charge}"
+        chg_mark = f"-c+{args.net_charge}"
     else:
-        chg_mark = f"c{args.net_charge}"
+        chg_mark = f"-c{args.net_charge}"
     output_file = (
-        f"{args.ckpt.split('/')[-1].split('.')[0]}-{args.mode}-{chg_mark}.jit"
+        f"{args.ckpt.split('/')[-1].split('.')[0]}-{args.mode}{chg_mark}.jit"
         if args.output is None
         else args.output
     )

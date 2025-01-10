@@ -37,7 +37,7 @@ def gen_units_dict():
     u["mol"] = _NA
     # charge
     u['e'] = 1.0
-    u["Coloumb"] = u['C'] = 1 / _e
+    u["Coulomb"] = u['C'] = 1 / _e
     # length
     u["Bohr"] = u["a0"] = 1.0
     u["meter"] = u["m"] = (_me * _e**2) / (4 * pi * _eps0 * _hbar**2)

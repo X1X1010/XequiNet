@@ -24,9 +24,8 @@ def main() -> None:
     parser.add_argument(
         "--verbose",
         "-v",
-        type=int,
-        default=0,
-        help="Verbose level (default: 0).",
+        action="store_true",
+        help="Print verbose information.",
     )
     # test
     parser.add_argument(
@@ -118,9 +117,9 @@ def main() -> None:
         help="Calculate vibrational frequencies.",
     )
     parser.add_argument(
-        "--numerical",
+        "--save-hessian",
         action="store_true",
-        help="Calculate hessian with numerical second derivative.",
+        help="Save hessian matrix of frequency calculation.",
     )
     parser.add_argument(
         "--shermo",

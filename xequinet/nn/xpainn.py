@@ -37,9 +37,15 @@ class XEmbedding(nn.Module):
         self.node_dim = node_dim
         self.node_irreps = o3.Irreps(node_irreps)
         self.node_num_irreps = self.node_irreps.num_irreps
-        self.int2c1e = Int2c1eEmbedding(embed_basis, aux_basis)
-        self.node_lin = nn.Linear(self.int2c1e.embed_dim, self.node_dim)
-        nn.init.zeros_(self.node_lin.bias)
+        if embed_basis == "one-hot":
+            self.embedding = nn.Embedding(100, self.node_dim, padding_idx=0)
+        else:
+            int2c1e = Int2c1eEmbedding(embed_basis, aux_basis)
+            self.embedding = nn.Sequential(
+                int2c1e,
+                nn.Linear(int2c1e.embed_dim, self.node_dim),
+            )
+            nn.init.zeros_(self.embedding[1].bias)
         self.sph_harm = o3.SphericalHarmonics(
             self.node_irreps, normalize=True, normalization="component"
         )
@@ -53,8 +59,7 @@ class XEmbedding(nn.Module):
         distances = data[keys.EDGE_LENGTH].unsqueeze(-1)
 
         # node linear
-        node_embed = self.int2c1e(atomic_numbers)
-        node_invariant = self.node_lin(node_embed)
+        node_invariant = self.embedding(atomic_numbers)
         data[keys.NODE_INVARIANT] = node_invariant
 
         # calculate radial basis function

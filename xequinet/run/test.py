@@ -10,7 +10,13 @@ from torch_geometric.loader import DataLoader
 from xequinet import keys
 from xequinet.data import XequiData, create_lmdb_dataset
 from xequinet.nn import resolve_model
-from xequinet.utils import DataConfig, ModelConfig, get_default_units, set_default_units
+from xequinet.utils import (
+    DataConfig,
+    ModelConfig,
+    get_default_units,
+    qc,
+    set_default_units,
+)
 from xequinet.utils.loss import L1Metric
 
 
@@ -47,7 +53,7 @@ def test(
     device: torch.device,
     compute_forces: bool = False,
     compute_virial: bool = False,
-    verbose: int = 0,
+    verbose: bool = False,
 ) -> Tuple[Dict[str, float], Optional[Dict[str, Any]]]:
 
     data_list, results_list = [], []
@@ -59,12 +65,12 @@ def test(
         l1_losses = l1_metric(result, data)
         for prop, (l1, n) in l1_losses.items():
             meter.update(prop, l1, n)
-        if verbose > 0:
+        if verbose:
             data_list.append(data)
             results_list.append(result)
     # reduce the meter
     reduced_l1 = meter.reduce()
-    if verbose > 0:
+    if verbose:
         # collate data
         batch_data = Batch.from_data_list(data_list)
         # concatenate results
@@ -80,6 +86,96 @@ def test(
     return reduced_l1, results
 
 
+def write_results(results: Dict[str, Any], output_file: str) -> None:
+    data, pred = results["data"], results["results"]
+    batch = data[keys.BATCH]
+    pbc = hasattr(data, keys.PBC) and data[keys.PBC].any()
+    n_total = batch.max().item() + 1
+    with open(output_file, "a") as f:
+        for i in range(n_total):
+            mask = batch == i
+            if pbc:
+                cell = data[keys.CELL][i]
+                header = ["Cell", "x", "y", "z"]
+                table = [
+                    ["a"] + [a.item() for a in cell[0]],
+                    ["b"] + [b.item() for b in cell[1]],
+                    ["c"] + [c.item() for c in cell[2]],
+                ]
+                f.write(
+                    tabulate(table, headers=header, tablefmt="plain", floatfmt=".6f")
+                )
+                f.write("\n")
+
+            # write the positions forces and charges
+            header = ["Atom", "x", "y", "z"]
+            if keys.FORCES in pred and keys.FORCES in data:
+                header.extend(["Pred Fx", "Pred Fy", "Pred Fz"])
+                header.extend(["Real Fx", "Real Fy", "Real Fz"])
+            if keys.ATOMIC_CHARGES in pred and keys.ATOMIC_CHARGES in data:
+                header.extend(["Pred q", "Real q"])
+            table = []
+            for j, atomic_number in enumerate(data[keys.ATOMIC_NUMBERS][mask]):
+                row = [qc.ELEMENTS_LIST[atomic_number.item()]]
+                row.extend(data[keys.POSITIONS][mask][j].tolist())
+                if keys.FORCES in pred and keys.FORCES in data:
+                    row.extend(pred[keys.FORCES][mask][j].tolist())
+                    row.extend(data[keys.FORCES][mask][j].tolist())
+                if keys.ATOMIC_CHARGES in pred and keys.ATOMIC_CHARGES in data:
+                    row.append(pred[keys.ATOMIC_CHARGES][mask][j].item())
+                    row.append(data[keys.ATOMIC_CHARGES][mask][j].item())
+                table.append(row)
+            f.write(tabulate(table, headers=header, tablefmt="plain", floatfmt=".6f"))
+            f.write("\n")
+
+            # write the energy
+            if keys.TOTAL_ENERGY in pred and keys.TOTAL_ENERGY in data:
+                f.write(f"Pred Energy: {pred[keys.TOTAL_ENERGY][i].item()}  ")
+                f.write(f"Real Energy: {data[keys.TOTAL_ENERGY][i].item()}\n")
+
+            # write the virial
+            if keys.VIRIAL in pred and keys.VIRIAL in data:
+                header = ["", "xx", "yy", "zz", "yz", "zx", "xy"]
+                table = [["Pred Virial"], ["Real Virial"]]
+                table[0].extend(
+                    pred[keys.VIRIAL][i].flatten()[0, 4, 8, 5, 1, 2].tolist()
+                )
+                table[1].extend(
+                    data[keys.VIRIAL][i].flatten()[0, 4, 8, 5, 1, 2].tolist()
+                )
+                f.write(
+                    tabulate(table, headers=header, tablefmt="plain", floatfmt=".6f")
+                )
+                f.write("\n")
+
+            # write the dipole
+            if keys.DIPOLE in pred and keys.DIPOLE in data:
+                header = ["", "x", "y", "z"]
+                table = [["Pred Dipole"], ["Real Dipole"]]
+                table[0].extend(pred[keys.DIPOLE][i].tolist())
+                table[1].extend(data[keys.DIPOLE][i].tolist())
+                f.write(
+                    tabulate(table, headers=header, tablefmt="plain", floatfmt=".6f")
+                )
+                f.write("\n")
+
+            # write the polar
+            if keys.POLARIZABILITY in pred and keys.POLARIZABILITY in data:
+                header = ["", "xx", "yy", "zz", "yz", "zx", "xy"]
+                table = [["Pred Polar"], ["Real Polar"]]
+                table[0].extend(
+                    pred[keys.POLARIZABILITY][i].flatten()[0, 4, 8, 5, 1, 2].tolist()
+                )
+                table[1].extend(
+                    data[keys.POLARIZABILITY][i].flatten()[0, 4, 8, 5, 1, 2].tolist()
+                )
+                f.write(
+                    tabulate(table, headers=header, tablefmt="plain", floatfmt=".6f")
+                )
+                f.write("\n")
+            f.write("\n")
+
+
 def run_test(args: argparse.Namespace) -> None:
     # set device
     if args.device is None:
@@ -88,14 +184,15 @@ def run_test(args: argparse.Namespace) -> None:
         device = torch.device(args.device)
 
     # load checkpoint and config
+    yaml_config = OmegaConf.load(args.config)
     data_config = OmegaConf.merge(
         OmegaConf.structured(DataConfig),
-        OmegaConf.load(args.config),
+        yaml_config["data"],
     )
     ckpt = torch.load(args.ckpt, map_location=device)
     model_config = OmegaConf.merge(
         OmegaConf.structured(ModelConfig),
-        ckpt["config"],
+        yaml_config["model"],
     )
     # these will do nothing, only for type annotation
     data_config = cast(DataConfig, data_config)
@@ -149,8 +246,8 @@ def run_test(args: argparse.Namespace) -> None:
     )
 
     # set meter
-    meter = AverageMetric(data_config.targets)
     l1_metric = L1Metric(*data_config.targets)
+    meter = AverageMetric(l1_metric.properties)
 
     # testing
     compute_forces = keys.FORCES in data_config.targets
@@ -169,7 +266,7 @@ def run_test(args: argparse.Namespace) -> None:
         verbose=args.verbose,
     )
     if args.output is None:
-        output_file = f"{args.config.split('/')[-1].split('.')[0]}_test.log"
+        output_file = f"{yaml_config['trainer']['run_name']}_test.log"
     else:
         output_file = args.output
     with open(output_file, "w") as f:
@@ -179,13 +276,20 @@ def run_test(args: argparse.Namespace) -> None:
                 continue
             f.write(f" --- Property: {prop} --- Unit: {unit}\n")
         f.write(" --- Test Results\n")
+
+    if args.verbose:
+        write_results(results, output_file)
+
+    with open(output_file, "a") as f:
         header = [""]
         tabulate_data = ["Test MAE"]
         header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
-        tabulate_data.extend(list(map(lambda x: f"{x:.7f}", reduced_l1.values())))
-        f.write(tabulate([tabulate_data], headers=header, tablefmt="plain"))
+        tabulate_data.extend(list(reduced_l1.values()))
+        f.write(
+            tabulate([tabulate_data], headers=header, tablefmt="plain", floatfmt=".6f")
+        )
         f.write("\n")
 
-    if args.verbose > 0:
+    if args.verbose:
         results_file = output_file.replace(".log", ".pt")
         torch.save(results, results_file)

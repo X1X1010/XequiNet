@@ -3,7 +3,6 @@ from typing import Any, Dict, Optional, cast
 
 import ase.io
 import torch
-from ase.stress import full_3x3_to_voigt_6_stress
 from omegaconf import OmegaConf
 from tabulate import tabulate
 from torch_geometric.data import Batch
@@ -37,11 +36,11 @@ def inference(
     compute_forces: bool = False,
     compute_virial: bool = False,
     base_method: Optional[str] = None,
-    verbose: int = 0,
+    verbose: bool = False,
 ) -> Optional[Dict[str, Any]]:
     # get default units
     default_units = get_default_units()
-    # save the results if verbose > 0
+    # save the results if verbose
     data_list, results_list = [], []
     # loop over the dataloader
     for data in dataloader:
@@ -53,10 +52,10 @@ def inference(
             result = model(data.to_dict(), compute_forces, compute_virial)
 
         if all(prop not in result for prop in keys.STANDARD_PROPERTIES):
-            if verbose < 1:
+            if not verbose:
                 raise RuntimeError(
                     "No standard properties found in the model output, so nothing will be printed. \
-                    Please set larger verbose for saving the results to pt file."
+                    Please use `--verbose` or `-v` to save the results in `.pt` file."
                 )
             continue
         # loop over the batch
@@ -99,12 +98,12 @@ def inference(
                 if hasattr(datum, keys.PBC) and datum[keys.PBC].any():
                     header = ["Cell", "x", "y", "z"]
                     table = [
-                        ["a"] + [f"{x.item():.6f}" for x in datum[keys.CELL][0]],
-                        ["b"] + [f"{x.item():.6f}" for x in datum[keys.CELL][1]],
-                        ["c"] + [f"{x.item():.6f}" for x in datum[keys.CELL][2]],
+                        ["a"] + [datum[keys.CELL][0].tolist()],
+                        ["b"] + [datum[keys.CELL][1].tolist()],
+                        ["c"] + [datum[keys.CELL][2].tolist()],
                     ]
                     f.write(tabulate(table, headers=header, tablefmt="plain"))
-
+                    f.write("\n")
                 # write the positions, forces, and charges
                 header = ["Atoms", "x", "y", "z"]
                 if keys.FORCES in result:
@@ -113,14 +112,16 @@ def inference(
                     header.append("Charges")
                 table = []
                 for j, atomic_number in enumerate(datum.atomic_numbers):
-                    row = [qc.ELEMENTS_LIST[atomic_number]]
-                    row.extend([f"{x.item():.6f}" for x in datum[keys.POSITIONS][j]])
+                    row = [qc.ELEMENTS_LIST[atomic_number.item()]]
+                    row.extend(datum[keys.POSITIONS][j].tolist())
                     if keys.FORCES in result:
-                        row.extend([f"{x.item():.6f}" for x in result[keys.FORCES][j]])
+                        row.extend(result[keys.FORCES][j].tolist())
                     if keys.ATOMIC_CHARGES in result:
-                        row.append(f"{result[keys.ATOMIC_CHARGES][j].item():.6f}")
+                        row.append(result[keys.ATOMIC_CHARGES][j].item())
                     table.append(row)
-                f.write(tabulate(table, headers=header, tablefmt="simple"))
+                f.write(
+                    tabulate(table, headers=header, tablefmt="simple", floatfmt=".6f")
+                )
                 f.write("\n")
 
                 # write the energy
@@ -129,47 +130,53 @@ def inference(
 
                 # write the stress
                 if keys.VIRIAL in result:
-                    header = ["", "xx", "yy", "zz", "xy", "xz", "yz"]
-                    stress = -result[keys.VIRIAL][i] / torch.det(datum[keys.CELL]).abs()
-                    stress = full_3x3_to_voigt_6_stress(stress.detach().cpu().numpy())
-                    table = [["Stress"] + [f"{x:.6f}" for x in stress]]
-                    f.write(tabulate(table, headers=header, tablefmt="plain"))
+                    header = ["", "xx", "yy", "zz", "yz", "zx", "xy"]
+                    stress = result[keys.VIRIAL][i] / torch.det(datum[keys.CELL]).abs()
+                    stress = stress.flatten()[0, 4, 8, 5, 2, 1]
+                    table = [["Stress"] + stress.tolist()]
+                    f.write(
+                        tabulate(
+                            table, headers=header, tablefmt="plain", floatfmt=".6f"
+                        )
+                    )
                     f.write("\n")
 
                 # write the dipole
                 if keys.DIPOLE in result:
-                    header = ["", "x", "y", "z", ""]
+                    header = ["", "x", "y", "z", "Magnitude"]
                     dipole = result[keys.DIPOLE][i]
                     magnitude = torch.linalg.norm(dipole)
-                    table = [
-                        ["Dipole"]
-                        + [f"{x.item():.6f}" for x in dipole]
-                        + [f"{magnitude.item():.6f}"]
-                    ]
-                    f.write(tabulate(table, headers=header, tablefmt="plain"))
+                    table = [["Dipole"] + [dipole.tolist()] + [magnitude.item()]]
+                    f.write(
+                        tabulate(
+                            table, headers=header, tablefmt="plain", floatfmt=".6f"
+                        )
+                    )
                     f.write("\n")
 
                 # write the polarizability
                 if keys.POLARIZABILITY in result:
-                    header = ["", "xx", "yy", "zz", "xy", "xz", "yz", "iso"]
+                    header = ["", "xx", "yy", "zz", "yz", "zx", "xy", "Isotropic"]
                     polar = result[keys.POLARIZABILITY][i]
                     isotropic = (torch.trace(polar) / 3.0).item()
-                    polar = full_3x3_to_voigt_6_stress(polar.detach().cpu().numpy())
+                    polar = polar.flatten()[0, 4, 8, 5, 2, 1]
                     table = [
-                        ["Polarizability"]
-                        + [f"{x:.6f}" for x in polar]
-                        + [f"{isotropic:.6f}"]
+                        ["Polarizability"] + [p.item() for p in polar] + [isotropic]
                     ]
-                    f.write(tabulate(table, headers=header, tablefmt="plain"))
+                    f.write(
+                        tabulate(
+                            table, headers=header, tablefmt="plain", floatfmt=".6f"
+                        )
+                    )
                     f.write("\n")
                 f.write("\n")
-        # save the results if verbose > 0
-        if verbose > 0:
+        # save the results if verbose
+        if verbose:
             data_list.append(data)
             results_list.append(result)
 
-    # collate the results if verbose > 0
-    if verbose > 0:
+    # collate the results if verbose
+    if verbose:
         # collate data
         batch_data = Batch.from_data_list(data_list)
         # concatenate results
@@ -266,6 +273,6 @@ def run_infer(args: argparse.Namespace) -> None:
         verbose=args.verbose,
     )
 
-    if args.verbose > 0:
+    if args.verbose:
         results_file = f"{args.input.split('/')[-1].split('.')[0]}.pt"
         torch.save(results, results_file)

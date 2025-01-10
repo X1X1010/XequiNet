@@ -17,7 +17,7 @@ pip install -e .
 ```
 
 ## Usage
-See the markdown files in `docs` for details.
+See the markdown files in [docs](./xequinet/docs) for details.
 
 `docs/training.md`: Training and testing with dataset in `lmdb` format. No support for CPU training at this time.
 

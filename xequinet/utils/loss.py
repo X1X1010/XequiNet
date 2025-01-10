@@ -70,8 +70,8 @@ class WeightedLoss(nn.Module):
             assert result[keys.VIRIAL].shape == target[keys.VIRIAL].shape
             volume = torch.det(target[keys.CELL]).abs().reshape(-1, 1, 1)
             stress_loss = self.loss_fn(
-                -result[keys.VIRIAL] / volume,
-                -target[keys.VIRIAL] / volume,
+                result[keys.VIRIAL] / volume,
+                target[keys.VIRIAL] / volume,
             )
             total_loss += self.weight_dict[keys.STRESS] * stress_loss
             losses_dict[keys.STRESS] = stress_loss
@@ -139,8 +139,8 @@ class L1Metric:
             assert result[keys.VIRIAL].shape == target[keys.VIRIAL].shape
             volume = torch.det(target[keys.CELL]).abs().reshape(-1, 1, 1)
             stress_l1 = F.l1_loss(
-                -result[keys.VIRIAL] / volume,
-                -target[keys.VIRIAL] / volume,
+                result[keys.VIRIAL] / volume,
+                target[keys.VIRIAL] / volume,
                 reduction="sum",
             )
             metrics_dict[keys.STRESS] = (

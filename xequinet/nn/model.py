@@ -11,6 +11,8 @@ from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
 
 
 class BaseModel(nn.Module):
+    cutoff_radius: float
+
     def __init__(self) -> None:
         super().__init__()
         self.mods = nn.ModuleDict()
@@ -129,7 +131,7 @@ class XPaiNNEwald(XPaiNN):
         projection_dim: int = kwargs.get("projection_dim", 8)
         ewald_blocks: int = kwargs.get("ewald_blocks", 1)
         ewald_output_modes: Union[str, List[str]] = kwargs.get(
-            "ewald_output_modes", ["energy"]
+            "ewald_output_mode", ["energy"]
         )
 
         if use_pbc:
