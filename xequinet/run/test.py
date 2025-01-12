@@ -291,5 +291,5 @@ def run_test(args: argparse.Namespace) -> None:
         f.write("\n")
 
     if args.verbose:
-        results_file = output_file.replace(".log", ".pt")
+        results_file = output_file.split(".")[0] + "_results.pt"
         torch.save(results, results_file)

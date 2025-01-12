@@ -46,10 +46,20 @@ torchrun --nproc-per-node=<n_gpu> --master-port=<port> --no-python xeq train --c
 
 During training, `loss.log` , `run_name_k.pt` and `run_name_last.pt` will be automatically generated, which records loss information and model parameters respectively.
 
-## Test
-Similarily, prepare the dataset and configuration file `config.yaml`. Run
+## Testing
+Similarily, prepare the dataset and configuration file `config.yaml`. Run testing with this command. Then testing will be preformed on the `test` part in `<split>.json`
 ```
 xeq test --config config.yaml --ckpt run_name_0.pt
 ```
-You can obtain the detailed arguments by
+Here is the detailed command line arguments.
+
+`--config` / `-C`: Testing config file name. (default: `config.yaml`)
+
+`--ckpt` / `-c`: Checkpoint file name.
+
+`--device`: `cuda` or `cpu`. (default: automatically detect if GPU is available.)
+
+`--ouput` / `-o`: Output file name.
+
+`--verbose` / `-v`: Whether to print detailed information and save the result in `.pt` file.
 

@@ -18,6 +18,7 @@ from xequinet.data import (
     datapoint_to_pyscf,
     datapoint_to_xtb,
 )
+from xequinet.nn import resolve_model
 from xequinet.utils import set_default_units, unit_conversion
 
 
@@ -162,13 +163,18 @@ def run_opt(args: argparse.Namespace) -> None:
     else:
         device = torch.device(args.device)
 
-    # set default units, Angstrom for positions and eV for energy
-    set_default_units(
-        {
-            keys.POSITIONS: "Angstrom",
-            keys.TOTAL_ENERGY: "eV",
-        }
-    )
+    # load checkpoint and config
+    ckpt = torch.load(args.ckpt, map_location=device)
+    model_config = ckpt["config"]
+    # set default unit
+    set_default_units(model_config["default_units"])
+    # build model
+    model = resolve_model(
+        model_config["model_name"],
+        **model_config["model_kwargs"],
+    ).to(device)
+    model.load_state_dict(ckpt["model"]).eval()
+    transform = NeighborTransform(model.cutoff_radius)
 
     # set params for optimization
     if args.opt_params:
@@ -177,17 +183,9 @@ def run_opt(args: argparse.Namespace) -> None:
     else:
         opt_params = {}
 
-    # load jit model
-    _extra_files = {"cutoff_radius": b""}
-    model = torch.jit.load(
-        args.ckpt, map_location=device, _extra_files=_extra_files
-    ).eval()
-    cutoff_radius = float(_extra_files["cutoff_radius"].decode())
-    transform = NeighborTransform(cutoff_radius)
-
     atoms_list = ase.io.read(args.input, index=":")
     # loop over molecules
-    for atoms in atoms_list:
+    for i, atoms in enumerate(atoms_list):
         data = datapoint_from_ase(atoms)
         mole = datapoint_to_pyscf(data)
         # create a fake method as pyscf method, which returns energy and gradient
@@ -206,6 +204,7 @@ def run_opt(args: argparse.Namespace) -> None:
             )
 
         if args.freq:
+            suffix = "" if len(atoms_list) == 1 else f"{i}"
             # open freq output file
             new_mole.stdout = open(freq_log, "a")
             if args.delta is not None:
@@ -230,16 +229,17 @@ def run_opt(args: argparse.Namespace) -> None:
             new_mole.stdout.write("\n\n")
             new_mole.stdout.close()
             if args.shermo:
-                shm_file = args.input.split(".")[0] + "_freq.shm"
+                shm_file = args.input.split(".")[0] + f"_freq{suffix}.shm"
                 to_shermo(shm_file, new_mole, energy, harmonic_res["freq_wavenumber"])
             if args.save_hessian:
-                hessian_file = args.input.split(".")[0] + "_h.txt"
+                hessian_file = args.input.split(".")[0] + f"_h{suffix}.txt"
                 np.savetxt(
                     hessian_file,
                     hessian.transpose(0, 2, 1, 3).reshape(
                         new_mole.natm * 3, new_mole.natm * 3
                     ),
                 )
+            new_mole.stdout.close()
 
         # write optimized geometry
         if not args.no_opt:
@@ -256,4 +256,4 @@ def run_opt(args: argparse.Namespace) -> None:
                 for a, c in zip(
                     new_mole.elements, new_mole.atom_coords(unit="Angstrom")
                 ):
-                    f.write(f"{a: <2} {c[0]:10.6f} {c[1]:10.6f} {c[2]:10.6f}\n")
+                    f.write(f"{a: <2}  {c[0]:10.6f}  {c[1]:10.6f}  {c[2]:10.6f}\n")

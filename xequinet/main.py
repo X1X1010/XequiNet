@@ -81,6 +81,12 @@ def main() -> None:
         help="Mode for jit model.",
     )
     parser.add_argument(
+        "--unit-style",
+        type=str,
+        default="metal",
+        help="Unit style for jit model.",
+    )
+    parser.add_argument(
         "--net-charge",
         type=int,
         default=None,

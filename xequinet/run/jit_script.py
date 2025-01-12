@@ -48,9 +48,16 @@ def compile_model(args: argparse.Namespace) -> None:
     # set default unit
     set_default_units(config.default_units)
 
+    # output suffix
+    suffix = args.mode
+    if args.mode != "gmx":
+        suffix += f"-{args.unit_style}"
+    if args.net_charge is not None:
+        suffix += f"-c{args.net_charge:+}"
+
     # build model
     model = resolve_jit_model(
-        model_name=config.model_name,
+        unit_style=args.unit_style,
         mode=args.mode,
         net_charge=args.net_charge,
         **config.model_kwargs,
@@ -71,15 +78,5 @@ def compile_model(args: argparse.Namespace) -> None:
     }
     _extra_files = {k: str(v).encode("ascii") for k, v in extra_files.items()}
 
-    if args.net_charge is None:
-        chg_mark = ""
-    elif args.net_charge > 0:
-        chg_mark = f"-c+{args.net_charge}"
-    else:
-        chg_mark = f"-c{args.net_charge}"
-    output_file = (
-        f"{args.ckpt.split('/')[-1].split('.')[0]}-{args.mode}{chg_mark}.jit"
-        if args.output is None
-        else args.output
-    )
+    output_file = f"{args.ckpt.split('/')[-1].split('.')[0]}-{suffix}.jit"
     model_script.save(output_file, _extra_files=_extra_files)

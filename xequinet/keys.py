@@ -98,3 +98,20 @@ CUTOFF_RADIUS: Final[str] = "cutoff_radius"
 JIT_FUSION_STRATEGY: Final[str] = "jit_fusion_strategy"
 N_SPECIES: Final[str] = "n_species"
 PERIODIC_TABLE: Final[str] = "periodic_table"
+LAMMPS_UNIT_STYLE: Final[Dict[str, Dict[str, str]]] = {
+    "metal": {
+        TOTAL_ENERGY: "eV",
+        POSITIONS: "Angstrom",
+        TOTAL_CHARGE: "e",
+    },
+    "real": {
+        TOTAL_ENERGY: "kcal/mol",
+        POSITIONS: "Angstrom",
+        TOTAL_CHARGE: "e",
+    },
+    "electron": {
+        TOTAL_ENERGY: "Hartree",
+        POSITIONS: "Bohr",
+        TOTAL_CHARGE: "e",
+    },
+}

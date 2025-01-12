@@ -130,16 +130,16 @@ def datapoint_to_xtb(datapoint: XequiData, method: str = "GFN1-xTB"):
     pos_unit = get_default_units()[keys.POSITIONS]
     pos_factor = unit_conversion(pos_unit, "Bohr")
 
-    atomic_numbers = datapoint.atomic_numbers.numpy()
-    pos = datapoint.pos.numpy() * pos_factor
+    atomic_numbers = datapoint.atomic_numbers.cpu().numpy()
+    pos = datapoint.pos.cpu().numpy() * pos_factor
     charge = datapoint.charge.item()
     spin = datapoint.spin.item()
     if hasattr(datapoint, keys.CELL) and datapoint.cell is not None:
-        cell = datapoint.cell.view(3, 3).numpy() * pos_factor
+        cell = datapoint.cell.view(3, 3).cpu().numpy() * pos_factor
     else:
         cell = None
     if hasattr(datapoint, keys.PBC) and datapoint.pbc is not None:
-        pbc = datapoint.pbc.view(3).numpy()
+        pbc = datapoint.pbc.view(3).cpu().numpy()
     else:
         pbc = None
     return xtb.Calculator(

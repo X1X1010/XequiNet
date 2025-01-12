@@ -9,22 +9,6 @@ from xequinet.nn.model import BaseModel, XPaiNN
 from xequinet.utils import get_default_units, unit_conversion
 
 
-def get_ff_unit_factor(software: Literal["lmp", "gmx"] = "lmp"):
-    """from default units to LAMMPS metal units"""
-    default_units = get_default_units()
-    energy_unit = default_units[keys.TOTAL_ENERGY]
-    pos_unit = default_units[keys.POSITIONS]
-    if software == "lmp":
-        pf = unit_conversion("Angstrom", pos_unit)
-        ef = unit_conversion(energy_unit, "eV")
-        ff = unit_conversion(f"{energy_unit}/{pos_unit}", "eV/Angstrom")
-    elif software == "gmx":
-        pf = unit_conversion("nm", pos_unit)
-        ef = unit_conversion(energy_unit, "kJ/mol")
-        ff = unit_conversion(f"{energy_unit}/{pos_unit}", "kJ/(mol*nm)")
-    return pf, ef, ff
-
-
 class XPaiNNLMP(XPaiNN):
     """
     XPaiNN script model for force field. This model does not consider batch.
@@ -32,16 +16,25 @@ class XPaiNNLMP(XPaiNN):
 
     def __init__(
         self,
+        unit_style: str = "metal",
         net_charge: Optional[int] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        (
-            self.pos_unit_factor,
-            self.energy_unit_factor,
-            self.forces_unit_factor,
-        ) = get_ff_unit_factor(software="lmp")
+        lammps_units = keys.LAMMPS_UNIT_STYLE[unit_style]
+        default_units = get_default_units()
+        self.pos_unit_factor = unit_conversion(
+            lammps_units[keys.POSITIONS], default_units[keys.POSITIONS]
+        )
+        self.energy_unit_factor = unit_conversion(
+            default_units[keys.TOTAL_ENERGY], lammps_units[keys.TOTAL_ENERGY]
+        )
+        self.forces_unit_factor = unit_conversion(
+            f"{default_units[keys.TOTAL_ENERGY]}/{default_units[keys.POSITIONS]}",
+            f"{lammps_units[keys.TOTAL_ENERGY]}/{lammps_units[keys.POSITIONS]}",
+        )
         self.net_charge = net_charge
+        self.cutoff_radius /= self.pos_unit_factor
 
     def forward(
         self,
@@ -70,7 +63,6 @@ class XPaiNNLMP(XPaiNN):
             data[keys.TOTAL_CHARGE] = torch.tensor(
                 [self.net_charge], device=data[keys.POSITIONS].device
             )
-
         # we cannot use `super().forward` because it is nor supported by TorchScript
         # so we manually call the forward method of the parent class
         data: Dict[str, torch.Tensor] = compute_edge_data(
@@ -102,16 +94,22 @@ class XPaiNNDipole(XPaiNN):
 
     def __init__(
         self,
+        unit_style: str = "metal",
         net_charge: Optional[int] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         default_units = get_default_units()
-        dipole_unit = default_units[keys.DIPOLE]
-        pos_unit = default_units[keys.POSITIONS]
-        self.pos_unit_factor = unit_conversion("Angstrom", pos_unit)
-        self.dipole_unit_factor = unit_conversion(dipole_unit, "e*Angstrom")
+        lammps_units = keys.LAMMPS_UNIT_STYLE[unit_style]
+        self.pos_unit_factor = unit_conversion(
+            lammps_units[keys.POSITIONS], default_units[keys.POSITIONS]
+        )
+        self.dipole_unit_factor = unit_conversion(
+            default_units[keys.DIPOLE],
+            f"{lammps_units[keys.TOTAL_CHARGE]}*{lammps_units[keys.POSITIONS]}",
+        )
         self.net_charge = net_charge
+        self.cutoff_radius /= self.pos_unit_factor
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
@@ -150,12 +148,15 @@ class XPaiNNGMX(XPaiNN):
 
     def __init__(self, net_charge: Optional[int] = None, **kwargs) -> None:
         super().__init__(**kwargs)
-        (
-            self.pos_unit_factor,
-            self.energy_unit_factor,
-            self.forces_unit_factor,
-        ) = get_ff_unit_factor(software="gmx")
-        self.cutoff = kwargs.get("cutoff", 5.0)
+        default_units = get_default_units()
+        self.pos_unit_factor = unit_conversion("nm", default_units[keys.POSITIONS])
+        self.energy_unit_factor = unit_conversion(
+            default_units[keys.TOTAL_ENERGY], "kJ/mol"
+        )
+        self.forces_unit_factor = unit_conversion(
+            f"{default_units[keys.TOTAL_ENERGY]}/{default_units[keys.POSITIONS]}",
+            "kJ/(mol*nm)",
+        )
         self.net_charge = net_charge
 
     def forward(
@@ -190,7 +191,7 @@ class XPaiNNGMX(XPaiNN):
                 pos=positions,
                 cell=cell,
                 pbc=pbc,
-                cutoff=self.cutoff,
+                cutoff=self.cutoff_radius,
             )
         data = {
             keys.POSITIONS: positions,
@@ -216,18 +217,21 @@ class XPaiNNGMX(XPaiNN):
 
 
 def resolve_jit_model(
-    model_name: str,
-    mode: Optional[str] = None,
+    mode: Literal["lmp", "gmx", "dipole"] = "lmp",
+    unit_style: str = "metal",
     net_charge: Optional[int] = None,
     **kwargs,
 ) -> BaseModel:
     models_factory = {
-        "xpainn": {"lmp": XPaiNNLMP, "dipole": XPaiNNDipole, "gmx": XPaiNNGMX},
+        "lmp": XPaiNNLMP,
+        "dipole": XPaiNNDipole,
+        "gmx": XPaiNNGMX,
     }
-    model_name = model_name.lower()
-    if model_name not in models_factory:
-        raise NotImplementedError(f"Unsupported model {model_name}")
-    if mode not in models_factory[model_name]:
+    if mode not in models_factory:
         raise NotImplementedError(f"Unsupported mode {mode}")
 
-    return models_factory[model_name][mode](net_charge=net_charge, **kwargs)
+    return models_factory[mode](
+        unit_style=unit_style,
+        net_charge=net_charge,
+        **kwargs,
+    )
