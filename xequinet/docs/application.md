@@ -56,8 +56,8 @@ xeq opt -c <ckpt>.pt -in <mol>.xyz
 - `--ckpt` / `-c`: Checkpoint file name `<ckpt>.pt`.
 - `--device`: `cuda` or `cpu`. (default: automatically detect if GPU is available.)
 - `--input` / `-in`: Input file name.
-- `--opt-params`: `.json` file to set optimization parameters, see [geomeTRIC](https://geometric.readthedocs.io/en/latest/options.html#optimization-parameters)
-- `--constraints`: File to set constraints for constrained optimization, see [constrained optimization](https://geometric.readthedocs.io/en/latest/constraints.html)
+- `--opt-params`: `.json` file to set optimization parameters, see [geomeTRIC](https://geometric.readthedocs.io/en/latest/options.html#optimization-parameters).
+- `--constraints`: File to set constraints for constrained optimization, see [constrained optimization](https://geometric.readthedocs.io/en/latest/constraints.html).
 - `--max-steps`: Maximum iteration steps for optimization.
 - `--delta` / `-d`: Base semi-empirical method for delta-learning model. Choice: `gfn2-xtb`, `gfn1-xtb`. 
 - `--freq`: Whether to do frequency analysis.

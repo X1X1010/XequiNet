@@ -3,14 +3,14 @@
 
 `N` for number of atoms.
 
-Following is the input of the model.
+Following is a single graph datapoint.
 | Name | Type | Shape | Description |
 | - | - | - | - |
 | `atomic_numbers` | `int` | `[N,]` | Atomic number in periodic table |
 | `pos` | `float`, `double` | `[N,3]` | Cartesian coordinate of atoms |
 | `cell` | `float`, `double` | `[1,3,3]` | Lattice vector (optional) |
-| `charge` | `float`, `double` | `[1,]` | Net charge (optional) |
-| `spin` | `float`, `double` | `[1,]` | Total spin (2S or M-1) (optional) |
+| `charge` | `int` | `[1,]` | Net charge (optional) |
+| `spin` | `int` | `[1,]` | Total spin (2S or M-1) (optional) |
 
 Following is the label for training.
 | Name | Type | Shape | Description |
@@ -84,8 +84,8 @@ This file is mainly used for saving the information of dataset, especially the *
 ```json
 {
   "units": {
-    "energy": "eV",
     "pos": "Ang",
+    "energy": "eV",
     "forces": "eV/Ang"
   },
 }
@@ -112,9 +112,9 @@ Be careful with the json format.
 This file can be named whatever you want. It contained the indices of the train, validation and test set. e.g.
 ```json
 {
-  "trian": [0, 1, 2, ...],
-  "valid": [3, 4, 5, ...],
-  "test": [6, 7, 8, ...]
+  "trian": [0, 1, 2, 3, 4, 5],
+  "valid": [6, 7, 8],
+  "test": [9, 10, 11]
 }
 ```
 You can use this to divide the dataset, or just use a small subset of it to train.

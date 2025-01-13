@@ -1,12 +1,12 @@
 # Specific Configurations
 
-`[xxx]` in the Type column means optinal parameters.
+`[xxx]` in the **Type** column means optinal parameters.
 
 ## Model Config
 | Name | Type | Default | Description |
 | - | - | - | - |
 | `model_name` | `str` | `xpainn` | Model architecture to use.<br> `xpainn` refers to XPaiNN and `xpainn-ewald` add Ewald message passing block based on XPaiNN. |
-| `model_kwargs` | `dict` | - | Model hyper-parameters, see [model config](#model-config). |
+| `model_kwargs` | `dict` | - | Model hyper-parameters, see [model hyper-parameters](#model-hyper-parameters). |
 | `default_units` | `dict[str, str]` | - | Units you model uses, see [supporting unit](#supporting-units). e.g. `{energy: eV, pos: Ang}` |
 
 ## Trainer Config
@@ -44,7 +44,7 @@
 | - | - | - | - |
 | `db_path` | `str` | `./` | Path to the directory containing your data files |
 | `cutoff` | `float` | `5.0` | Cutoff radius, need to be the same in model kwargs |
-| `split` | `str` | `split` | Name of the split file without appendix. i.e. `random42` if your file is `random42.json` |
+| `split` | `str` | `split` | Name of the split file without suffix, i.e. `random42` if your file is `random42.json` |
 | `targets` | `list[str]` | - | Target label you want to train in the dataset. e.g. `[energy, forces, virial]`. |
 | `base_targets` | `[list[str]]` | - | Base target label for delta-learning. e.g. `[base_energy, base_forces, base_virial]`. |
 | `default_dtype` | `str` | `float32` | Float point precision. Other choice: `float64`. |
