@@ -18,6 +18,7 @@ conda env create -f environment.yaml -n <env_name>
 - [e3nn](https://e3nn.org/)：用于构建等变模块。
 - [pytorch-warmup](https://tony-y.github.io/pytorch_warmup/master/index.html)：用于简易地实现学习率热身。
 - [OmegaConf](https://omegaconf.readthedocs.io/en/2.3_branch/)：一个好用的解析配置文件的库。
+- LMDB: [Conda](https://anaconda.org/conda-forge/python-lmdb) / [PyPI](https://pypi.org/project/lmdb/). 数据集储存格式。注意Conda安装的方法。
 - [ASE](https://wiki.fysik.dtu.dk/ase/#)：非常好用的原子模拟库，这里主要用来读各种格式的输入文件。
 - [PySCF](https://pyscf.org/index.html)：用于一些量子化学计算。
 - [geomeTRIC](https://geometric.readthedocs.io/en/latest/)：PySCF使用的结构优化引擎。
