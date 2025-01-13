@@ -13,6 +13,8 @@ from xequinet.data import (
     Transform,
     datapoint_from_ase,
 )
+from xequinet.nn import resolve_model
+from xequinet.utils import get_default_units, set_default_units, unit_conversion
 
 
 class XequiCalculator(Calculator):
@@ -22,7 +24,7 @@ class XequiCalculator(Calculator):
 
     implemented_properties = ["energy", "energies", "forces", "stress"]
     default_parameters = {
-        "ckpt_file": "model.jit",
+        "ckpt_file": "model.pt",
         "dtype": "float32",
         "device": None,
     }
@@ -50,18 +52,21 @@ class XequiCalculator(Calculator):
         if "device" in changed_parameters:
             self.device = torch.device(self.parameters.device)
         if "ckpt_file" in changed_parameters or self.model is None:
-            _extra_files = {"cutoff_radius": b""}
-            self.model = torch.jit.load(
-                self.parameters.ckpt_file,
-                map_location=self.device,
-                _extra_files=_extra_files,
+            ckpt = torch.load(self.parameters.ckpt_file, map_location=self.device)
+            model_config = ckpt["config"]
+            set_default_units(model_config["default_units"])
+            self.model = (
+                resolve_model(
+                    model_config["model_name"],
+                    **model_config["model_kwargs"],
+                )
+                .to(device=self.device)
+                .eval()
             )
-            self.model.to(device=self.device).eval()
-            cutoff_radius = float(_extra_files["cutoff_radius"].decode("ascii"))
             self.transform = SequentialTransform(
                 [
                     DataTypeTransform(self.dtype),
-                    NeighborTransform(cutoff_radius),
+                    NeighborTransform(self.model.cutoff_radius),
                 ]
             )
 
@@ -77,19 +82,48 @@ class XequiCalculator(Calculator):
         Calculator.calculate(self, atoms, properties, system_changes)
 
         data = datapoint_from_ase(self.atoms).to(self.device)
-        data = self.transform(data)
+        data = self.transform(data).to_dict()
         compute_forces = "forces" in properties
         compute_virial = "stress" in properties
         result: Dict[str, torch.Tensor] = self.model(
-            data.to_dict(), compute_forces, compute_virial
+            data,
+            compute_forces,
+            compute_virial,
         )
-        self.results["energy"] = result[keys.TOTAL_ENERGY].item()
-        self.results["energies"] = result[keys.ATOMIC_ENERGIES].detach().cpu().numpy()
+        default_units = get_default_units()
+        self.results["energy"] = result[keys.TOTAL_ENERGY].item() * unit_conversion(
+            default_units[keys.TOTAL_ENERGY], "eV"
+        )
+        self.results["energies"] = result[
+            keys.ATOMIC_ENERGIES
+        ].detach().cpu().numpy() * unit_conversion(
+            default_units[keys.ATOMIC_ENERGIES], "eV"
+        )
         if compute_forces:
-            self.results["forces"] = result[keys.FORCES].detach().cpu().numpy()
+            self.results["forces"] = result[
+                keys.FORCES
+            ].detach().cpu().numpy() * unit_conversion(
+                default_units[keys.FORCES], "eV/Angstrom"
+            )
         if compute_virial:
             assert self.atoms.cell.rank == 3
-            virial = result[keys.VIRIAL].detach().cpu().numpy()
+            virial = result[keys.VIRIAL].detach().cpu().numpy() * unit_conversion(
+                default_units[keys.TOTAL_ENERGY], "eV"
+            )
             self.results["stress"] = (
                 full_3x3_to_voigt_6_stress(virial) / self.atoms.get_volume()
             )
+
+
+if __name__ == "__main__":
+    from ase.calculators.mixing import SumCalculator
+    from tblite.ase import TBLite
+
+    # Usage of delta-learning model. See https://github.com/X1X1010/XequiNet/issues/2
+    # Thanks for @kangmg for the suggestion.
+    delta_calc = SumCalculator(
+        [
+            XequiCalculator(ckpt_file="model.pt", device="cuda"),
+            TBLite(verbosity=0, method="GFN2-xTB"),
+        ]
+    )

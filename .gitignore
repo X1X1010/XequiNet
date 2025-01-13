@@ -1,10 +1,7 @@
 .vscode
 datasets
-pyproject.toml
 experimental
 dataset
-debug
-experiment
 XequiNet.egg-info
 */__pycache__
 **/__pycache__
