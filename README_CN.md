@@ -23,6 +23,7 @@ conda env create -f environment.yaml -n <env_name>
 - [PySCF](https://pyscf.org/index.html)：用于一些量子化学计算。
 - [geomeTRIC](https://geometric.readthedocs.io/en/latest/)：PySCF使用的结构优化引擎。
 - [TBlite](https://tblite.readthedocs.io/en/latest/): xTB的Python接口。注意有两个包要装，`tblite` 和 `tblite-python`。
+- [tabulate](https://pypi.org/project/tabulate/): 用来美化输出格式的。
 
 ## 其他库
 - [cuda-toolkit](https://anaconda.org/nvidia/cuda-toolkit): 英伟达 CUDA Toolkit。千万注意**cuda版本**。

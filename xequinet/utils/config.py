@@ -66,9 +66,9 @@ class DataConfig:
 class XequiConfig:
     """Config for the XequiNet"""
 
-    model: ModelConfig = ModelConfig()
-    trainer: TrainerConfig = TrainerConfig()
-    data: DataConfig = DataConfig()
+    model: ModelConfig = field(default_factory=ModelConfig)
+    trainer: TrainerConfig = field(default_factory=TrainerConfig)
+    data: DataConfig = field(default_factory=DataConfig)
 
 
 @dataclass

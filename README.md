@@ -23,6 +23,7 @@ If the automatic installation fails, or if you want to install packages of other
 - [PySCF](https://pyscf.org/index.html): For handling some quantum chemical computation.
 - [geomeTRIC](https://geometric.readthedocs.io/en/latest/): Geometry optimization engine used by PySCF.
 - [TBlite](https://tblite.readthedocs.io/en/latest/): Python interface of xTB. Note that there are two packages, `tblite` and `tblite-python`. Both are needed.
+- [tabulate](https://pypi.org/project/tabulate/): For elegant printouts.
 
 ## Extra packages
 - [cuda-toolkit](https://anaconda.org/nvidia/cuda-toolkit): Nvidia CUDA Toolkit. Please be super careful with the **cuda version**.

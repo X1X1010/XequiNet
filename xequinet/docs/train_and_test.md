@@ -59,7 +59,7 @@ Here is the detailed command line arguments.
 
 `--device`: `cuda` or `cpu`. (default: automatically detect if GPU is available.)
 
-`--ouput` / `-o`: Output file name.
+`--ouput` / `-o`: Output file name. (default: `<run_name>.log`)
 
 `--verbose` / `-v`: Whether to print detailed information and save the result in `.pt` file.
 
