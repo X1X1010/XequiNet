@@ -234,7 +234,7 @@ def single_radius_graph(
     # [n_cells, 3]
     # compute the x, y, z positional offsets for each cell in each image
     # [n_cells, 3] = [n_cells, 3] @ [3, 3]
-    pbc_offsets = torch.bmm(cell_offsets, cell)
+    pbc_offsets = torch.mm(cell_offsets, cell)
 
     # TODO: Wrap positions to unit cell
 
@@ -273,3 +273,15 @@ def single_radius_graph(
     cell_offsets = cell_offsets[cell_offsets_index]
 
     return edge_index, cell_offsets
+
+
+if __name__ == "__main__":
+    pos = torch.randn(10, 3)
+    pbc = torch.tensor([True, True, True])
+    cell = torch.eye(3)
+    cutoff = 0.5
+
+    edge_index, cell_offsets = single_radius_graph(pos, pbc, cell, cutoff)
+    print(edge_index)
+    print(cell_offsets)
+    print(edge_index.shape, cell_offsets.shape)

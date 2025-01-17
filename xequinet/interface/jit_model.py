@@ -175,16 +175,13 @@ class XPaiNNGMX(XPaiNN):
         Returns:
             Energy.
         """
-        atomic_numbers = atomic_numbers.reshape(-1)
-        positions = positions.reshape(-1, 3) * self.pos_unit_factor
+        positions = positions * self.pos_unit_factor
         if box is None:
             cell = torch.eye(3, dtype=positions.dtype, device=positions.device)
         else:
-            cell = (box * self.pos_unit_factor).reshape(3, 3)
+            cell = box * self.pos_unit_factor
         if pbc is None:
             pbc = torch.zeros(3, dtype=torch.bool, device=positions.device)
-        else:
-            pbc = pbc.reshape(3)
 
         with torch.no_grad():
             edge_index, cell_offsets = single_radius_graph(

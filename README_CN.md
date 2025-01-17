@@ -39,6 +39,11 @@ pip install -e .
 ## 使用方法
 详见[docs](./xequinet/docs)。
 
+## 模型获取
+训练完成的模型可以在我们的 [Zenodo页面](https://zenodo.org/records/14676636) 获取。
+
+
+
 ## 引用
 ```bibtex
 @article{doi:10.1021/acs.jctc.4c01151,

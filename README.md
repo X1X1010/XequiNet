@@ -39,6 +39,9 @@ pip install -e .
 ## Usage
 See [docs](./xequinet/docs) for details.
 
+## Model availability
+You can download our trained models through our [Zenodo page](https://zenodo.org/records/14676636).
+
 
 ## Citation
 ```bibtex
