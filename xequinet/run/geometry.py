@@ -173,7 +173,8 @@ def run_opt(args: argparse.Namespace) -> None:
         model_config["model_name"],
         **model_config["model_kwargs"],
     ).to(device)
-    model.load_state_dict(ckpt["model"]).eval()
+    model.load_state_dict(ckpt["model"])
+    model.eval()
     transform = NeighborTransform(model.cutoff_radius)
 
     # set params for optimization

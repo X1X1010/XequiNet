@@ -156,7 +156,6 @@ def main() -> None:
             """,
     )
     args = parser.parse_args()
-
     if args.task == "train":
         run_train(args)
     elif args.task == "test":
