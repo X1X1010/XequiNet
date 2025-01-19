@@ -25,16 +25,18 @@ class XPaiNNLMP(XPaiNN):
         default_units = get_default_units()
         self.pos_unit_factor = unit_conversion(
             lammps_units[keys.POSITIONS], default_units[keys.POSITIONS]
-        )
+        )  # LAMMPS -> NNP
         self.energy_unit_factor = unit_conversion(
             default_units[keys.TOTAL_ENERGY], lammps_units[keys.TOTAL_ENERGY]
-        )
+        )  # NNP -> LAMMPS
         self.forces_unit_factor = unit_conversion(
-            f"{default_units[keys.TOTAL_ENERGY]}/{default_units[keys.POSITIONS]}",
-            f"{lammps_units[keys.TOTAL_ENERGY]}/{lammps_units[keys.POSITIONS]}",
-        )
+            f"{default_units[keys.FORCES]}",
+            f"{lammps_units[keys.FORCES]}",
+        )  # NNP -> LAMMPS
         self.net_charge = net_charge
-        self.cutoff_radius /= self.pos_unit_factor
+        self.cutoff_radius /= (
+            self.pos_unit_factor
+        )  # note: NNP -> LAMMPS, so use /= instead of *=
 
     def forward(
         self,
@@ -103,13 +105,15 @@ class XPaiNNDipole(XPaiNN):
         lammps_units = keys.LAMMPS_UNIT_STYLE[unit_style]
         self.pos_unit_factor = unit_conversion(
             lammps_units[keys.POSITIONS], default_units[keys.POSITIONS]
-        )
+        )  # LAMMPS -> NNP
         self.dipole_unit_factor = unit_conversion(
             default_units[keys.DIPOLE],
             f"{lammps_units[keys.TOTAL_CHARGE]}*{lammps_units[keys.POSITIONS]}",
-        )
+        )  # NNP -> LAMMPS
         self.net_charge = net_charge
-        self.cutoff_radius /= self.pos_unit_factor
+        self.cutoff_radius /= (
+            self.pos_unit_factor
+        )  # note: NNP -> LAMMPS, so use /= instead of *=
 
     def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
@@ -152,11 +156,10 @@ class XPaiNNGMX(XPaiNN):
         self.pos_unit_factor = unit_conversion("nm", default_units[keys.POSITIONS])
         self.energy_unit_factor = unit_conversion(
             default_units[keys.TOTAL_ENERGY], "kJ/mol"
-        )
+        )  # NNP -> GROMACS
         self.forces_unit_factor = unit_conversion(
-            f"{default_units[keys.TOTAL_ENERGY]}/{default_units[keys.POSITIONS]}",
-            "kJ/(mol*nm)",
-        )
+            f"{default_units[keys.FORCES]}", "kJ/(mol*nm)"
+        )  # NNP -> GROMACS
         self.net_charge = net_charge
 
     def forward(

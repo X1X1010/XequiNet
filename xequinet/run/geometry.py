@@ -19,7 +19,7 @@ from xequinet.data import (
     datapoint_to_xtb,
 )
 from xequinet.nn import resolve_model
-from xequinet.utils import set_default_units, unit_conversion
+from xequinet.utils import get_default_units, set_default_units, unit_conversion
 
 
 @torch.no_grad()
@@ -34,6 +34,7 @@ def xequi_method(
     Xequinet method for energy and gradient calculation.
     `energy` in Hartree and `gradient` in au
     """
+    default_units = get_default_units()
     data = datapoint_from_pyscf(mole).to(device)
     data = transform(data)
     with torch.enable_grad():
@@ -45,8 +46,8 @@ def xequi_method(
     energy = result[keys.TOTAL_ENERGY].item()
     nuc_grad = -result[keys.FORCES].detach().cpu().numpy()
     # unit conversion
-    energy *= unit_conversion("eV", "Hartree")
-    nuc_grad *= unit_conversion("eV/Angstrom", "au")
+    energy *= unit_conversion(default_units[keys.TOTAL_ENERGY], "Hartree")
+    nuc_grad *= unit_conversion(default_units[keys.FORCES], "au")
     if base_method is not None:
         xtb_calc = datapoint_to_xtb(data, method=base_method)
         xtb_res = xtb_calc.singlepoint()
@@ -65,7 +66,7 @@ def calc_analytical_hessian(
     Calculate the hessian with analytical second derivative.
     `energy` in Hartree and `Hessian` in au
     """
-
+    default_units = get_default_units()
     data = datapoint_from_pyscf(mole).to(device)
     data = transform(data)
     # In order to get the second derivative,
@@ -91,8 +92,8 @@ def calc_analytical_hessian(
             )[0]
     hessian = hessian.cpu().numpy()
     # unit conversion
-    energy *= unit_conversion("eV", "Hartree")
-    hessian *= unit_conversion("eV/Angstrom^2", "au")
+    energy *= unit_conversion(default_units[keys.TOTAL_ENERGY], "Hartree")
+    hessian *= unit_conversion(default_units[keys.FORCES], "au")
     return energy, hessian
 
 
@@ -251,7 +252,7 @@ def run_opt(args: argparse.Namespace) -> None:
                     energy, _ = xequi_method(
                         new_mole, transform, model, device, args.delta
                     )
-                    f.write(f"Energy: {energy:10.10f}\n")
+                    f.write(f"Energy: {energy:10.10f} Hartree\n")
                 else:
                     f.write(f"Warning!! Optimization not converged!!\n")
                 for a, c in zip(

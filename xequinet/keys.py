@@ -102,16 +102,19 @@ LAMMPS_UNIT_STYLE: Final[Dict[str, Dict[str, str]]] = {
     "metal": {
         TOTAL_ENERGY: "eV",
         POSITIONS: "Angstrom",
+        FORCES: "eV/Angstrom",
         TOTAL_CHARGE: "e",
     },
     "real": {
         TOTAL_ENERGY: "kcal/mol",
         POSITIONS: "Angstrom",
+        FORCES: "kcal/mol/Angstrom",
         TOTAL_CHARGE: "e",
     },
     "electron": {
         TOTAL_ENERGY: "Hartree",
         POSITIONS: "Bohr",
+        FORCES: "Hartree/Bohr",
         TOTAL_CHARGE: "e",
     },
 }
