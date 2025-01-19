@@ -50,9 +50,10 @@ class XequiCalculator(Calculator):
             self.dtype = dtype_map[self.parameters.dtype]
             torch.set_default_dtype(self.dtype)
         if "device" in changed_parameters:
-            self.device = torch.device(self.parameters.device)
+            self.device = self.parameters.device
         if "ckpt_file" in changed_parameters or self.model is None:
-            ckpt = torch.load(self.parameters.ckpt_file, map_location=self.device)
+            device = torch.device(self.device)
+            ckpt = torch.load(self.parameters.ckpt_file, map_location=device)
             model_config = ckpt["config"]
             set_default_units(model_config["default_units"])
             self.model = (
@@ -60,7 +61,7 @@ class XequiCalculator(Calculator):
                     model_config["model_name"],
                     **model_config["model_kwargs"],
                 )
-                .to(device=self.device)
+                .to(device=device)
                 .eval()
             )
             self.transform = SequentialTransform(
@@ -81,6 +82,7 @@ class XequiCalculator(Calculator):
 
         Calculator.calculate(self, atoms, properties, system_changes)
 
+        atoms.wrap()
         data = datapoint_from_ase(self.atoms).to(self.device)
         data = self.transform(data).to_dict()
         compute_forces = "forces" in properties
@@ -97,7 +99,7 @@ class XequiCalculator(Calculator):
         self.results["energies"] = result[
             keys.ATOMIC_ENERGIES
         ].detach().cpu().numpy() * unit_conversion(
-            default_units[keys.ATOMIC_ENERGIES], "eV"
+            default_units[keys.TOTAL_ENERGY], "eV"
         )
         if compute_forces:
             self.results["forces"] = result[
@@ -113,17 +115,3 @@ class XequiCalculator(Calculator):
             self.results["stress"] = (
                 full_3x3_to_voigt_6_stress(virial) / self.atoms.get_volume()
             )
-
-
-if __name__ == "__main__":
-    from ase.calculators.mixing import SumCalculator
-    from tblite.ase import TBLite
-
-    # Usage of delta-learning model. See https://github.com/X1X1010/XequiNet/issues/2
-    # Thanks for @kangmg for the suggestion.
-    delta_calc = SumCalculator(
-        [
-            XequiCalculator(ckpt_file="model.pt", device="cuda"),
-            TBLite(verbosity=0, method="GFN2-xTB"),
-        ]
-    )

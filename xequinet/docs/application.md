@@ -66,3 +66,52 @@ xeq opt -c <ckpt>.pt -in <mol>.xyz
 - `--shermo`: Whether to save shermo input file for quasi-harmonic analysis, see [Shermo](http://sobereva.com/soft/shermo/).
 - `--save-hessian`: Whether to save hessian matrix.
 - `--verbose` / `-v`: Whether to print detailed frequencies information.
+
+## MD simulation with ASE
+If you have some simple MD task, you can use the MD modules implemented in ASE.
+```
+xeq md --config <md_config>.yaml
+```
+- `--config` / `-c`: MD config file.
+
+e.g.
+```yaml
+input_file: water.xyz
+model_file: model.pt
+
+init_temperature: 300.  # Kelvin
+
+ensembles:
+  - name: VelocityVerlet
+    timestep: 1  # fs
+    steps: 1000
+    loginterval: 100
+  - name: NVTBerendsen
+    timestep: 1  # fs
+    taut: 100    # fs
+    temperature: 300.  # Kelvin
+    loginterval: 100
+    steps: 1000000
+  
+logfile: md.log
+trajectory: md.traj
+
+xyz_traj: traj.xyz
+
+columns: ["symbols", "positions"]
+```
+
+Here is the detailed MD config option:
+| Name | Type | Default | Description |
+| - | - | - | - |
+| `emsenbles` | `List[Any]` | - | Emsemble options, see [ASE MD](https://wiki.fysik.dtu.dk/ase/ase/md.html). (`logfile` and `trajectory` are excluded and will be set globally). |
+| `input_file` | `str` | `input.xyz` | Input structure file known by ASE. |
+| `model_file` | `str` | `model.pt` | Model checkpoint file. |
+| `delta_method` | `[str]` | `null` | Delta learning base method. `GFN2-xTB` or `GFN1-xTB` |
+| init_temperature | `float` | `300.0` | Initial temperature to generate velocity under Maxwell-Boltzmann distribution. |
+| `logfile` | `str` | `md.log` | File name for logging. |
+| `append_logfile` | `bool` | `False` | Whether to append write in `logfile`. |
+| `trajectory` | `[str]` | `null` | Trajectory file name for saving ASE binary trajectory. |
+| `append_trajectory` | `str` | `False` | Whether to append write in trajectory file. |
+| `xyz_traj` | `[str]` | `null` | xyz file name to which trajectory file is converted. |
+| `columns` | `List[str]` | `[symbol, position]` | Content in xyz file. Options: [`positions`, `numbers`, `charges`, `symbols`] |

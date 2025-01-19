@@ -1,12 +1,11 @@
 import argparse
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
+import ase.io
 import numpy as np
 import torch
 from ase import Atoms, optimize, units
-from ase.io import Trajectory
-from ase.io import read as ase_read
-from ase.io import write as ase_write
+from ase.calculators.mixing import SumCalculator
 from ase.md import andersen, langevin, md, npt, nptberendsen, nvtberendsen, verlet
 from ase.md.velocitydistribution import (
     MaxwellBoltzmannDistribution,
@@ -14,6 +13,7 @@ from ase.md.velocitydistribution import (
     ZeroRotation,
 )
 from omegaconf import OmegaConf
+from tblite.ase import TBLite
 
 from xequinet.interface import XequiCalculator
 from xequinet.utils import MDConfig
@@ -63,21 +63,24 @@ def resolve_ensemble(
         atoms=atoms,
         logfile=logfile,
         trajectory=trajectory,
+        append_trajectory=True,
         **ensemble,
     )
     return dyn, steps, fmax
 
 
 def traj2xyz(
-    trajectory: str, traj_xyz: str, columns: list = ["symbols", "positions"]
+    trajectory: str, traj_xyz: str, columns: Optional[List[str]] = None
 ) -> None:
     """
     Convert trajectory file to extend xyz file.
     """
+    if columns is None:
+        columns = ["symbols", "positions"]
     with open(traj_xyz, "w"):
         pass
-    for atoms in Trajectory(trajectory):
-        ase_write(
+    for atoms in ase.io.Trajectory(trajectory):
+        ase.io.write(
             filename=traj_xyz,
             images=atoms,
             format="extxyz",
@@ -98,18 +101,43 @@ def run_md(args: argparse.Namespace) -> None:
     # this will do nothing, only for type annotation
     config = cast(MDConfig, config)
 
+    # set device
+    if config.device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = config.device
+
     # set random seed
     if config.seed is not None:
         np.random.seed(config.seed)
         torch.manual_seed(config.seed)
 
     # load atoms
-    atoms = ase_read(config.input_file, index=0)
+    atoms = ase.io.read(config.input_file, index=0)
 
     # set calculator
-    calc = XequiCalculator(
-        ckpt_file=config.model_file,
-    )
+    if config.delta_method is None:
+        calc = XequiCalculator(
+            ckpt_file=config.model_file,
+            device=device,
+            dtype=config.dtype,
+        )
+    else:
+        method_map = {"gfn1-xtb": "GFN1-xTB", "gfn2-xtb": "GFN2-xTB"}
+        calc = SumCalculator(
+            [
+                XequiCalculator(
+                    ckpt_file=config.model_file,
+                    device=device,
+                    dtype=config.dtype,
+                ),
+                TBLite(
+                    verbosity=0,
+                    method=method_map[config.delta_method.lower()],
+                ),
+            ]
+        )
+
     atoms.set_calculator(calc)
 
     # set starting tempeature
@@ -121,12 +149,20 @@ def run_md(args: argparse.Namespace) -> None:
     if not config.append_logfile:
         with open(config.logfile, "w"):
             pass
+    if config.trajectory is not None and not config.append_trajectory:
+        with open(config.trajectory, "w"):
+            pass
 
     # set ensemble
     ensembles = []
-    for ensemble in config.ensembles:
+    for i, ensemble in enumerate(config.ensembles):
         ensembles.append(
-            resolve_ensemble(atoms, ensemble, config.logfile, config.trajectory)
+            resolve_ensemble(
+                atoms=atoms,
+                ensemble=ensemble,
+                logfile=config.logfile,
+                trajectory=config.trajectory,
+            )
         )
     # run dynamics
     for (dyn, steps, fmax) in ensembles:

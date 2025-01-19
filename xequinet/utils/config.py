@@ -77,7 +77,8 @@ class MDConfig:
 
     ensembles: List[Any] = field(default_factory=list)
     input_file: str = "input.xyz"
-    model_file: str = "model.jit"
+    model_file: str = "model.pt"
+    delta_method: Optional[str] = None
 
     init_temperature: float = 300.0  # Kelvin
 
@@ -89,6 +90,7 @@ class MDConfig:
     columns: Optional[List[str]] = None
 
     dtype: str = "float32"
+    device: Optional[str] = None
     seed: Optional[int] = None
 
 
