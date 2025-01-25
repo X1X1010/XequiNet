@@ -1,4 +1,5 @@
 import argparse
+import math
 from typing import Any, Dict, Iterable, Optional, Tuple, cast
 
 import torch
@@ -22,25 +23,29 @@ from xequinet.utils.loss import ErrorMetric
 
 class AverageMetric:
     def __init__(self, properties: Iterable) -> None:
-        self.properties: Dict[str, float] = {prop: 0.0 for prop in properties}
+        self.prop_l1: Dict[str, float] = {prop: 0.0 for prop in properties}
+        self.prop_l2: Dict[str, float] = {prop: 0.0 for prop in properties}
         self.counts: Dict[str, int] = {prop: 0 for prop in properties}
         self.reset()
 
     def reset(self) -> None:
-        for prop in self.properties:
-            self.properties[prop] = 0.0
+        for prop in self.prop_l1:
+            self.prop_l1[prop] = 0.0
+            self.prop_l2[prop] = 0.0
             self.counts[prop] = 0
 
-    def update(self, property: str, value: float, n: int = 1) -> None:
-        assert property in self.properties, f"Property {property} not found"
-        self.properties[property] += value
+    def update(self, property: str, l1: float, l2: float, n: int = 1) -> None:
+        assert property in self.prop_l1, f"Property {property} not found"
+        self.prop_l1[property] += l1
+        self.prop_l2[property] += l2
         self.counts[property] += n
 
     def reduce(self) -> Dict[str, float]:
         result = {}
-        for prop, val in self.properties.items():
+        for prop, l1 in self.prop_l1.items():
             count = self.counts[prop]
-            result[prop] = val / count
+            l2 = self.prop_l2[prop]
+            result[prop] = (l1 / count, l2 / count)
         return result
 
 
@@ -130,8 +135,8 @@ def write_results(results: Dict[str, Any], output_file: str) -> None:
 
             # write the energy
             if keys.TOTAL_ENERGY in pred and keys.TOTAL_ENERGY in data:
-                f.write(f"Pred Energy: {pred[keys.TOTAL_ENERGY][i].item()}  ")
-                f.write(f"Real Energy: {data[keys.TOTAL_ENERGY][i].item()}\n")
+                f.write(f"Pred Energy: {pred[keys.TOTAL_ENERGY][i].item():.6f}  ")
+                f.write(f"Real Energy: {data[keys.TOTAL_ENERGY][i].item():.6f}\n")
 
             # write the virial
             if keys.VIRIAL in pred and keys.VIRIAL in data:
@@ -255,7 +260,7 @@ def run_test(args: argparse.Namespace) -> None:
         keys.VIRIAL in data_config.targets or keys.STRESS in data_config.targets
     )
 
-    reduced_l1, results = test(
+    reduced_err, results = test(
         model=model,
         data_loader=test_loader,
         err_metric=err_metric,
@@ -282,11 +287,20 @@ def run_test(args: argparse.Namespace) -> None:
 
     with open(output_file, "a") as f:
         header = [""]
-        tabulate_data = ["Test MAE"]
-        header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
-        tabulate_data.extend(list(reduced_l1.values()))
+        tabulate_data = [["Test MAE"], ["Test RMSE"]]
+        header.extend(list(map(lambda x: x.capitalize(), reduced_err.keys())))
+        for (l1, l2) in reduced_err.values():
+            tabulate_data[0].append(l1)
+            tabulate_data[1].append(math.sqrt(l2))
         f.write(
-            tabulate([tabulate_data], headers=header, tablefmt="plain", floatfmt=".6f")
+            tabulate(
+                tabulate_data,
+                headers=header,
+                tablefmt="plain",
+                floatfmt=".6f",
+                stralign="center",
+                numalign="center",
+            )
         )
         f.write("\n")
 

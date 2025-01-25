@@ -326,25 +326,26 @@ class Trainer:
                 reduced_err = self.meter.reduce()
                 header = ["", "Epoch", "Step", "LR"]
                 tabulate_data = [
-                    "Train MAE/RMSE",
-                    self.epoch,
-                    f"[{step}/{len(self.train_loader)}]",
-                    self.optimizer.param_groups[0]["lr"],
-                ]
-                header.extend(list(map(lambda x: x.capitalize(), reduced_err.keys())))
-                tabulate_data.extend(
                     [
-                        f"{reduced_err[prop][0].item():.4g}/{reduced_err[prop][1].sqrt().item():.4g}"
-                        for prop in reduced_err
-                    ]
-                )
+                        "Train  MAE",
+                        self.epoch,
+                        f"[{step}/{len(self.train_loader)}]",
+                        self.optimizer.param_groups[0]["lr"],
+                    ],
+                    ["Train RMSE", "", "", None],
+                ]
+                floatfmt = ["", "", "", ".3e"]
+                header.extend(list(map(lambda x: x.capitalize(), reduced_err.keys())))
+                for prop in reduced_err:
+                    tabulate_data[0].append(reduced_err[prop][0].item())
+                    tabulate_data[1].append(reduced_err[prop][1].sqrt().item())
+                    floatfmt.append(".4g")
                 lines = tabulate(
-                    [tabulate_data],
+                    tabulate_data,
                     headers=header,
                     tablefmt="plain",
                     stralign="right",
-                    numalign="right",
-                    floatfmt=".3e",
+                    floatfmt=floatfmt,
                 ).split("\n")
                 for line in lines:
                     self.log.f.info(line)
@@ -392,24 +393,20 @@ class Trainer:
         # logging
         if self.epoch % self.trainer_conf.log_epochs == 0:
             header = [""]
-            tabulate_data = (
-                ["Validation MAE/RMSE"]
-                if self.ema_model is None
-                else ["EMA Valid MAE/RMSE"]
-            )
+            tabulate_data = [
+                ["Validation  MAE" if self.ema_model is None else "EMA Valid  MAE"],
+                ["Validation RMSE" if self.ema_model is None else "EMA Valid RMSE"],
+            ]
             header.extend(list(map(lambda x: x.capitalize(), reduced_err.keys())))
-            tabulate_data.extend(
-                [
-                    f"{reduced_err[prop][0].item():.4g}/{reduced_err[prop][1].sqrt().item():.4g}"
-                    for prop in reduced_err
-                ]
-            )
+            for prop in reduced_err:
+                tabulate_data[0].append(reduced_err[prop][0].item())
+                tabulate_data[1].append(reduced_err[prop][1].sqrt().item())
             lines = tabulate(
-                [tabulate_data],
+                tabulate_data,
                 headers=header,
                 tablefmt="plain",
-                stralign="right",
                 numalign="right",
+                floatfmt=".4g",
             ).split("\n")
             for line in lines:
                 self.log.f.info(line)
