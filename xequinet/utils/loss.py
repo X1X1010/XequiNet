@@ -91,25 +91,19 @@ class WeightedLoss(nn.Module):
         return super().__call__(*args, **kwargs)  # for type annotation
 
 
-class L1Metric:
+class ErrorMetric:
     def __init__(self, *args) -> None:
         self.properties = set()
         for prop in args:
             self.properties.add(prop)
             if prop == keys.TOTAL_ENERGY:
-                self.properties.add(prop)
                 self.properties.add(keys.ENERGY_PER_ATOM)
             elif prop == keys.ENERGY_PER_ATOM:
                 self.properties.add(keys.TOTAL_ENERGY)
-                self.properties.add(prop)
             elif prop == keys.VIRIAL:
-                self.properties.add(prop)
                 self.properties.add(keys.STRESS)
             elif prop in keys.STRESS:
                 self.properties.add(keys.VIRIAL)
-                self.properties.add(prop)
-            else:
-                self.properties.add(prop)
 
     @torch.no_grad()
     def __call__(
@@ -130,8 +124,14 @@ class L1Metric:
                 target[keys.TOTAL_ENERGY] / n_atoms,
                 reduction="sum",
             )
+            energy_per_atom_l2 = F.mse_loss(
+                result[keys.TOTAL_ENERGY] / n_atoms,
+                target[keys.TOTAL_ENERGY] / n_atoms,
+                reduction="sum",
+            )
             metrics_dict[keys.ENERGY_PER_ATOM] = (
                 energy_per_atom_l1.item(),
+                energy_per_atom_l2.item(),
                 target[keys.TOTAL_ENERGY].numel(),
             )
         # stress
@@ -143,8 +143,14 @@ class L1Metric:
                 target[keys.VIRIAL] / volume,
                 reduction="sum",
             )
+            stress_l2 = F.mse_loss(
+                result[keys.VIRIAL] / volume,
+                target[keys.VIRIAL] / volume,
+                reduction="sum",
+            )
             metrics_dict[keys.STRESS] = (
                 stress_l1.item(),
+                stress_l2.item(),
                 target[keys.VIRIAL].numel(),
             )
 
@@ -154,6 +160,7 @@ class L1Metric:
                 continue
             assert result[prop].shape == target[prop].shape
             l1 = F.l1_loss(result[prop], target[prop], reduction="sum")
-            metrics_dict[prop] = (l1.item(), target[prop].numel())
+            l2 = F.mse_loss(result[prop], target[prop], reduction="sum")
+            metrics_dict[prop] = (l1.item(), l2.item(), target[prop].numel())
 
         return metrics_dict

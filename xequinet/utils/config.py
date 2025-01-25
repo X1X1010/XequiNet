@@ -31,7 +31,8 @@ class TrainerConfig:
     optimizer_kwargs: Dict[str, Any] = field(default_factory=dict)
     lr_scheduler: str = "cosine_annealing"
     lr_scheduler_kwargs: Dict[str, Any] = field(default_factory=dict)
-    early_stop: Optional[int] = None
+    early_stoppings: Optional[Dict[str, Any]] = None
+    early_stopping_mode: str = "and"
     ema_decay: Optional[float] = None
     seed: Optional[int] = None
     num_workers: int = 0

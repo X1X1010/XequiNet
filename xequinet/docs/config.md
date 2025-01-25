@@ -27,7 +27,8 @@
 | `optimizer_kwargs` | `dict` | `{}` | See [torch.optim](https://pytorch.org/docs/stable/optim.html) |
 | `lr_scheduler` | `str` | `cosine_annealing` | Learning rate scheduler type. Other choices: `cosine_warmup`, `reduce_on_plateau`. |
 | `lr_scheduler_kwargs` | `dict` | `{}` | See [torch.optim](https://pytorch.org/docs/stable/optim.html). e.g. `{Tmax: 100}`. |
-| `early_stop` | `[int]` | `null` | Stop training if validation loss does not drop for certain epochs. |
+| `early_stoppings` | `[dict[str, Any]]` | `null` | keys for monitoring properties, and values are early stopping settings. e.g. `{energy: {metric: mae, patience: 50, threshold: 0.0, lower_bound: 0.043}, forces: {metric: mae, patience: null, threshold: 0.0, lower_bound: 0.043}}` |
+| `early_stropping_mode` | `str` | `and` | Conditions for multiple early stoppings. `and` for stopping training when all conditions are met concurrently. `or` for stopping training when any condition is met. |
 | `ema_decay` | `[float]` | `null` | Weight for exponential moving average. Recommended value from 0.9 to 0.999. |
 | `seed` | `[int]` | `null` | Random seed for everything. |
 | `num_workers` | `int` | `0` | Extra number of threads for PyG to prepare batch data. |

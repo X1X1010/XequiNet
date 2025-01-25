@@ -1,6 +1,6 @@
 import heapq
 import os
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Literal, Optional
 
 import torch
 import torch.distributed as dist
@@ -21,7 +21,7 @@ from .functional import (
     resolve_warmup_scheduler,
 )
 from .logger import ZeroLogger
-from .loss import L1Metric, WeightedLoss
+from .loss import ErrorMetric, WeightedLoss
 
 
 class loss2file:
@@ -36,10 +36,14 @@ class loss2file:
 
 
 class DistAverageMetric:
+    """
+    Distributed average metric for l1 and l2 losses.
+    """
+
     def __init__(self, properties: Iterable, device: torch.device) -> None:
         self.device = device
-        self.properties = {
-            prop: torch.zeros((1,), device=self.device) for prop in properties
+        self.properties = {  # l1 and mse
+            prop: torch.zeros((2,), device=self.device) for prop in properties
         }
         self.counts = {
             prop: torch.zeros((1,), device=self.device) for prop in properties
@@ -54,46 +58,77 @@ class DistAverageMetric:
             self.counts[prop].zero_()
 
     @torch.no_grad()
-    def update(self, property: str, value: float, n: int = 1) -> None:
+    def update(self, property: str, l1: float, l2: float, n: int = 1) -> None:
         assert property in self.properties, f"Property {property} not found"
-        self.properties[property] += value
+        self.properties[property] += torch.tensor([l1, l2], device=self.device)
         self.counts[property] += n
 
     @torch.no_grad()
-    def reduce(self) -> Dict[str, float]:
+    def reduce(self) -> Dict[str, torch.Tensor]:
         result = {}
         for prop, val in self.properties.items():
             val = val.clone()
             count = self.counts[prop].clone()
             dist.all_reduce(val, op=dist.ReduceOp.SUM)
             dist.all_reduce(count, op=dist.ReduceOp.SUM)
-            result[prop] = (val / count).item()
+            result[prop] = val / count
         return result
 
 
 class EarlyStopping:
     def __init__(
         self,
-        patience: int = None,
-        min_delta: float = 0.0,
-        min_lr: float = 1e-6,
+        metric: Literal["mae", "rmse"] = "mae",
+        patience: Optional[int] = None,
+        threshold: float = 0.0,
+        lower_bound: float = 0.0,
     ) -> None:
-        self.patience = patience if patience is not None else float("inf")
-        self.min_delta = min_delta
-        self.min_lr = 1e-6 if min_lr == 0.0 else min_lr
-        self.counter = 0
+        self.err_idx = 0 if metric == "mae" else 1
+        self.patience = patience
+        self.threshold = threshold
+        self.lower_bound = lower_bound
+
+        self.best_err = float("inf")
+        self.num_bad_epochs = 0
+
+    def __call__(self, valid_errors: torch.Tensor) -> bool:
+        valid_err = valid_errors[self.err_idx].item()
+        # case 1: valid_err is lower than lower_bound
+        if valid_err <= self.lower_bound:
+            return True
+        # case 2: did not set patience, never early stop
+        if self.patience is None:
+            return False
+        # case 3: early stop when valid_err is not getting better
+        if valid_err < self.best_err - self.threshold:
+            self.best_err = valid_err
+            self.num_bad_epochs = 0
+        else:
+            self.num_bad_epochs += 1
+        return self.num_bad_epochs >= self.patience
+
+
+class MultiEarlyStopping:
+    def __init__(
+        self,
+        prop_to_early_stop: Dict[str, EarlyStopping],
+        mode: Literal["or", "and"] = "and",
+    ) -> None:
+        self.mode = mode
+        self.prop_to_early_stop = prop_to_early_stop
         self.stop = False
 
-    def __call__(self, val_loss: float, best_loss: float, lr: float) -> bool:
-        if val_loss - best_loss > self.min_delta:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.stop = True
-        elif lr <= self.min_lr:
-            self.stop = True
+    def __call__(self, valid_errors_dict: Dict[str, torch.Tensor]) -> None:
+        signs = [
+            es(valid_errors_dict[prop]) for prop, es in self.prop_to_early_stop.items()
+        ]
+
+        if self.mode == "or":
+            self.stop = any(signs)
+        elif self.mode == "and":
+            self.stop = all(signs)
         else:
-            self.counter = 0
-        return self.stop
+            raise ValueError(f"Invalid mode: {self.mode}")
 
 
 class Trainer:
@@ -167,10 +202,18 @@ class Trainer:
             optimizer=self.optimizer,
             warm_steps=warm_steps,
         )
-        # set early stopping (only work when lr_scheduler is plateau)
-        self.early_stop = EarlyStopping(
-            patience=self.trainer_conf.early_stop, min_lr=self.trainer_conf.min_lr
-        )
+        # set early stoppings
+        if self.trainer_conf.early_stoppings is None:
+            self.early_stop = None
+        else:
+            prop_to_early_stop = {
+                prop: EarlyStopping(**kwargs)
+                for prop, kwargs in self.trainer_conf.early_stoppings.items()
+            }
+            self.early_stop = MultiEarlyStopping(
+                prop_to_early_stop, mode=self.trainer_conf.early_stopping_mode
+            )
+
         # exponential moving average
         self.ema_model: Optional[AveragedModel] = None
         if self.trainer_conf.ema_decay is not None:
@@ -183,10 +226,10 @@ class Trainer:
             )
             self.ema_model = ema_model
         # set l1 metric
-        self.l1_metrics = L1Metric(*self.trainer_conf.losses_weight.keys())
+        self.err_metrics = ErrorMetric(*self.trainer_conf.losses_weight.keys())
         # loss recording, model saving and logging
         self.meter = DistAverageMetric(
-            properties=self.l1_metrics.properties,
+            properties=self.err_metrics.properties,
             device=device,
         )
         self.best_l2fs: List[loss2file] = [
@@ -270,37 +313,44 @@ class Trainer:
             if self.trainer_conf.lr_scheduler != "plateau":
                 with self.warmup_scheduler.dampening():
                     self.lr_scheduler.step()
-            # record l1 loss
-            l1_losses = self.l1_metrics(result, data)
-            for prop, (l1, n) in l1_losses.items():
-                self.meter.update(prop, l1, n)
+            # record l1 and l2 error
+            errors = self.err_metrics(result, data)
+            for prop, (l1, l2, n) in errors.items():
+                self.meter.update(prop, l1, l2, n)
 
             # logging
             if self.epoch % self.trainer_conf.log_epochs == 0 and (
                 step % self.trainer_conf.log_steps == 0
                 or step == len(self.train_loader)
             ):
-                reduced_l1 = self.meter.reduce()
+                reduced_err = self.meter.reduce()
                 header = ["", "Epoch", "Step", "LR"]
                 tabulate_data = [
-                    "Train MAE",
+                    "Train MAE/RMSE",
                     self.epoch,
-                    f"{step}/{len(self.train_loader)}",
+                    f"[{step}/{len(self.train_loader)}]",
                     self.optimizer.param_groups[0]["lr"],
                 ]
-                header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
-                floatfmt = ["", "", "", ".3e"] + [".7f"] * len(reduced_l1)
-                tabulate_data.extend(list(reduced_l1.values()))
+                header.extend(list(map(lambda x: x.capitalize(), reduced_err.keys())))
+                tabulate_data.extend(
+                    [
+                        f"{reduced_err[prop][0].item():.4g}/{reduced_err[prop][1].sqrt().item():.4g}"
+                        for prop in reduced_err
+                    ]
+                )
                 lines = tabulate(
                     [tabulate_data],
                     headers=header,
                     tablefmt="plain",
-                    floatfmt=floatfmt,
+                    stralign="right",
+                    numalign="right",
+                    floatfmt=".3e",
                 ).split("\n")
                 for line in lines:
                     self.log.f.info(line)
 
     def validate(self) -> None:
+        # using ema model if available
         valid_model = self.model.module if self.ema_model is None else self.ema_model
         valid_model.eval()
         self.meter.reset()
@@ -310,32 +360,56 @@ class Trainer:
             result = valid_model(
                 data.to_dict(), self.compute_forces, self.compute_virial
             )
-            l1_losses = self.l1_metrics(result, data)
-            for prop, (l1, n) in l1_losses.items():
-                self.meter.update(prop, l1, n)
-        reduced_l1 = self.meter.reduce()
+            errors = self.err_metrics(result, data)
+            for prop, (l1, l2, n) in errors.items():
+                self.meter.update(prop, l1, l2, n)
+        reduced_err = self.meter.reduce()
+        # here we use weighted sum of MAE as the metric
+        # theoretically, the monotonicity of RMSE is the same as MAE
+        # so either one can be used as the metric
         mae = 0.0
         for prop, w in self.trainer_conf.losses_weight.items():
-            mae += w * reduced_l1[prop]
-        if self.trainer_conf.lr_scheduler == "plateau":
-            with self.warmup_scheduler.dampening():
-                self.lr_scheduler.step(mae)
-            lr = self.optimizer.param_groups[0]["lr"]
-            self.early_stop(mae, self.best_l2fs[0].loss, lr)
+            mae += w * reduced_err[prop][0].item()
         self.save_best_k(valid_model.module, mae)
         self._save_params(
             valid_model.module,
             f"{self.trainer_conf.save_dir}/{self.trainer_conf.run_name}_last.pt",
         )
+        # ReduceLROnPlateau scheduler is triggered during validation
+        if self.trainer_conf.lr_scheduler == "plateau":
+            with self.warmup_scheduler.dampening():
+                self.lr_scheduler.step(mae)
+            lr = self.optimizer.param_groups[0]["lr"]
+            # we hope to stop training when lr is too small
+            # so we did this hack to early stopping
+            if lr < self.trainer_conf.min_lr:
+                self.log.f.info("Minimum learning rate reached")
+                self.early_stop.stop = True
+            self.early_stop(mae, self.best_l2fs[0].loss, lr)
+        # then we do the real early stopping check
+        if self.early_stop is not None:
+            self.early_stop(reduced_err)
+        # logging
         if self.epoch % self.trainer_conf.log_epochs == 0:
             header = [""]
             tabulate_data = (
-                ["Validation MAE"] if self.ema_model is None else ["EMA Valid MAE"]
+                ["Validation MAE/RMSE"]
+                if self.ema_model is None
+                else ["EMA Valid MAE/RMSE"]
             )
-            header.extend(list(map(lambda x: x.capitalize(), reduced_l1.keys())))
-            tabulate_data.extend(list(reduced_l1.values()))
+            header.extend(list(map(lambda x: x.capitalize(), reduced_err.keys())))
+            tabulate_data.extend(
+                [
+                    f"{reduced_err[prop][0].item():.4g}/{reduced_err[prop][1].sqrt().item():.4g}"
+                    for prop in reduced_err
+                ]
+            )
             lines = tabulate(
-                [tabulate_data], headers=header, tablefmt="plain", floatfmt=".7f"
+                [tabulate_data],
+                headers=header,
+                tablefmt="plain",
+                stralign="right",
+                numalign="right",
             ).split("\n")
             for line in lines:
                 self.log.f.info(line)
@@ -355,7 +429,7 @@ class Trainer:
             self.epoch = iepoch
             self.train1epoch()
             self.validate()
-            if self.early_stop.stop:
+            if self.early_stop is not None and self.early_stop.stop:
                 self.log.f.info(f"Early Stopping at Epoch {iepoch}")
                 break
 

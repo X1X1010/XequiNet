@@ -17,7 +17,7 @@ from xequinet.utils import (
     qc,
     set_default_units,
 )
-from xequinet.utils.loss import L1Metric
+from xequinet.utils.loss import ErrorMetric
 
 
 class AverageMetric:
@@ -48,7 +48,7 @@ class AverageMetric:
 def test(
     model: torch.nn.Module,
     data_loader: DataLoader,
-    l1_metric: L1Metric,
+    err_metric: ErrorMetric,
     meter: AverageMetric,
     device: torch.device,
     compute_forces: bool = False,
@@ -62,14 +62,14 @@ def test(
         data = data.to(device)
         with torch.enable_grad():
             result = model(data.to_dict(), compute_forces, compute_virial)
-        l1_losses = l1_metric(result, data)
-        for prop, (l1, n) in l1_losses.items():
-            meter.update(prop, l1, n)
+        errors = err_metric(result, data)
+        for prop, (l1, l2, n) in errors.items():
+            meter.update(prop, l1, l2, n)
         if verbose:
             data_list.append(data)
             results_list.append(result)
     # reduce the meter
-    reduced_l1 = meter.reduce()
+    reduced_err = meter.reduce()
     if verbose:
         # collate data
         batch_data = Batch.from_data_list(data_list)
@@ -83,7 +83,7 @@ def test(
     else:
         results = None
 
-    return reduced_l1, results
+    return reduced_err, results
 
 
 def write_results(results: Dict[str, Any], output_file: str) -> None:
@@ -246,8 +246,8 @@ def run_test(args: argparse.Namespace) -> None:
     )
 
     # set meter
-    l1_metric = L1Metric(*data_config.targets)
-    meter = AverageMetric(l1_metric.properties)
+    err_metric = ErrorMetric(*data_config.targets)
+    meter = AverageMetric(err_metric.properties)
 
     # testing
     compute_forces = keys.FORCES in data_config.targets
@@ -258,7 +258,7 @@ def run_test(args: argparse.Namespace) -> None:
     reduced_l1, results = test(
         model=model,
         data_loader=test_loader,
-        l1_metric=l1_metric,
+        err_metric=err_metric,
         meter=meter,
         device=device,
         compute_forces=compute_forces,
