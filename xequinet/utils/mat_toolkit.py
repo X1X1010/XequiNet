@@ -7,12 +7,28 @@ from pyscf import gto
 
 from .qc import ELEMENTS_DICT, ELEMENTS_LIST
 
-M_IDX_MAP = {
+M_IDX_COMMON = {
     0: [0],
-    1: [1, 2, 0],  # (x, y, z) -> (y, z, x)
-    2: [0, 1, 2, 3, 4],
-    3: [0, 1, 2, 3, 4, 5, 6],
-    4: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    1: [1, 2, 0],                   # (x, y, z) -> (y, z, x)
+    2: [0, 1, 2, 3, 4],             # (xy, yz, z2, xz, x2y2)
+    3: [0, 1, 2, 3, 4, 5, 6],       # (-3, -2, -1, 0, 1, 2, 3)
+    4: [0, 1, 2, 3, 4, 5, 6, 7, 8], # (-4, -3, -2, -1, 0, 1, 2, 3, 4)
+}
+
+M_IDX_ORCA = {
+    0: [0],
+    1: [1, 2, 0],                   # (z, y, x)
+    2: [2, 3, 1, 4, 0],             # (z^2, xz, yz, x2y2, xy)
+    3: [3, 4, 2, 5, 1, 6, 0],       # (0, 1, -1, 2, -2, 3, -3)
+    4: [4, 5, 3, 6, 2, 7, 1, 8, 0]  # (0, 1, -1, 2, -2, 3, -3, 4, -4)
+}
+
+M_IDX_ORIG = {
+    0: [0],
+    1: [0, 1, 2],                   # (y, z, x)
+    2: [0, 1, 2, 3, 4],             # (xy, yz, z2, xz, x2y2)
+    3: [0, 1, 2, 3, 4, 5, 6],       # (-3, -2, -1, 0, 1, 2, 3)
+    4: [0, 1, 2, 3, 4, 5, 6, 7, 8], # (-4, -3, -2, -1, 0, 1, 2, 3, 4)
 }
 
 
@@ -32,6 +48,16 @@ def get_l_from_basis(basis: str, element: str) -> List[int]:
     return [b[0] for b in basis]
 
 
+def resolve_m_idx_type(map_type:str="pyscf") -> Dict[int, List[int]]:
+    map_type = map_type.lower()
+    if map_type in ["orca"]:
+        return M_IDX_ORCA 
+    elif map_type in ["pyscf", "gaussian"]:
+        return M_IDX_COMMON
+    else:
+        return M_IDX_ORIG
+
+
 class MatToolkit:
     """
     Toolkit for converting matrices to e3nn format.
@@ -41,10 +67,13 @@ class MatToolkit:
         self,
         target_basis: str,
         elements: List[Union[str, int]],
-        m_idx_map: Dict[int, List[int]] = M_IDX_MAP,
+        map_type: str = "pyscf",
     ) -> None:
         """
         Args:
+            `target_basis`: target basis set
+            `elements`: list of existing elements in the dataset
+            `map_type`: map type for resolve m idx ordering of input
         """
         self.target_basis = target_basis
         self.elements = [
@@ -61,7 +90,7 @@ class MatToolkit:
             basis_irreps.append([mul.item(), (l, (-1) ** l)])
         self.basis_irreps = o3.Irreps(basis_irreps).simplify()
 
-        self.m_idx_map = m_idx_map
+        self.m_idx_map = resolve_m_idx_type(map_type)
         self.m_idx = self._gen_m_idx()
 
     def _resolve_basis(self) -> Tuple[torch.Tensor, torch.Tensor]:

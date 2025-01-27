@@ -8,6 +8,7 @@ from .electronic import ChargeEmbedding, SpinEmbedding
 from .ewald import EwaldBlock, EwaldInitialNonPBC, EwaldInitialPBC
 from .output import resolve_output
 from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
+from. so3krates import EculideanAttention, InteractionBlock
 
 
 class BaseModel(nn.Module):
@@ -168,6 +169,87 @@ class XPaiNNEwald(XPaiNN):
         for mode in ewald_output_modes:
             output = resolve_output(mode, **kwargs)
             self.mods[f"ewald_output_{mode}"] = output
+            self.extra_properties.extend(output.extra_properties)
+
+
+class SO3krates(BaseModel):
+    """
+    SO3krates: Nat Commun 2024, 15, 6539. 
+    https://doi.org/10.1038/s41467-024-50620-6 
+    wjyan: with modifications to fit in XequiNet.
+    """
+    def __init__(self, **kwargs) -> None:
+        super().__init__()
+        # solve hyperparameters
+        node_dim: int = kwargs.get("node_dim", 120)
+        node_channel: int = kwargs.get("node_channel", 32)
+        l_max: int = kwargs.get("max_l", 3)
+        node_irreps = [(node_channel, (l, (-1)**l)) for l in range(l_max + 1)]
+        num_heads: int = kwargs.get("num_heads", 4)
+        embed_basis: str = kwargs.get("embed_basis", "gfn2-xtb")
+        aux_basis: str = kwargs.get("aux_basis", "aux56")
+        num_basis: int = kwargs.get("num_basis", 20)
+        rbf_kernel: str = kwargs.get("rbf_kernel", "bessel")
+        cutoff: float = kwargs.get("cutoff", 5.0)
+        cutoff_fn: str = kwargs.get("cutoff_fn", "cosine")
+        action_blocks: int = kwargs.get("action_blocks", 3)
+        activation: str = kwargs.get("activation", "silu")
+        layer_norm: bool = kwargs.get("layer_norm", False)
+        charge_embed: bool = kwargs.get("charge_embed", False)
+        spin_embed: bool = kwargs.get("spin_embed", False)
+        output_modes: Union[str, List[str]] = kwargs.get("output_modes", ["energy"])
+
+        self.cutoff_radius = cutoff
+        embed = XEmbedding(
+            node_dim=node_dim,
+            node_irreps=node_irreps,
+            embed_basis=embed_basis,
+            aux_basis=aux_basis,
+            num_basis=num_basis,
+            rbf_kernel=rbf_kernel,
+            cutoff=cutoff,
+            cutoff_fn=cutoff_fn,
+        )
+        self.mods["embedding"] = embed
+
+        if charge_embed:
+            ce = ChargeEmbedding(
+                node_dim=node_dim,
+                activation=activation,
+            )
+            self.mods["charge_embedding"] = ce
+        if spin_embed:
+            se = SpinEmbedding(
+                node_dim=node_dim,
+                activation=activation,
+            )
+            self.mods["spin_embedding"] = se
+
+        for i in range(action_blocks):
+            message = EculideanAttention(
+                node_irreps=node_irreps,
+                node_dim=node_dim,
+                num_heads=num_heads,
+                num_basis=num_basis,
+                activation=activation,
+                layer_norm=layer_norm,
+            )
+            update = InteractionBlock(
+                node_irreps=node_irreps,
+                node_dim=node_dim,
+                activation=activation,
+                layer_norm=layer_norm,
+            )
+            self.mods[f"message_{i}"] = message
+            self.mods[f"update_{i}"] = update
+
+        if output_modes is None:
+            output_modes = ["energy"]
+        elif not isinstance(output_modes, Iterable):
+            output_modes = [output_modes]
+        for mode in output_modes:
+            output = resolve_output(mode, **kwargs)
+            self.mods[f"output_{mode}"] = output
             self.extra_properties.extend(output.extra_properties)
 
 
