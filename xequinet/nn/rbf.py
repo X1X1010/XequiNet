@@ -140,11 +140,11 @@ class SphericalBesselj0(nn.Module):
         freq = math.pi * torch.arange(1, num_basis + 1) / cutoff
         self.freq = torch.nn.Parameter(freq.view(1, -1))
         self.eps = eps
+        self.coeff = math.sqrt(2 / self.cutoff)
 
     def forward(self, dist: torch.Tensor) -> torch.Tensor:
         # dist: [nedge, 1]
-        coeff = math.sqrt(2 / self.cutoff)
-        rbf = coeff * torch.sin(self.freq * dist) / (dist + self.eps)
+        rbf = self.coeff * torch.sin(self.freq * dist) / (dist + self.eps)
 
         return rbf
 
