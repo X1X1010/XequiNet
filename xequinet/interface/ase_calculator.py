@@ -64,6 +64,7 @@ class XequiCalculator(Calculator):
                 .to(device=device)
                 .eval()
             )
+            self.model.load_state_dict(ckpt["model"])
             self.transform = SequentialTransform(
                 [
                     DataTypeTransform(self.dtype),
