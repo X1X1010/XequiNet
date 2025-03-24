@@ -44,11 +44,12 @@ class XequiData(Data):
         # positions and atomic numbers
         n_atoms: Optional[int] = None
         dtype: Optional[torch.dtype] = None
-        if self.pos is not None or atomic_numbers is not None:
+        if self.pos is not None:
             assert self.pos.dim() == 2 and self.pos.shape[1] == 3
             n_atoms = self.pos.shape[0]
             dtype = self.pos.dtype
 
+        if atomic_numbers is not None:
             assert (
                 atomic_numbers.shape == (n_atoms,) and atomic_numbers.dtype == torch.int
             )
