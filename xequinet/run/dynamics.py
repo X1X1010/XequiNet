@@ -113,7 +113,7 @@ def run_md(args: argparse.Namespace) -> None:
         torch.manual_seed(config.seed)
 
     # load atoms
-    atoms = ase.io.read(config.input_file, index=0)
+    atoms = ase.io.read(config.input_file, index=0, format=config.input_format)
 
     # set calculator
     if config.delta_method is None:

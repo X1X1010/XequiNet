@@ -216,7 +216,7 @@ def run_infer(args: argparse.Namespace) -> None:
     compute_virial = args.stress
 
     # load input data
-    atoms_list = ase.io.read(args.input, index=":")
+    atoms_list = ase.io.read(args.input, index=":", format=args.format)
     dataset = [datapoint_from_ase(atoms) for atoms in atoms_list]
 
     dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=0)

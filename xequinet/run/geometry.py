@@ -185,7 +185,7 @@ def run_opt(args: argparse.Namespace) -> None:
     else:
         opt_params = {}
 
-    atoms_list = ase.io.read(args.input, index=":")
+    atoms_list = ase.io.read(args.input, index=":", format=args.format)
     # loop over molecules
     for i, atoms in enumerate(atoms_list):
         data = datapoint_from_ase(atoms)

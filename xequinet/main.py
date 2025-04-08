@@ -155,6 +155,12 @@ def main() -> None:
             For molecular dynamics, it should be settings file.
             """,
     )
+    parser.add_argument(
+        "--format",
+        type=str,
+        default=None,
+        help="Input format for ASE",
+    )
     args = parser.parse_args()
     if args.task == "train":
         run_train(args)

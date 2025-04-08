@@ -78,6 +78,7 @@ class MDConfig:
 
     ensembles: List[Any] = field(default_factory=list)
     input_file: str = "input.xyz"
+    input_format: Optional[str] = None
     model_file: str = "model.pt"
     delta_method: Optional[str] = None
 
