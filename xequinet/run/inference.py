@@ -93,13 +93,14 @@ def inference(
 
                 # write the cell information
                 if hasattr(datum, keys.PBC) and datum[keys.PBC].any():
+                    cell = datum[keys.CELL].squeeze(0)  # [1, 3, 3] -> [3, 3]
                     header = ["Cell", "x", "y", "z"]
                     table = [
-                        ["a"] + [datum[keys.CELL][0].tolist()],
-                        ["b"] + [datum[keys.CELL][1].tolist()],
-                        ["c"] + [datum[keys.CELL][2].tolist()],
+                        ["a"] + cell[0].tolist(),
+                        ["b"] + cell[1].tolist(),
+                        ["c"] + cell[2].tolist(),
                     ]
-                    f.write(tabulate(table, headers=header, tablefmt="plain"))
+                    f.write(tabulate(table, headers=header, tablefmt="simple"))
                     f.write("\n")
                 # write the positions, forces, and charges
                 header = ["Atoms", "x", "y", "z"]
