@@ -164,8 +164,24 @@ def run_train(args: argparse.Namespace) -> None:
     log.s.info(model)
     model.to(device)
 
+    # several cases need to find unused params
+    if config.trainer.finetune_modules is None:
+        # case 1: finetuning, where frozen params are not used
+        find_unused = True
+    elif (
+        keys.FORCES in config.data.targets
+        and keys.TOTAL_ENERGY not in config.data.targets
+    ):
+        # case 2: trianing forces without energy
+        # bias in the final linear layer is not used (y = xW^T + b; dy/dx = W^T)
+        find_unused = True
+        log.s.info(
+            "Training forces without energy need to set `find_unused_parameters` to True."
+        )
+    else:
+        find_unused = False
+
     # distributed training
-    find_unused = False if config.trainer.finetune_modules is None else True
     ddp_model = DDP(
         module=model,
         device_ids=[local_rank],
