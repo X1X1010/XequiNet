@@ -19,7 +19,7 @@ class TrainerConfig:
     ckpt_file: Optional[str] = None
     resume: bool = False
     finetune_modules: Optional[List[str]] = None
-    warmup_scheduler: str = "linear"
+    warmup_scheduler: Optional[str] = "linear"
     warmup_epochs: int = 10
     max_epochs: int = 300
     max_lr: float = 5e-4

@@ -1,5 +1,7 @@
+from contextlib import contextmanager
 from functools import partial
 
+import pytorch_warmup as warmup
 import torch
 
 
@@ -143,3 +145,15 @@ def get_polynomial_decay_schedule(
         lr_init=lr_init,
     )
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
+class EmptyWarmup(warmup.BaseWarmup):
+    def __init__(self, last_step=-1):
+        self.last_step = last_step
+
+    def dampen(self, step=None):
+        return
+
+    @contextmanager
+    def dampening(self):
+        yield

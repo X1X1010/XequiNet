@@ -9,7 +9,11 @@ from torch_geometric.loader import DataLoader
 
 from xequinet import keys
 
-from .lr_scheduler import SmoothReduceLROnPlateau, get_polynomial_decay_schedule
+from .lr_scheduler import (
+    EmptyWarmup,
+    SmoothReduceLROnPlateau,
+    get_polynomial_decay_schedule,
+)
 
 
 @contextmanager
@@ -145,11 +149,14 @@ def resolve_lr_scheduler(
 
 
 def resolve_warmup_scheduler(
-    warm_type: str,
+    warm_type: Optional[str],
     optimizer: torch.optim.Optimizer,
     warm_steps: int,
 ) -> warmup.BaseWarmup:
     """Helper function to return a warmup scheduler"""
+    if warm_type is None:
+        return EmptyWarmup()
+
     warm_type = warm_type.lower()
     if warm_type == "linear":
         return warmup.LinearWarmup(
@@ -159,7 +166,7 @@ def resolve_warmup_scheduler(
     elif warm_type == "exponential":
         return warmup.ExponentialWarmup(
             optimizer=optimizer,
-            warmup_period=warm_steps,
+            warmup_period=warm_steps / 2,
         )
     elif warm_type == "untuned_linear":
         return warmup.UntunedLinearWarmup(
@@ -167,6 +174,10 @@ def resolve_warmup_scheduler(
         )
     elif warm_type == "untuned_exponential":
         return warmup.UntunedExponentialWarmup(
+            optimizer=optimizer,
+        )
+    elif warm_type == "radam":
+        return warmup.RAdamWarmup(
             optimizer=optimizer,
         )
     else:
