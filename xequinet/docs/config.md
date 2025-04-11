@@ -25,7 +25,7 @@
 | `grad_clip` | `[float]` | `null` | Gradient clipping value. |
 | `optimizer` | `str` | `adamW` | Optimizer type. Other choices: `adam` |
 | `optimizer_kwargs` | `dict` | `{}` | See [torch.optim](https://pytorch.org/docs/stable/optim.html) |
-| `lr_scheduler` | `str` | `cosine_annealing` | Learning rate scheduler type. Other choices: `cosine_warmup`, `reduce_on_plateau`. |
+| `lr_scheduler` | `str` | `cosine_annealing` | Learning rate scheduler type. Other choices: `cosine_restarts`, `reduce_on_plateau`. |
 | `lr_scheduler_kwargs` | `dict` | `{}` | See [torch.optim](https://pytorch.org/docs/stable/optim.html). e.g. `{Tmax: 100}`. |
 | `early_stoppings` | `[dict[str, Any]]` | `null` | keys for monitoring properties, and values are early stopping settings. e.g. `{energy: {metric: mae, patience: 50, threshold: 0.0, lower_bound: 0.043}, forces: {metric: mae, patience: null, threshold: 0.0, lower_bound: 0.043}}` |
 | `early_stropping_mode` | `str` | `and` | Conditions for multiple early stoppings. `and` for stopping training when all conditions are met concurrently. `or` for stopping training when any condition is met. |

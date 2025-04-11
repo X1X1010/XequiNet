@@ -113,7 +113,7 @@ def resolve_lr_scheduler(
             T_max=T_max,
             **kwargs,
         )
-    elif sched_type in {"cosine_annealing_warmup_restart", "cosine_warmup"}:
+    elif sched_type in {"cosine_annealing_warm_restarts", "cosine_restarts"}:
         T_0 = kwargs.pop("T_0", max_epochs) * steps_per_epoch
         T_mult = kwargs.pop("T_mult", 1)
         return lr_scheduler.CosineAnnealingWarmRestarts(
