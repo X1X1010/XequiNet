@@ -86,6 +86,10 @@ def resolve_optimizer(
         return torch.optim.Adam(params, lr=lr, **kwargs)
     elif optim_type == "adamw":
         return torch.optim.AdamW(params, lr=lr, **kwargs)
+    elif optim_type == "nadam":
+        return torch.optim.NAdam(params, lr=lr, **kwargs)
+    elif optim_type == "radam":
+        return torch.optim.RAdam(params, lr=lr, **kwargs)
     else:
         raise NotImplementedError(f"Unsupported optimizer {optim_type}")
 
