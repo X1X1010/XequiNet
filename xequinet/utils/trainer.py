@@ -83,7 +83,7 @@ class EarlyStopping:
         threshold: float = 0.0,
         lower_bound: float = 0.0,
     ) -> None:
-        self.err_idx = 0 if metric == "mae" else 1
+        self.err_idx = 0 if metric.lower() == "mae" else 1
         self.patience = patience
         self.threshold = threshold
         self.lower_bound = lower_bound
