@@ -3,12 +3,15 @@ from typing import Dict, Iterable, List, Optional, Union
 import torch
 import torch.nn as nn
 
+from xequinet.data import NeighborTransform
+from xequinet.utils import set_default_units
+
 from .basic import compute_edge_data, compute_properties
 from .electronic import ChargeEmbedding, SpinEmbedding
 from .ewald import EwaldBlock, EwaldInitialNonPBC, EwaldInitialPBC
 from .output import resolve_output
+from .so3krates import EculideanAttention, InteractionBlock
 from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
-from. so3krates import EculideanAttention, InteractionBlock
 
 
 class BaseModel(nn.Module):
@@ -174,17 +177,18 @@ class XPaiNNEwald(XPaiNN):
 
 class SO3krates(BaseModel):
     """
-    SO3krates: Nat Commun 2024, 15, 6539. 
-    https://doi.org/10.1038/s41467-024-50620-6 
+    SO3krates: Nat Commun 2024, 15, 6539.
+    https://doi.org/10.1038/s41467-024-50620-6
     wjyan: with modifications to fit in XequiNet.
     """
+
     def __init__(self, **kwargs) -> None:
         super().__init__()
         # solve hyperparameters
         node_dim: int = kwargs.get("node_dim", 120)
         node_channel: int = kwargs.get("node_channel", 32)
         l_max: int = kwargs.get("max_l", 3)
-        node_irreps = [(node_channel, (l, (-1)**l)) for l in range(l_max + 1)]
+        node_irreps = [(node_channel, (l, (-1) ** l)) for l in range(l_max + 1)]
         num_heads: int = kwargs.get("num_heads", 4)
         embed_basis: str = kwargs.get("embed_basis", "gfn2-xtb")
         aux_basis: str = kwargs.get("aux_basis", "aux56")
@@ -261,3 +265,36 @@ def resolve_model(model_name: str, **kwargs) -> BaseModel:
     if model_name.lower() not in models_factory:
         raise NotImplementedError(f"Unsupported model {model_name}")
     return models_factory[model_name.lower()](**kwargs)
+
+
+def load_model(ckpt_file: str, device: Optional[torch.device] = None):
+    class ModelWithTransform:
+        def __init__(self, model, transform, device):
+            self.model = model
+            self.transform = transform
+            self.device = device
+
+        def __call__(self, data, **kwargs):
+            data = data.to(self.device)
+            data = transform(data)
+            return self.model(data.to_dict(), **kwargs)
+
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # load checkpoint and config
+    ckpt = torch.load(ckpt_file, map_location=device)
+    model_config = ckpt["config"]
+
+    # set default unit
+    set_default_units(model_config["default_units"])
+
+    # build model
+    model = resolve_model(
+        model_config["model_name"],
+        **model_config["model_kwargs"],
+    ).to(device)
+    model.load_state_dict(ckpt["model"])
+    model.eval()
+    transform = NeighborTransform(model.cutoff_radius)
+
+    return ModelWithTransform(model, transform, device)
