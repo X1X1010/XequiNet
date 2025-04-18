@@ -13,6 +13,8 @@ def resolve_rbf(rbf_kernel: str, num_basis: int, cutoff: float) -> nn.Module:
         return GaussianSmearing(num_basis, cutoff)
     elif rbf_kernel == "expbern":
         return ExponentialBernstein(num_basis, cutoff)
+    elif rbf_kernel == "expnorm":
+        return ExponentialNorm(num_basis, cutoff)
     else:
         raise NotImplementedError(f"rbf kernel {rbf_kernel} is not implemented")
 
@@ -115,9 +117,10 @@ class GaussianSmearing(nn.Module):
         self.cutoff = cutoff
         self.eps = eps
         self.mean = torch.nn.Parameter(torch.linspace(0, cutoff, num_basis).view(1, -1))
-        self.std = torch.nn.Parameter(
-            torch.linspace(1, 1 / num_basis, num_basis).view(1, -1)
-        )
+        # self.std = torch.nn.Parameter(
+        #     torch.linspace(1 / num_basis, 1, num_basis).view(1, -1)
+        # )
+        self.std = torch.nn.Parameter(torch.ones(num_basis).view(1, -1))
         self.sqrt2pi = math.sqrt(2 * math.pi)
 
     def forward(self, dist: torch.Tensor) -> torch.Tensor:
@@ -184,4 +187,21 @@ class ExponentialBernstein(nn.Module):
         x = -alpha * dist
         x = self.logc + self.n * x + self.v * torch.log(-torch.expm1(x))
         rbf = torch.exp(x)
+        return rbf
+
+
+class ExponentialNorm(nn.Module):
+    def __init__(self, num_basis: int, cutoff: float) -> None:
+        super().__init__()
+        self.num_basis = num_basis
+        self.cutoff = cutoff
+        inv_beta = torch.square(
+            2 * (1 - math.exp(-cutoff)) / torch.arange(1, num_basis + 1)
+        )
+        self.beta = torch.nn.Parameter(torch.reciprocal(inv_beta))
+        self.mu = torch.nn.Parameter(torch.linspace(1, math.exp(-cutoff), num_basis))
+
+    def forward(self, dist: torch.Tensor) -> torch.Tensor:
+        # dist: [nedge, 1]
+        rbf = torch.exp(-self.beta * torch.square(torch.exp(-dist) - self.mu))
         return rbf
