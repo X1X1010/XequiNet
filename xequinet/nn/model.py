@@ -10,6 +10,7 @@ from .basic import compute_edge_data, compute_properties
 from .electronic import ChargeEmbedding, SpinEmbedding
 from .ewald import EwaldBlock, EwaldInitialNonPBC, EwaldInitialPBC
 from .output import resolve_output
+from .painn import Embedding, PainnMessage, PainnUpdate
 from .so3krates import EculideanAttention, InteractionBlock
 from .xpainn import XEmbedding, XPainnMessage, XPainnUpdate
 
@@ -257,10 +258,60 @@ class SO3krates(BaseModel):
             self.extra_properties.extend(output.extra_properties)
 
 
+class PaiNN(BaseModel):
+    def __init__(self, **kwargs) -> None:
+        super().__init__()
+        # solve hyperparameters
+        node_dim: int = kwargs.get("node_dim", 128)
+        embed_basis: str = kwargs.get("embed_basis", "gfn2-xtb")
+        aux_basis: str = kwargs.get("aux_basis", "aux56")
+        num_basis: int = kwargs.get("num_basis", 20)
+        rbf_kernel: str = kwargs.get("rbf_kernel", "bessel")
+        cutoff: float = kwargs.get("cutoff", 5.0)
+        cutoff_fn: str = kwargs.get("cutoff_fn", "cosine")
+        action_blocks: int = kwargs.get("action_blocks", 3)
+        activation: str = kwargs.get("activation", "silu")
+        output_modes: Union[str, List[str]] = kwargs.get("output_modes", ["energy"])
+
+        self.cutoff_radius = cutoff
+        embed = Embedding(
+            node_dim=node_dim,
+            embed_basis=embed_basis,
+            aux_basis=aux_basis,
+            num_basis=num_basis,
+            rbf_kernel=rbf_kernel,
+            cutoff=cutoff,
+            cutoff_fn=cutoff_fn,
+        )
+        self.mods["embedding"] = embed
+
+        for i in range(action_blocks):
+            message = PainnMessage(
+                node_dim=node_dim,
+                num_basis=num_basis,
+                activation=activation,
+            )
+            update = PainnUpdate(
+                node_dim=node_dim,
+                activation=activation,
+            )
+            self.mods[f"message_{i}"] = message
+            self.mods[f"update_{i}"] = update
+        if output_modes is None:
+            output_modes = ["energy"]
+        elif not isinstance(output_modes, Iterable):
+            output_modes = [output_modes]
+        for mode in output_modes:
+            output = resolve_output(mode, **kwargs)
+            self.mods[f"output_{mode}"] = output
+            self.extra_properties.extend(output.extra_properties)
+
+
 def resolve_model(model_name: str, **kwargs) -> BaseModel:
     models_factory = {
         "xpainn": XPaiNN,
         "xpainn-ewald": XPaiNNEwald,
+        "painn": PaiNN,
     }
     if model_name.lower() not in models_factory:
         raise NotImplementedError(f"Unsupported model {model_name}")
