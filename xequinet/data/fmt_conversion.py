@@ -51,12 +51,15 @@ def datapoint_from_pyscf(mole: gto.Mole, dtype: torch.dtype = None) -> XequiData
     pos_unit = get_default_units()[keys.POSITIONS]
     pos_factor = unit_conversion("Bohr", pos_unit)
 
-    atomic_numbers = mole.atom_charges()
+    atomic_numbers = torch.tensor(
+        [qc.ELEMENTS_DICT[a] for a in mole.elements],
+        dtype=torch.int,
+    )
     pos = mole.atom_coords() * pos_factor
     charge = mole.charge
     spin = mole.spin
     return XequiData(
-        atomic_numbers=torch.from_numpy(atomic_numbers).to(torch.int),
+        atomic_numbers=atomic_numbers,
         pos=torch.from_numpy(pos).to(dtype),
         charge=torch.tensor([charge], dtype=torch.int),
         spin=torch.tensor([spin], dtype=torch.int),
