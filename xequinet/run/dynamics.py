@@ -63,7 +63,6 @@ def resolve_ensemble(
         atoms=atoms,
         logfile=logfile,
         trajectory=trajectory,
-        append_trajectory=True,
         **ensemble,
     )
     return dyn, steps, fmax
