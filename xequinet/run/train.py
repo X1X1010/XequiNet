@@ -165,7 +165,7 @@ def run_train(args: argparse.Namespace) -> None:
     model.to(device)
 
     # several cases need to find unused params
-    if config.trainer.finetune_modules is None:
+    if not config.trainer.finetune_modules:
         # case 1: finetuning, where frozen params are not used
         find_unused = True
     elif (
