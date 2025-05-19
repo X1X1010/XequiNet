@@ -93,7 +93,9 @@ def calc_analytical_hessian(
     hessian = hessian.cpu().numpy()
     # unit conversion
     energy *= unit_conversion(default_units[keys.TOTAL_ENERGY], "Hartree")
-    hessian *= unit_conversion(default_units[keys.FORCES], "au")
+    hessian *= unit_conversion(
+        f"{default_units[keys.TOTAL_ENERGY]}/{default_units[keys.POSITIONS]}^2", "au"
+    )
     return energy, hessian
 
 
