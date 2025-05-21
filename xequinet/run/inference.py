@@ -144,7 +144,7 @@ def inference(
                     header = ["", "x", "y", "z", "Magnitude"]
                     dipole = result[keys.DIPOLE][i]
                     magnitude = torch.linalg.norm(dipole)
-                    table = [["Dipole"] + [dipole.tolist()] + [magnitude.item()]]
+                    table = [["Dipole"] + dipole.tolist() + [magnitude.item()]]
                     f.write(
                         tabulate(
                             table, headers=header, tablefmt="plain", floatfmt=".6f"
