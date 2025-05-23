@@ -56,7 +56,7 @@ def gen_units_dict():
     u["cal"] = u['J'] * 4.184
     u["kcal"] = u["cal"] * 1000
     # dipole
-    u["Debye"] = u['D'] = 1e21 * (4 * pi * _eps0 * _hbar**2 * _c) / (_me * _e)
+    u["Debye"] = u['D'] =  _me * _e / (1e21 * 4 * pi * _eps0 * _hbar**2 * _c)
     # time
     u["second"] = u['s'] = (_me * _e**4) / (4 * pi * _eps0)**2 / _hbar**3
     u["fs"] = u["s"] * 1e-15
